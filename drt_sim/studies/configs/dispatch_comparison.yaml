@@ -1,0 +1,152 @@
+metadata:
+  name: "dispatch_strategy_comparison"
+  description: "Compare different dispatch strategies under varying demand conditions"
+  version: "1.0.0"
+  tags: ["algorithms", "dispatch", "optimization"]
+  authors: ["Research Team"]
+  created_at: "2025-01-05T16:00:00"
+
+type: "scenario_comparison"
+
+experiments:
+  base_demand_comparison:
+    name: "base_demand_dispatch_comparison"
+    description: "Compare dispatch strategies under normal demand"
+    scenarios:
+      fcfs_baseline:
+        name: "fcfs_baseline"
+        description: "First-come-first-served baseline"
+        algorithm:
+          dispatch_strategy: "fcfs"
+          batch_interval: 30
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+            columns:
+              request_time: "time"
+              pickup_lat: "o_y"
+              pickup_lon: "o_x"
+              dropoff_lat: "d_y"
+              dropoff_lon: "d_x"
+        network:
+          network_file: "data/networks/hwaseong_drive.graphml"
+          walk_network_file: "data/networks/hwaseong_walk.graphml"
+          coordinate_system: "EPSG:4326"
+          walking_speed: 1.4
+        vehicle:
+          fleet_size: 11
+          capacity: 4
+          boarding_time: 5
+          alighting_time: 5
+          depot_locations:
+            - [37.5666, 127.0000]
+            - [37.5778, 126.9982]
+            - [37.5550, 127.0011]
+
+      genetic_algorithm:
+        name: "genetic_algorithm"
+        description: "Genetic algorithm-based dispatch"
+        algorithm:
+          dispatch_strategy: "genetic"
+          dispatch_params:
+            population_size: 100
+            num_generations: 50
+            mutation_rate: 0.1
+            crossover_rate: 0.8
+          matching_algorithm: "batch"
+          matching_params:
+            batch_interval: 30
+            max_delay: 300
+            max_detour: 1.5
+          cost_function: "multi_objective"
+          cost_function_params:
+            weights:
+              waiting_time: 0.2
+              travel_time: 0.3
+              vehicle_distance: 0.2
+              walking_time: 0.3
+            constraints:
+              max_waiting_time: 1800
+              max_travel_time: 1800
+              max_vehicle_distance: 1800
+              max_occupancy: 1800
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+            columns:
+              request_time: "time"
+              pickup_lat: "o_y"
+              pickup_lon: "o_x"
+              dropoff_lat: "d_y"
+              dropoff_lon: "d_x"
+        network:
+          network_file: "data/networks/hwaseong_drive.graphml"
+          walk_network_file: "data/networks/hwaseong_walk.graphml"
+          coordinate_system: "EPSG:4326"
+          walking_speed: 1.4
+        vehicle:
+          fleet_size: 11
+          capacity: 4
+          boarding_time: 5
+          alighting_time: 5
+          depot_locations:
+            - [37.5666, 127.0000]
+            - [37.5778, 126.9982]
+            - [37.5550, 127.0011]
+
+      reinforcement_learning:
+        name: "reinforcement_learning"
+        description: "RL-based dynamic dispatch"
+        algorithm:
+          dispatch_strategy: "rl_dispatch"
+          batch_interval: 30
+          optimization_horizon: 1800
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+            columns:
+              request_time: "time"
+              pickup_lat: "o_y"
+              pickup_lon: "o_x"
+              dropoff_lat: "d_y"
+              dropoff_lon: "d_x"
+        network:
+          network_file: "data/networks/hwaseong_drive.graphml"
+          walk_network_file: "data/networks/hwaseong_walk.graphml"
+          coordinate_system: "EPSG:4326"
+          walking_speed: 1.4
+        vehicle:
+          fleet_size: 11
+          capacity: 4
+          depot_locations:
+            - [37.5666, 127.0000]
+            - [37.5778, 126.9982]
+            - [37.5550, 127.0011]
+
+metrics:
+  collect_interval: 300
+  save_interval: 1800
+  default_metrics:
+    - waiting_time
+    - in_vehicle_time
+    - total_distance
+    - occupancy_rate
+    - service_rate
+    - rejection_rate
+
+simulation:
+  start_time: "2024-10-24 07:00:00"
+  end_time: "2024-10-24 23:00:00"
+  warm_up_duration: 1800
+  time_step: 60
+  time_scale_factor: 1.0
+  replications: 3

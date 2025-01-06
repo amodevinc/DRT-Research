@@ -3,7 +3,8 @@ from typing import List, Tuple
 import numpy as np
 from shapely.geometry import Point, Polygon, LineString
 from rtree import index
-from ..models.location import Location
+from drt_sim.models.location import Location, haversine_distance
+
 class GeometryManager:
     """Manages geometric operations for DRT simulation"""
     
@@ -32,22 +33,6 @@ class GeometryManager:
             nearest.append((near_loc, distance))
         
         return sorted(nearest, key=lambda x: x[1])
-    
-    @staticmethod
-    def haversine_distance(loc1: Location, loc2: Location) -> float:
-        """Calculate Haversine distance between two locations in meters"""
-        R = 6371000  # Earth's radius in meters
-        
-        lat1, lon1 = np.radians(loc1.lat), np.radians(loc1.lon)
-        lat2, lon2 = np.radians(loc2.lat), np.radians(loc2.lon)
-        
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        
-        a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-        c = 2 * np.arcsin(np.sqrt(a))
-        
-        return R * c
     
     def create_service_area(self, locations: List[Location]) -> Polygon:
         """Create a service area polygon from a set of locations"""

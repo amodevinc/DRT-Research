@@ -1,0 +1,89 @@
+metadata:
+  name: "user_behavior_study"
+  description: "Study impact of user acceptance models and waiting time tolerance"
+  version: "1.0.0"
+  tags: ["user-behavior", "acceptance-models", "service-quality"]
+  authors: ["Research Team"]
+  created_at: "2025-01-05T16:00:00"
+
+type: "scenario_comparison"
+
+experiments:
+  acceptance_model_comparison:
+    name: "acceptance_model_comparison"
+    description: "Compare different user acceptance models"
+    scenarios:
+      simple_logit:
+        name: "simple_logit"
+        algorithm:
+          user_acceptance_model: "logit"
+          dispatch_strategy: "fcfs"
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+
+      ml_based:
+        name: "ml_based"
+        algorithm:
+          user_acceptance_model: "ml_acceptance"
+          dispatch_strategy: "fcfs"
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+
+  waiting_time_sensitivity:
+    name: "waiting_time_sensitivity"
+    description: "Study impact of different waiting time thresholds"
+    scenarios:
+      low_tolerance:
+        name: "low_tolerance"
+        algorithm:
+          user_acceptance_model: "logit"
+          dispatch_strategy: "fcfs"
+          max_waiting_time: 600  # 10 minutes
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+
+      high_tolerance:
+        name: "high_tolerance"
+        algorithm:
+          user_acceptance_model: "logit"
+          dispatch_strategy: "fcfs"
+          max_waiting_time: 1200  # 20 minutes
+        demand:
+          generator_type: "csv"
+          csv_config:
+            files:
+              - file_path: "data/demands/base_real_time.csv"
+                weight: 1.0
+
+metrics:
+  collect_interval: 300
+  save_interval: 1800
+  default_metrics:
+    - waiting_time
+    - service_rate
+    - rejection_rate
+  additional_metrics:
+    - user_satisfaction
+    - acceptance_rate
+    - cancellation_rate
+    - time_tolerance_distribution
+
+simulation:
+  start_time: "2025-01-01 07:00:00"
+  end_time: "2025-01-01 19:00:00"
+  warm_up_duration: 1800
+  time_step: 60
+  time_scale_factor: 1.0
+  replications: 5

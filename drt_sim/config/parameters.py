@@ -1,207 +1,314 @@
 # drt_sim/config/parameters.py
-from dataclasses import dataclass
-from typing import Optional, List, Dict
+
+from __future__ import annotations
+from typing import Optional, List, Dict, Union, Any
 from datetime import datetime, timedelta
 from enum import Enum
-import pydantic
+from pydantic import BaseModel, Field, validator
 from pathlib import Path
+import math
 
 class AlgorithmType(Enum):
+    """Algorithm types with research-relevant descriptions"""
     # Routing algorithms
     ROUTING_DIJKSTRA = "dijkstra"
     ROUTING_ASTAR = "astar"
-    ROUTING_OSRM = "osrm"
+    ROUTING_COST_MINIMIZATION = "routing_cost_minimization"
     
     # Vehicle dispatch algorithms
-    DISPATCH_IMMEDIATE = "immediate_dispatch"  # Assign vehicles as requests arrive
-    DISPATCH_BATCH = "batch_dispatch"  # Group requests into batches
-    DISPATCH_ANTICIPATORY = "anticipatory_dispatch"  # Consider future demand
+    DISPATCH_IMMEDIATE = "immediate_dispatch"
+    DISPATCH_BATCH = "batch_dispatch"
+    DISPATCH_ANTICIPATORY = "anticipatory_dispatch"
+    DISPATCH_FCFS = "fcfs_dispatch"
     
     # Request-vehicle matching algorithms
-    MATCHING_INSERTION = "insertion_heuristic"  # Insert requests into existing routes
-    MATCHING_AUCTION = "auction_based"  # Vehicles bid on requests
-    MATCHING_GENETIC = "genetic_algorithm"  # Optimize matching using GA
+    MATCHING_INSERTION = "insertion_heuristic"
+    MATCHING_AUCTION = "auction_based"
+    MATCHING_GENETIC = "genetic_algorithm"
     
     # Stop selection algorithms
-    STOP_KMEANS = "kmeans_clustering"  # Cluster-based stop placement
-    STOP_DEMAND = "demand_based"  # Place stops based on demand patterns
-    STOP_COVERAGE = "coverage_based"  # Maximize area coverage
-    STOP_ACCESSIBILITY = "accessibility_based"  # Optimize for accessibility
-    STOP_MULTI_OBJECTIVE_COST_MINIMIZATION = "multi_objective_cost_minimization"  # Minimize cost and maximize coverage
+    STOP_KMEANS = "kmeans_clustering"
+    STOP_DEMAND = "demand_based"
+    STOP_COVERAGE = "coverage_based"
+    STOP_ACCESSIBILITY = "accessibility_based"
+    STOP_MULTI_OBJECTIVE = "multi_objective_cost_minimization"
 
-class VehicleMatchingPolicy(Enum):
-    NEAREST = "nearest"
-    LEAST_DETOUR = "least_detour"
-    BALANCED_LOAD = "balanced_load"
-    MINIMUM_COST = "minimum_cost"
+class ExperimentType(Enum):
+    """Types of experiments that can be conducted"""
+    ALGORITHM_COMPARISON = "algorithm_comparison"
+    PARAMETER_SENSITIVITY = "parameter_sensitivity"
+    DEMAND_PATTERN = "demand_pattern"
+    FLEET_OPTIMIZATION = "fleet_optimization"
+    STOP_STRATEGY = "stop_strategy"
+    MULTI_FACTOR = "multi_factor"
 
-class BaseParameters(pydantic.BaseModel):
-    """Base class for all parameter types with validation"""
+class BaseParameters(BaseModel):
+    """Base class for all parameter models with experiment support"""
     class Config:
         arbitrary_types_allowed = True
-        validate_assignment = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat(),
+            timedelta: lambda v: str(v)
+        }
 
-@dataclass
+    def modify_for_experiment(self, modifications: Dict[str, Any]) -> BaseParameters:
+        """Create a new instance with modifications for an experiment"""
+        data = self.dict()
+        # Special handling for DemandParameters
+        if isinstance(self, DemandParameters):
+            # Check if generator_type is being modified
+            new_generator_type = None
+            if 'generator_type' in modifications:
+                new_generator_type = modifications['generator_type']
+            
+            # Handle nested generator_config modifications
+            if 'generator_config' in modifications:
+                mod_config = modifications['generator_config']
+                
+                # If we have a new generator type, use the new config directly
+                if new_generator_type:
+                    if hasattr(mod_config, 'dict'):
+                        data['generator_type'] = new_generator_type
+                        data['generator_config'] = mod_config.dict()
+                    else:
+                        data['generator_type'] = new_generator_type
+                        data['generator_config'] = mod_config
+                else:
+                    # Otherwise, merge with existing config
+                    current_config = data['generator_config']
+                    
+                    # Convert configs to dict if they're Pydantic models
+                    if hasattr(mod_config, 'dict'):
+                        mod_config = mod_config.dict()
+                    if hasattr(current_config, 'dict'):
+                        current_config = current_config.dict()
+                    
+                    # Merge configs
+                    if isinstance(mod_config, dict):
+                        data['generator_config'] = {**current_config, **mod_config}
+                    else:
+                        data['generator_config'] = mod_config
+                
+                # Remove from modifications to prevent double-processing
+                modifications = {k: v for k, v in modifications.items() if k != 'generator_config' and k != 'generator_type'}
+
+        # Apply remaining modifications
+        for key, value in modifications.items():
+            if "." in key:
+                # Handle nested modifications
+                parts = key.split(".")
+                current = data
+                for part in parts[:-1]:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+                current[parts[-1]] = value
+            else:
+                data[key] = value
+
+        return self.__class__(**data)
+
 class SimulationParameters(BaseParameters):
-    """Core simulation parameters"""
+    """Enhanced simulation parameters with research support"""
+    # Core timing parameters
     start_time: datetime
     end_time: datetime
     time_step: timedelta
-    random_seed: Optional[int] = None
-    warm_up_period: timedelta = timedelta(hours=1)
-    cool_down_period: timedelta = timedelta(hours=1)
-    snapshot_interval: timedelta = timedelta(minutes=5)
-@dataclass
+    
+    # Simulation control
+    random_seed: Optional[int] = Field(None, description="Set for reproducible experiments")
+    warm_up_period: timedelta = Field(default=timedelta(hours=1), description="Initial warmup period")
+    cool_down_period: timedelta = Field(default=timedelta(hours=1), description="Final cooldown period")
+    
+    # Technical parameters
+    logging_interval: timedelta = Field(default=timedelta(minutes=5))
+    reoptimization_interval: timedelta = Field(default=timedelta(minutes=5))
+    snapshot_interval: timedelta = Field(default=timedelta(minutes=5))
+    snapshot_retention_period: timedelta = Field(default=timedelta(hours=24))
+    time_scale_factor: float = Field(default=1.0, description="Speed up or slow down simulation")
+    
+    # Experiment-specific
+    replications: int = Field(default=1, description="Number of replications for statistical validity")
+    experiment_tags: List[str] = Field(default_factory=list, description="Tags for experiment categorization")
+
+class DemandGeneratorType(Enum):
+    """Types of demand generators available"""
+    RANDOM = "random"
+    CSV = "csv"
+    PREDICTED = "predicted"
+    PATTERN_BASED = "pattern_based"
+    HISTORICAL = "historical"
+
+class SpatialDistributionType(Enum):
+    """Types of spatial distributions for demand"""
+    UNIFORM = "uniform"
+    CLUSTERED = "clustered"
+    HOTSPOT = "hotspot"
+    CUSTOM = "custom"
+
+class TemporalDistributionType(Enum):
+    """Types of temporal distributions for demand"""
+    CONSTANT = "constant"
+    PEAK_HOURS = "peak_hours"
+    TIME_VARYING = "time_varying"
+    CUSTOM = "custom"
+
 class VehicleParameters(BaseParameters):
-    """Vehicle-related parameters"""
-    fleet_size: int
-    vehicle_capacity: int
-    vehicle_speed: float  # km/h
+    """Enhanced vehicle parameters with research support"""
+    # Fleet configuration
+    fleet_size: int = Field(..., gt=0)
+    vehicle_capacity: int = Field(..., gt=0)
+    vehicle_speed: float = Field(..., gt=0)  # km/h
+    
+    # Service times
     boarding_time: timedelta
     alighting_time: timedelta
-    battery_capacity: Optional[float] = None  # kWh
-    charging_rate: Optional[float] = None  # kW
+    
+    # Spatial configuration
     depot_locations: List[tuple] = None
+    
+    # Research-specific
+    fleet_compositions: Dict[str, Dict[str, Union[int, List[int]]]] = Field(
+        default_factory=dict,
+        description="Different fleet compositions for experiments. Can specify single values or lists for parameters."
+    )
+    cost_factors: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Vehicle-specific cost factors"
+    )
 
-@dataclass
-class DemandParameters(BaseParameters):
-    """Demand generation parameters"""
-    demand_level: float  # requests per hour
-    spatial_distribution: str
-    temporal_distribution: str
-    max_wait_time: timedelta
-    max_detour_ratio: float
-    cancellation_probability: float = 0.1
-    prebooking_ratio: float = 0.2
-    demand_patterns: Dict[str, float] = None
+class CostParameters(BaseParameters):
+    """Base class for all cost-related parameters"""
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.validate_costs()
 
-@dataclass
+    def validate_costs(self):
+        """Ensure costs sum to 1.0"""
+        total = sum(float(getattr(self, field)) for field in self.__fields__)
+        if not math.isclose(total, 1.0, rel_tol=1e-5):
+            raise ValueError(f"Costs sum to {total}, expected 1.0")
+
 class StopParameters(BaseParameters):
-    """Stop selection and management parameters"""
+    """Enhanced stop selection parameters"""
+    # Physical constraints
     max_walking_distance: float  # meters
     min_stop_spacing: float  # meters
     stop_capacity: int
-    safety_threshold: float
-    accessibility_weight: float
+    
+    # Selection criteria
+    safety_threshold: float = Field(..., ge=0.0, le=1.0)
+    accessibility_weight: float = Field(..., ge=0.0, le=1.0)
     coverage_radius: float  # meters
+    
+    # Research-specific
+    stop_strategies: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Predefined stop selection strategies"
+    )
 
-@dataclass
 class AlgorithmParameters(BaseParameters):
-    """Algorithm-specific parameters"""
+    """Enhanced algorithm parameters with research capabilities"""
+    # Algorithm selections
     routing_algorithm: AlgorithmType
     dispatch_algorithm: AlgorithmType
     matching_algorithm: AlgorithmType
-    matching_policy: VehicleMatchingPolicy
+    
+    # Timing constraints
     reoptimization_interval: timedelta
     max_computation_time: timedelta
-    cost_weights: Dict[str, float]
+    
+    # Component-specific costs
+    stop_selection_costs: Dict[str, float]
+    matching_costs: Dict[str, float]
+    dispatch_costs: Dict[str, float]
+    routing_costs: Dict[str, float]
+    
+    # Operational parameters
+    batch_size: int = Field(default=10, gt=0)
+    batch_interval: timedelta = Field(default=timedelta(seconds=30))
+    max_matches_per_vehicle: int = Field(default=3, gt=0)
+    
+    # Research-specific
+    algorithm_variants: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Predefined algorithm variants for testing"
+    )
+    
+    @validator('stop_selection_costs', 'matching_costs', 'dispatch_costs', 'routing_costs')
+    def validate_cost_dict(cls, v):
+        """Validate that cost dictionaries sum to 1.0"""
+        if abs(sum(v.values()) - 1.0) > 1e-5:
+            raise ValueError("Costs must sum to 1.0")
+        return v
 
-@dataclass
+class ExperimentParameters(BaseParameters):
+    """Parameters specific to research experiments"""
+    # Experiment identification
+    name: str
+    type: ExperimentType
+    description: str
+    tags: List[str] = Field(default_factory=list)
+    
+    # Execution parameters
+    replications: int = Field(default=30, gt=0)
+    random_seeds: Optional[List[int]] = None
+    
+    # Parameter variations
+    parameter_ranges: Dict[str, List[Any]] = Field(
+        default_factory=dict,
+        description="Parameters to vary in the experiment"
+    )
+    
+    # Analysis configuration
+    metrics: List[str] = Field(default_factory=list)
+    statistical_tests: List[str] = Field(default_factory=list)
+    
+    @validator('random_seeds')
+    def validate_seeds(cls, v, values):
+        """Ensure enough random seeds for replications"""
+        if v is not None and len(v) < values['replications']:
+            raise ValueError("Must provide at least as many random seeds as replications")
+        return v
+
 class ScenarioParameters(BaseParameters):
-    """Complete scenario parameters"""
+    """Enhanced scenario parameters with research support"""
+    # Identification
     name: str
     description: str
+    
+    # Core components
     simulation: SimulationParameters
     vehicle: VehicleParameters
     demand: DemandParameters
     stop: StopParameters
     algorithm: AlgorithmParameters
+    
+    # Infrastructure
     network_file: Path
     output_directory: Path
-
-@dataclass
-class StopSelectionCosts(BaseParameters):
-    """Costs related to stop selection and placement"""
-    walking_distance: float = 0.3
-    coverage: float = 0.2
-    accessibility: float = 0.15
-    safety: float = 0.15
-    demand_density: float = 0.1
-    transfer_potential: float = 0.05
-    infrastructure: float = 0.05
-
-@dataclass
-class MatchingCosts(BaseParameters):
-    """Costs related to matching passengers to vehicles"""
-    wait_time: float = 0.3
-    detour_time: float = 0.25
-    vehicle_capacity: float = 0.15
-    ride_time: float = 0.15
-    passenger_preference: float = 0.1
-    vehicle_suitability: float = 0.05
-
-@dataclass
-class DispatchCosts(BaseParameters):
-    """Costs related to vehicle dispatch decisions"""
-    idle_time: float = 0.25
-    deadhead_distance: float = 0.2
-    fleet_distribution: float = 0.15
-    energy_consumption: float = 0.15
-    vehicle_load: float = 0.15
-    time_to_pickup: float = 0.1
-
-@dataclass
-class RoutingCosts(BaseParameters):
-    """Costs related to route calculation"""
-    distance: float = 0.3
-    travel_time: float = 0.25
-    reliability: float = 0.15
-    road_type: float = 0.1
-    traffic_conditions: float = 0.1
-    turns_complexity: float = 0.05
-    elevation: float = 0.05
-
-@dataclass
-class RebalancingCosts(BaseParameters):
-    """Costs related to vehicle rebalancing"""
-    demand_prediction: float = 0.3
-    current_coverage: float = 0.25
-    distance_to_hotspot: float = 0.2
-    time_of_day: float = 0.15
-    historical_patterns: float = 0.1
-
-@dataclass
-class AlgorithmParameters(BaseParameters):
-    """Refined algorithm-specific parameters"""
-    # Algorithm selections
-    routing_algorithm: AlgorithmType
-    dispatch_algorithm: AlgorithmType
-    matching_algorithm: AlgorithmType
-    matching_policy: VehicleMatchingPolicy
     
-    # Timing parameters
-    reoptimization_interval: timedelta
-    max_computation_time: timedelta
+    # Research-specific
+    experiment: Optional[ExperimentParameters] = None
+    variant_tag: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     
-    # Component-specific costs
-    stop_selection_costs: StopSelectionCosts
-    matching_costs: MatchingCosts
-    dispatch_costs: DispatchCosts
-    routing_costs: RoutingCosts
-    rebalancing_costs: RebalancingCosts
-    
-    # Additional algorithm-specific parameters
-    batch_size: int = 10
-    batch_interval: timedelta = timedelta(seconds=30)
-    max_matches_per_vehicle: int = 3
-    max_waiting_requests: int = 100
-    min_pickup_delay: timedelta = timedelta(minutes=5)
-    max_pickup_delay: timedelta = timedelta(minutes=30)
-    
-    def validate_costs(self):
-        """Validate that each cost component sums to 1.0"""
-        cost_groups = [
-            ('stop_selection_costs', self.stop_selection_costs),
-            ('matching_costs', self.matching_costs),
-            ('dispatch_costs', self.dispatch_costs),
-            ('routing_costs', self.routing_costs),
-            ('rebalancing_costs', self.rebalancing_costs)
-        ]
+    def create_variant(
+        self,
+        variant_name: str,
+        modifications: Dict[str, Any]
+    ) -> ScenarioParameters:
+        """Create a variant of this scenario with specified modifications"""
+        data = self.dict()
+        data['name'] = f"{self.name}_{variant_name}"
+        data['variant_tag'] = variant_name
         
-        for name, cost_group in cost_groups:
-            total = sum(float(getattr(cost_group, field.name)) 
-                       for field in fields(cost_group))
-            if not math.isclose(total, 1.0, rel_tol=1e-5):
-                raise ValueError(
-                    f"{name} weights sum to {total}, expected 1.0"
-                )
+        # Apply modifications
+        for key, value in modifications.items():
+            components = key.split('.')
+            current = data
+            for component in components[:-1]:
+                current = current[component]
+            current[components[-1]] = value
+            
+        return ScenarioParameters(**data)

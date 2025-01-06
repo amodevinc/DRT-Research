@@ -1,0 +1,84 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+
+# Project specific
+data/*
+!data/networks/
+research/results/*/
+!research/results/.gitkeep
+drt_sim/experiments/results/*/
+!drt_sim/experiments/results/.gitkeep
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation builds
+docs/_build/
+site/
+
+# Plotly and visualization outputs
+*.html
+!docs/**/*.html
+
+# State files
+**/states/state_history.json
+
+# Configuration backups
+*.yaml.bak
+*.yml.bak

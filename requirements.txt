@@ -1,0 +1,14 @@
+folium 
+plotly 
+pandas 
+numpy 
+matplotlib 
+seaborn
+rich
+pyyaml
+gitpython
+scipy
+hydra-core
+omegaconf
+mlflow
+ray

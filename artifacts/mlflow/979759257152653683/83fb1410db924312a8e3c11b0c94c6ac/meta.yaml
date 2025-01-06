@@ -1,0 +1,15 @@
+artifact_uri: /Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform/artifacts/mlflow/979759257152653683/83fb1410db924312a8e3c11b0c94c6ac/artifacts
+end_time: 1736070741957
+entry_point_name: ''
+experiment_id: '979759257152653683'
+lifecycle_stage: active
+run_id: 83fb1410db924312a8e3c11b0c94c6ac
+run_name: fleet_demand_study
+run_uuid: 83fb1410db924312a8e3c11b0c94c6ac
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1736070741952
+status: 3
+tags: []
+user_id: alainmorrisdev

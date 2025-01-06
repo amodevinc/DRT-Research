@@ -1,284 +1,250 @@
-Below is a structured implementation plan that translates the blueprint into a series of clear, actionable development steps. Each phase is designed to build upon the previous one, ensuring a stable, modular, and testable foundation from which the system can grow.
+Below is a detailed step-by-step implementation plan, followed by guidelines on how to update the blueprint as the system evolves. Additionally, it includes recommendations on how to provide the updated blueprint to AI tools (e.g., ChatGPT) to maintain context and alignment with the evolving architecture.
 
 ---
 
-## Phase 1: Project Setup & Foundations
+# Implementation Plan
 
-**Goals:**
-- Establish the project directory structure.
-- Set up version control, dependency management, and initial configuration mechanisms.
-- Implement basic testing and logging frameworks.
+## Phase 1: Foundation & Environment Setup
 
-**Key Tasks:**
+**Objectives:**  
+- Establish the project structure, development environment, and basic tooling.
+- Implement core abstractions and interfaces.
 
-1. **Repository Setup:**
-   - Initialize a Git repository.
-   - Add initial `README.md` and `LICENSE`.
-   - Create `setup.py` or `pyproject.toml` and `requirements.txt` for dependency management.
-   - Configure `.gitignore` and basic CI/CD (optional at this stage).
+**Key Steps:**
+1. **Repository Initialization:**  
+   - Create a new Git repository with the proposed directory structure.
+   - Initialize `README.md` and `requirements.txt` or `pyproject.toml` (Poetry or setuptools).
+   - Set up a continuous integration (CI) pipeline (e.g., GitHub Actions) to run tests on every commit.
 
-2. **Directory Structure & Basic Stubs:**
-   - Create the directory skeleton as outlined in the blueprint (`drt_research_platform/` with `drt_sim/`, `tests/`, `docs/`, etc.).
-   - Add `__init__.py` files in each folder to allow package imports.
-   - Populate `docs/` with placeholders (e.g., `getting_started.md`, `api_reference` placeholders).
+2. **Environment & Dependencies:**  
+   - Set up a Python virtual environment.
+   - Install basic dependencies: `numpy`, `pandas`, `pyyaml`/`jsonschema` (for config validation), `abc` (standard library), `pytest` for testing, and possibly `networkx` for preliminary graph operations.
+   - Consider using `black`/`flake8` for code formatting and linting.
 
-3. **Core Utilities & Logging:**
-   - Implement `drt_sim/core/logging_config.py` with a standardized logging setup (levels: DEBUG, INFO, WARNING, ERROR).
-   - Add `drt_sim/utils/random_seed_manager.py` for reproducibility.
-   - Add `drt_sim/utils/caching.py` and `drt_sim/utils/geometry.py` with basic placeholder methods.
+3. **Core Abstract Interfaces:**  
+   - In `drt_sim/algorithms/base_interfaces/`, define abstract base classes for routing, dispatch, matching, cost functions, and user acceptance models.
+   - In `drt_sim/core/`, implement `simulation_engine.py` and `event_manager.py` scaffolds:
+     - `simulation_engine.py` will have a basic discrete event simulation loop interface.
+     - `event_manager.py` will contain methods to schedule and process events, ensuring a clean interface for adding events later.
 
-4. **Testing Framework:**
-   - Choose a test framework (e.g., `pytest`).
-   - Set up `tests/unit/` and add a sample unit test file (e.g., `test_logging.py`) to verify the environment is working correctly.
+4. **Logging & Configuration Infrastructure:**  
+   - Create `drt_sim/config/config_loader.py` to handle reading scenario configurations (YAML/JSON) and validate them with schemas.
+   - Implement `logging_config.py` to configure logging across the system, supporting multiple verbosity levels.
 
-**Deliverables:**
-- Project directory structure committed to version control.
-- Basic logging and utility stubs.
-- A passing initial unit test pipeline to confirm the environment is ready.
+5. **Testing Structure Setup:**
+   - Add unit test scaffolds in `tests/unit/`.
+   - Write basic tests to ensure the infrastructure is sound (e.g., configuration loading works, logging initialization checks).
 
----
-
-## Phase 2: Configuration & Parameter Management
-
-**Goals:**
-- Implement a configuration-driven architecture.
-- Develop scenario loading and parameter parsing.
-
-**Key Tasks:**
-
-1. **Config System:**
-   - Implement `drt_sim/config/parameters.py` to define parameter classes (with type hints and validation).
-   - Implement `drt_sim/config/config_loader.py` to load scenario configs (YAML/JSON) and create parameter objects.
-   - Add a default scenario configuration in `drt_sim/config/defaults/`.
-
-2. **Scenario Definitions:**
-   - Create `drt_sim/config/scenario_definitions.py` to encapsulate scenario-specific logic (e.g., networks, demands, chosen algorithms).
-   - Implement example scenarios in `examples/`.
-
-3. **Testing Configuration:**
-   - Add unit tests for `parameters.py` and `config_loader.py`.
-   - Confirm loading a scenario from a config file works as expected.
-
-**Deliverables:**
-- Ability to specify all simulation parameters via config files.
-- Passing tests that confirm scenario configs are properly loaded and validated.
+**Deliverables by End of Phase 1:**
+- A running skeleton: basic simulation loop (no logic yet), config loading, logging, and abstract interfaces tested by simple unit tests.
 
 ---
 
-## Phase 3: Core Simulation & Event Management
+## Phase 2: Core Simulation Mechanics & State Management
 
-**Goals:**
-- Implement the discrete event simulation (DES) engine and event scheduling logic.
-- Establish a state management system for tracking vehicles, requests, and system time.
+**Objectives:**  
+- Implement the fundamental simulation capabilities: event scheduling, state tracking of vehicles and requests.
+- Integrate a simple network and routing component (e.g., a static shortest path).
 
-**Key Tasks:**
+**Key Steps:**
+1. **State Management & Event Flow:**
+   - In `drt_sim/core/state_management.py`, implement classes for tracking vehicles (position, availability), active requests, and system time.
+   - Ensure simulation events (arrival of a request, vehicle reaching a stop, dispatch decisions) can be created and consumed by the simulation engine.
 
-1. **Simulation Engine & Event Manager:**
-   - Implement `drt_sim/core/simulation_engine.py` with a simulation loop that advances time by events.
-   - Implement `drt_sim/core/event_manager.py` to manage a priority queue of events.
-   - Define event types (e.g., `vehicle_movement_event`, `request_arrival_event`, `dispatch_event`).
+2. **Simple Network Integration:**
+   - In `drt_sim/network/network_loader.py`, load a small test network (e.g., a simple graph from a file).
+   - In `drt_sim/network/graph_operations.py`, implement a basic Dijkstra shortest path solution to allow distance/time queries.
 
-2. **State Management:**
-   - Implement `drt_sim/core/state_management.py` to hold system states (fleet state, request lists, network state).
-   - Ensure integration with configuration for initial fleet positions, initial stops, etc.
+3. **Minimal Scenario Execution:**
+   - Create a basic scenario definition (`scenario_definitions.py`), including a single fleet with a couple of vehicles and a small set of requests.
+   - Test the simulation by running `scripts/run_experiment.py` on this scenario and ensure events process correctly, even if dispatch logic is naive.
 
-3. **Hooks & Integration Points:**
-   - Add `drt_sim/core/hooks.py` to define hooks that allow algorithmic modules (e.g., re-optimization triggers) to be easily plugged in.
-
-4. **Testing the Core Simulation:**
-   - Write unit tests for event insertion, processing, and simulation time advancement.
-   - Test a minimal scenario: a single vehicle, a single request, and verify that events occur in expected order.
-
-**Deliverables:**
-- A functioning DES backbone capable of progressing simulated time and handling events.
-- Basic tests confirming correct event ordering and time progression.
+**Deliverables by End of Phase 2:**
+- A functional simulation engine that can run a simple scenario end-to-end.
+- Vehicles move and respond to events, and requests appear and are recorded, albeit with rudimentary logic.
 
 ---
 
-## Phase 4: Network & Routing Subsystem
+## Phase 3: Demand Modeling & User Behavior Integration
 
-**Goals:**
-- Integrate network data (OSM/GTFS) into a usable graph representation.
-- Implement basic routing functions and confirm shortest path calculations.
+**Objectives:**  
+- Add dynamic demand generation and user behavior models.
+- Integrate acceptance logic for users (e.g., simple logit model).
 
-**Key Tasks:**
-
-1. **Network Loading & Graph Operations:**
-   - Implement `drt_sim/network/network_loader.py` to parse and load OSM/GTFS data into an internal graph structure.
-   - Implement `drt_sim/network/graph_operations.py` with shortest path algorithms (Dijkstra as a start).
-   - Add caching/memoization in `graph_operations.py` for repeated routing queries.
-
-2. **Testing Network Module:**
-   - Add unit tests for shortest path calculations.
-   - Include a small synthetic network in `tests/` for validation.
-
-**Deliverables:**
-- Basic network representation.
-- Verified shortest-path queries.
-- Network integration tested with a scenario that simulates a vehicle moving along a known route.
-
----
-
-## Phase 5: Demand Modeling & User Behavior
-
-**Goals:**
-- Generate dynamic demand (arrivals over time).
-- Implement user segmentation, acceptance models, and pre-bookings.
-
-**Key Tasks:**
-
+**Key Steps:**
 1. **Demand Generation:**
-   - Implement `drt_sim/demand/demand_generator.py` to produce time-based requests.
-   - Implement `drt_sim/demand/prebooking_manager.py` to handle requests scheduled in advance.
-   - Add `drt_sim/demand/user_profiles.py` and `drt_sim/demand/user_acceptance.py` for user attributes and acceptance logic.
+   - In `drt_sim/demand/demand_generator.py`, implement a module that reads demand parameters from scenario config and schedules request-arrival events over time.
+   - Add test cases to verify that demand patterns (e.g., Poisson arrival) generate requests as expected.
 
-2. **Acceptance Models:**
-   - Implement a simple logit model in `algorithms/user_acceptance_models/logit_acceptance.py`.
-   - Integrate the chosen user acceptance model into the simulation process (events triggered when requests appear).
+2. **User Behavior & Acceptance:**
+   - Implement a basic logit-based user acceptance model in `drt_sim/algorithms/user_acceptance_models/logit_acceptance.py`.
+   - Integrate user profiles in `user_profiles.py` and ensure the simulation checks acceptance before committing to pick-ups.
 
-3. **Testing Demand & Behavior:**
-   - Test request generation for various temporal patterns.
-   - Validate acceptance logic using known scenarios (e.g., known probability distributions).
+3. **Pre-Bookings & Patterns:**
+   - Implement `prebooking_manager.py` to handle requests submitted in advance.
+   - Validate with test scenarios that have both immediate and pre-booked requests.
 
-**Deliverables:**
-- Time-varying demand injection into the simulation.
-- Configurable user acceptance behavior and pre-booking functionality.
-- Tests verifying request generation and acceptance outcomes.
-
----
-
-## Phase 6: Algorithmic Interfaces & Plug-Ins
-
-**Goals:**
-- Implement abstract base classes for routing, dispatch, matching, and cost functions.
-- Add one or two concrete algorithm implementations.
-
-**Key Tasks:**
-
-1. **Abstract Interfaces:**
-   - In `drt_sim/algorithms/base_interfaces/`, implement `routing_base.py`, `dispatch_base.py`, `matching_base.py`, `cost_function_base.py`, `user_acceptance_base.py` using Python’s `abc` module.
-   - Define method signatures that all algorithms must implement (e.g., `route(…)`, `dispatch(…)`, `calculate_cost(…)`).
-
-2. **Initial Algorithms:**
-   - Implement a basic routing algorithm (`dijkstra_routing.py`) extending `routing_base`.
-   - Implement a naive dispatch algorithm (`naive_dispatch.py`) extending `dispatch_base`.
-   - Implement a simple cost function (`simple_cost.py`).
-
-3. **Algorithm Selection & Plugin Loader:**
-   - Implement `algorithms/plugin_loader.py` to dynamically load algorithms from config.
-   - Update scenario configs to reference specific algorithm classes.
-
-4. **Testing Algorithms:**
-   - Unit test the naive dispatch logic.
-   - Run a scenario with the naive dispatch and verify the simulation completes successfully.
-
-**Deliverables:**
-- A defined interface structure for easy algorithm integration.
-- At least one complete example of each algorithm type running in the simulation.
-- Tests confirming that algorithm selection from config works correctly.
+**Deliverables by End of Phase 3:**
+- Demand-driven requests appear in the simulation.
+- User acceptance decisions influence whether requests convert into rides.
+- Basic tests confirm functionality.
 
 ---
 
-## Phase 7: Stops & Adaptive Network Features
+## Phase 4: Algorithms (Dispatch, Matching, Routing Enhancements)
 
-**Goals:**
-- Enable dynamic or virtual stop selection.
-- Score stops and iterate over improved stop placements.
+**Objectives:**  
+- Add a first set of dispatch and matching strategies.
+- Allow scenario configurations to specify which algorithms to use.
 
-**Key Tasks:**
+**Key Steps:**
+1. **Dispatch Algorithms:**
+   - Implement a simple First-Come-First-Served (FCFS) dispatch strategy in `algorithms/dispatch/naive_dispatch.py`.
+   - Integrate the dispatch algorithm selection via configuration in `config/parameters.py`.
 
-1. **Stop Management:**
-   - Implement `drt_sim/stops/stop_selector.py` for determining pick-up/drop-off stops.
-   - Implement `drt_sim/stops/stop_scoring.py` and possibly `drt_sim/stops/adaptive_stop_placement.py` to adapt stops based on historical performance.
+2. **Matching Strategies:**
+   - Implement a basic batch matching approach in `algorithms/matching/batch_matching.py`.
+   - Ensure that the simulation periodically triggers matching events (e.g., every X simulated seconds) to match pending requests to vehicles.
 
-2. **Testing Stops:**
-   - Provide a test scenario with known stops.
-   - Verify that adaptive logic improves or changes stop placement over multiple simulation runs.
+3. **Routing Variants:**
+   - Add time-dependent shortest path or genetic algorithm-based routing as a new routing module in `algorithms/routing/`.
+   - Switch routing strategies via scenario configuration to demonstrate modularity.
 
-**Deliverables:**
-- Functionality to dynamically manage stops.
-- Tests confirming correct scoring and placement logic.
+4. **Cost Functions:**
+   - Implement a simple cost function (e.g., travel time + wait time) in `algorithms/cost_functions/simple_cost.py`.
 
----
-
-## Phase 8: Analysis, Visualization & Experiment Management
-
-**Goals:**
-- Provide tools for metrics collection, scenario comparison, and visualization.
-- Implement reproducibility features and parameter sweeps.
-
-**Key Tasks:**
-
-1. **Analysis Tools:**
-   - Implement `drt_sim/analysis/metrics_collection.py` to track KPIs (wait times, utilization).
-   - Implement `drt_sim/analysis/statistics.py` for statistical tests.
-   - Implement `drt_sim/analysis/visualization.py` for generating maps, charts, and heatmaps.
-   - Implement `drt_sim/analysis/scenario_comparison.py` and `drt_sim/analysis/pareto_analysis.py`.
-
-2. **Experiment Management:**
-   - Implement `drt_sim/experiments/parameter_sweeps.py` and `drt_sim/experiments/batch_runner.py` to run multiple scenarios automatically.
-   - Implement `drt_sim/experiments/reproducibility_tools.py` to log seeds and parameters.
-
-3. **Testing & Validation:**
-   - Run a parameter sweep test and confirm that metrics and visualization outputs are generated.
-   - Validate statistical methods on synthetic data.
-
-**Deliverables:**
-- A toolkit to analyze simulation results, compare scenarios, and visualize outcomes.
-- Batch processing and reproducibility support.
-- Tests and examples demonstrating the analysis workflows.
+**Deliverables by End of Phase 4:**
+- Multiple dispatch and routing algorithms that can be chosen from scenario configs.
+- Confirm through scenario tests that changing dispatch or routing algorithms affects results as expected.
 
 ---
 
-## Phase 9: Documentation, Examples & Refinement
+## Phase 5: Stop Selection & Network Adaptation
 
-**Goals:**
-- Improve documentation for users and researchers.
-- Provide example scenarios and guides in `docs/` and `examples/`.
-- Refine code quality, optimize performance where needed.
+**Objectives:**  
+- Introduce virtual stops and adaptive stop placement.
+- Incorporate logic to handle network disruptions.
 
-**Key Tasks:**
+**Key Steps:**
+1. **Stop Selection:**
+   - In `stops/stop_selector.py`, implement a method to generate or select stops based on scenario parameters.
+   - Optionally, integrate clustering algorithms for virtual stop placement.
 
-1. **Documentation:**
-   - Update `docs/guides/*.md` with instructions on running simulations, adding new algorithms, and conducting experiments.
-   - Generate API reference docs using Sphinx or another documentation tool.
+2. **Adaptive Network Components:**
+   - Implement `disruptions.py` to simulate link closures or delays.
+   - Test adaptive routing (if scenario configured) to confirm vehicles reroute or stops shift.
 
-2. **Examples:**
-   - Add fleshed-out scenarios in `examples/` (e.g., a prebooking scenario, GA dispatch scenario, logit acceptance scenario).
-   - Provide sample commands in `scripts/run_experiment.py` and `scripts/analyze_results.py`.
-
-3. **Code Review & Optimization:**
-   - Profile code for performance bottlenecks and apply optimizations (e.g., caching routing results).
-   - Conduct code quality reviews to ensure readability, maintainability, and adherence to coding standards.
-
-4. **Final Testing:**
-   - Run integration tests across multiple scenarios.
-   - Confirm regression tests and performance tests pass.
-
-**Deliverables:**
-- Comprehensive documentation and tutorials.
-- Well-tested, refined codebase ready for research use.
-- Validated examples demonstrating core functionalities.
+**Deliverables by End of Phase 5:**
+- System handles dynamic stop configurations.
+- Disruptions reflect in routing decisions and affect simulation outcomes.
 
 ---
 
-## Phase 10: Extensions & Future Integration
+## Phase 6: Analysis & Visualization Tools
 
-**Goals:**
-- Integrate optional external tools (ML models, traffic simulators, optimization solvers).
-- Explore advanced features like RL-based dispatch, advanced user acceptance models, and more.
+**Objectives:**  
+- Implement analysis modules to collect metrics, generate plots, and compare scenarios.
+- Enhance reproducibility and reporting.
 
-**Key Tasks (Ongoing):**
-- Implement `drt_sim/integration/external_solvers.py` to connect with OR-Tools or Gurobi.
-- Incorporate advanced ML models via `drt_sim/integration/ml_integration.py`.
-- Set up experiments to test new algorithms or acceptance models.
+**Key Steps:**
+1. **Metrics & Analysis:**
+   - In `analysis/metrics_collection.py`, record user wait times, in-vehicle times, vehicle utilization, etc.
+   - Implement `analysis/statistics.py` to compute averages, confidence intervals, and perform statistical comparisons between runs.
 
-**Deliverables:**
-- A living platform that can be continuously extended with new research ideas.
-- Documented paths for integrating external systems and novel methodologies.
+2. **Visualization:**
+   - In `analysis/visualization.py`, implement functions to create maps, time-series charts, or route animations.
+   - Test by generating output plots for simple scenarios.
+
+3. **Scenario Comparison:**
+   - `analysis/scenario_comparison.py` to compare multiple scenario runs and highlight differences in KPIs.
+
+**Deliverables by End of Phase 6:**
+- A set of scripts and modules that can produce comprehensive reports and visuals.
+- Validated output on test scenarios.
 
 ---
 
-## Conclusion
+## Phase 7: Experiment Management & Reproducibility
 
-This step-by-step implementation plan ensures the development of a robust, modular, and research-focused DRT simulation platform. By following these phases—starting from foundational setup, moving through core simulation and algorithms, and culminating in analysis, documentation, and future integrations—developers and researchers will have a clear roadmap to realize the full vision outlined in the blueprint.
+**Objectives:**  
+- Finalize experiment management tools.
+- Ensure parameter sweeps, batch experiments, and reproducible runs are straightforward.
+
+**Key Steps:**
+1. **Parameter Sweeps & Batch Runs:**
+   - Implement `experiments/parameter_sweeps.py` and `experiments/batch_runner.py` to run multiple scenarios automatically.
+   - Integrate logging of random seeds and configuration snapshots for reproducibility.
+
+2. **Documentation & Guides:**
+   - Update `docs/guides/` with instructions on how to run experiments, integrate new algorithms, and analyze results.
+
+**Deliverables by End of Phase 7:**
+- A fully functional platform ready for research use.
+- Documentation and guides to empower researchers.
+
+---
+
+# Updating the Blueprint as the System Evolves
+
+As you build out the system, the blueprint should evolve to reflect new capabilities, changes in architecture, and lessons learned. A consistent approach will ensure that ChatGPT (or similar AI assistants) can stay aligned with the current state of the system:
+
+1. **Maintain a Single Source of Truth for the Blueprint:**  
+   Keep the blueprint in a version-controlled document (e.g., `docs/design_overviews/system_blueprint.md`). This file should always represent the *current* state of the system.
+
+2. **Versioning the Blueprint:**  
+   - Add a version number or date-stamp at the top of the blueprint.
+   - Each time significant changes are made to the architecture, increment the version and briefly summarize changes in a “Change History” section at the end of the blueprint.
+
+3. **Modular Sections:**  
+   Break the blueprint into logical sections mirroring the directory structure and functionalities:
+   - Core Simulation
+   - Demand & User Behavior
+   - Algorithms (Dispatch, Routing, Matching, Cost Functions)
+   - Network & Stops
+   - Analysis & Visualization
+   - Experiments & Reproducibility
+   - Integration & Extensions
+
+   When updating, modify only the relevant sections and note these modifications in the Change History.
+
+4. **Adding Context for AI Assistants:**  
+   When providing the blueprint to an AI assistant like ChatGPT:
+   - Paste the entire updated blueprint into the session, or host it in a repository and provide a link.
+   - Clearly state which version of the blueprint you are currently using (e.g., “We are now on version 1.3 of the blueprint”).
+   - Summarize what has changed since the previous version (e.g., “We have added a new RL-based dispatch algorithm and updated the user acceptance model section to include ML-based predictions”).
+
+5. **Incremental Updates:**  
+   After implementing a new feature (e.g., adding a new routing algorithm):
+   - Update the corresponding section in the blueprint (e.g., add `algorithms/routing/new_cool_routing.py` and describe its key parameters and interfaces).
+   - Commit the updated blueprint to version control.
+   - Next time you consult ChatGPT, provide the updated version and highlight the new or changed parts.
+
+6. **Keep Documentation Aligned:**  
+   Ensure `docs/guides/` and `docs/design_overviews/` stay consistent with the blueprint. The blueprint is the high-level reference; detailed guides should link back to relevant blueprint sections.
+
+---
+
+# Providing Context to AI Tools
+
+To keep an AI chatbot like ChatGPT aligned with your evolving system:
+
+1. **Session Initialization:**  
+   At the start of an AI session, include a short introduction:  
+   “We are working on a DRT Research Simulation Platform. Here is the current blueprint (Version 1.3). Key changes since last version: Added RL-based dispatch and refined user acceptance models.”
+
+2. **Linking or Pasting the Blueprint:**  
+   - Paste the full updated blueprint into the chat if possible (or attach a link to it).
+   - If the blueprint is too large, provide a summarized version with references to the sections you want ChatGPT to focus on.
+
+3. **Ask Specific Questions in Context:**  
+   When asking the chatbot to help implement new features or fix issues, reference the blueprint sections explicitly:
+   - “According to the `algorithms/dispatch/` section of the blueprint, we have a new RL-based dispatch. Could you help me write a test for it?”
+   - “Referring to the updated user acceptance model described in `algorithms/user_acceptance_models/ml_acceptance.py`, how can I integrate it with scenario configurations?”
+
+By always referencing the current version of the blueprint and highlighting recent changes, you ensure that ChatGPT interprets your queries in the correct architectural context.
+
+---
+
+# Conclusion
+
+Following the step-by-step implementation plan will allow you to build the system incrementally and robustly. By maintaining and versioning the blueprint and presenting it consistently to AI tools, you ensure that AI-assisted development remains aligned with the system’s evolving architecture and goals.

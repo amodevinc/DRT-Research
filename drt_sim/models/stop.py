@@ -1,15 +1,7 @@
 # drt_sim/models/stop.py
-from dataclasses import dataclass
-from typing import List, Dict
+from dataclasses import dataclass, field
+from typing import Dict, Any
 from enum import Enum
-from .base import ModelBase
-from .location import Location
-
-class StopType(Enum):
-    VIRTUAL = "virtual"
-    PHYSICAL = "physical"
-    HUB = "hub"
-    TRANSFER = "transfer"
 
 class StopStatus(Enum):
     ACTIVE = "active"
@@ -18,24 +10,26 @@ class StopStatus(Enum):
     MAINTENANCE = "maintenance"
 
 @dataclass
-class StopFacilities:
-    shelter: bool
-    seating: bool
-    lighting: bool
-    accessibility_features: List[str]
-    bike_rack: bool
-    monitoring: bool
+class Stop:
+    id: str
+    name: str
+    location: Dict[str, float]  # e.g., {'latitude': 37.7749, 'longitude': -122.4194}
+    status: StopStatus = StopStatus.INACTIVE
+    congestion_level: str = 'low'  # Options: 'low', 'moderate', 'high'
+    current_load: int = 0
+    capacity: int = 50  # Example capacity
+    capacity_exceeded: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
-@dataclass
-class Stop(ModelBase):
-    type: StopType
-    location: Location
-    status: StopStatus
-    capacity: int
-    facilities: Optional[StopFacilities]
-    service_radius: float  # meters
-    operating_hours: Dict[str, List[str]]
-    safety_score: float
-    accessibility_score: float
-    average_waiting_time: float
-    historical_usage: Dict[str, int]
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'name': self.name,
+            'location': self.location,
+            'status': self.status.value,
+            'congestion_level': self.congestion_level,
+            'current_load': self.current_load,
+            'capacity': self.capacity,
+            'capacity_exceeded': self.capacity_exceeded,
+            'metadata': self.metadata
+        }
