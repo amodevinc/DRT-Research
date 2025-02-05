@@ -1,7 +1,6 @@
 # drt_sim/core/state/manager.py
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from datetime import datetime
-import logging
 from pathlib import Path
 import json
 
@@ -12,18 +11,31 @@ from drt_sim.core.state.workers import (
     RequestStateWorker,
     RouteStateWorker,
     PassengerStateWorker,
-    StopStateWorker
+    StopStateWorker,
+    StopAssignmentStateWorker,
+    AssignmentStateWorker
 )
-from drt_sim.models.simulation import SimulationState, SimulationStatus
+from drt_sim.models.simulation import (
+    SimulationState, 
+    SimulationStatus, 
+    VehicleSystemState, 
+    RequestSystemState, 
+    PassengerSystemState, 
+    RouteSystemState, 
+    StopSystemState,
+    StopAssignmentSystemState,
+    AssignmentSystemState
+)
 from drt_sim.config.config import ScenarioConfig, SimulationConfig
 from drt_sim.core.logging_config import setup_logger
 
+logger = setup_logger(__name__)
 class StateManager:
     """Coordinates multiple state workers and manages system-wide state"""
     
     def __init__(self, config: ScenarioConfig, sim_cfg: SimulationConfig):
         self.config = config
-        self.logger = setup_logger(self.__class__.__name__)
+        self.logger = setup_logger(__name__)
         
         # Initialize state workers
         self.stop_worker = StopStateWorker()
@@ -31,13 +43,16 @@ class StateManager:
         self.request_worker = RequestStateWorker()
         self.route_worker = RouteStateWorker()
         self.passenger_worker = PassengerStateWorker()
-        
+        self.stop_assignment_worker = StopAssignmentStateWorker()
+        self.assignment_worker = AssignmentStateWorker()
         self.workers: List[StateWorker] = [
             self.vehicle_worker,
             self.request_worker,
             self.route_worker,
             self.passenger_worker,
-            self.stop_worker
+            self.stop_worker,
+            self.stop_assignment_worker,
+            self.assignment_worker
         ]
         
         self.metrics: Dict[str, float] = {}
@@ -46,10 +61,13 @@ class StateManager:
         self.state = SimulationState(
             current_time=datetime.fromisoformat(sim_cfg.start_time),
             status=SimulationStatus.INITIALIZED,
-            metrics={},
             vehicles={},
             requests={},
-            routes={}
+            routes={},
+            passengers={},
+            stops={},
+            stop_assignments={},
+            assignments={}
         )
         
         # Initialize workers with their configs
@@ -61,8 +79,14 @@ class StateManager:
             self.vehicle_worker.initialize(self.config.vehicle)
             self.request_worker.initialize()
             self.route_worker.initialize()
-            self.stop_worker.initialize()
+            self.stop_worker.initialize(
+                {
+                    "depot_locations": self.config.vehicle.depot_locations
+                }
+            )
             self.passenger_worker.initialize()
+            self.stop_assignment_worker.initialize()
+            self.assignment_worker.initialize()
             self.logger.info("State manager initialized successfully")
         except Exception as e:
             self.logger.error(f"State initialization failed: {str(e)}")
@@ -76,13 +100,6 @@ class StateManager:
         except Exception as e:
             self.logger.error(f"Failed to take snapshot: {str(e)}")
             raise
-            
-    def get_metrics(self) -> Dict[str, Any]:
-        """Collect metrics from all workers"""
-        metrics = {}
-        for worker in self.workers:
-            metrics.update(worker.get_metrics())
-        return metrics
         
     def set_state(self, state: SimulationState) -> None:
         """Set the current state"""
@@ -95,6 +112,9 @@ class StateManager:
             self.vehicle_worker.update_state(state.vehicles)
             self.request_worker.update_state(state.requests)
             self.route_worker.update_state(state.routes)
+            self.stop_worker.update_state(state.stops)
+            self.stop_assignment_worker.update_state(state.stop_assignments)
+            self.assignment_worker.update_state(state.assignments)
             self.logger.debug(f"State updated successfully: {state.status}")
         except Exception as e:
             self.logger.error(f"Failed to set state: {str(e)}")
@@ -114,15 +134,26 @@ class StateManager:
         if not self.state:
             raise RuntimeError("State not initialized")
             
+        # Get component states
+        vehicle_state = self.vehicle_worker.get_state()
+        request_state = self.request_worker.get_state()
+        passenger_state = self.passenger_worker.get_state()
+        route_state = self.route_worker.get_state()
+        stop_state = self.stop_worker.get_state()
+        stop_assignment_state = self.stop_assignment_worker.get_state()
+        assignment_state = self.assignment_worker.get_state()
         return SimulationState(
             current_time=self.state.current_time,
             status=self.state.status,
-            metrics=self.get_metrics(),
-            vehicles=self.vehicle_worker.get_state(),
-            requests=self.request_worker.get_state(),
-            routes=self.route_worker.get_state()
+            vehicles=vehicle_state,
+            requests=request_state,
+            passengers=passenger_state,
+            routes=route_state,
+            stops=stop_state,
+            stop_assignments=stop_assignment_state,
+            assignments=assignment_state
         )
-        
+            
     def begin_transaction(self) -> None:
         """Begin state transaction across all workers"""
         for worker in self.workers:

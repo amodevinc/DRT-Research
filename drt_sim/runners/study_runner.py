@@ -3,18 +3,22 @@ from typing import Dict, Any, List, Optional
 import logging
 import yaml
 import mlflow
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
+import asyncio
+import ray
+from itertools import product
 
 from .experiment_runner import ExperimentRunner
-from ..config.config import (
+from drt_sim.config.config import (
     StudyConfig,
     StudyType,
     ExperimentConfig,
-    StudyMetadata,
-    ParameterSweepConfig
 )
+from drt_sim.core.paths import create_simulation_environment
+from drt_sim.core.logging_config import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 class StudyRunner:
     """Runner for managing simulation studies with multiple experiments"""
@@ -28,6 +32,22 @@ class StudyRunner:
         """
         self.cfg = cfg
         self.experiment_runners: Dict[str, ExperimentRunner] = {}
+        
+        # Initialize path management
+        self.sim_paths = create_simulation_environment()
+        self.study_paths = self.sim_paths.get_study_paths(self.cfg.metadata.name)
+        
+        # Generate a unique study ID
+        self.study_id = f"{self.cfg.metadata.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Store study metadata
+        self.study_metadata = {
+            'study_id': self.study_id,
+            'study_name': self.cfg.metadata.name,
+            'study_type': self.cfg.type.value,
+            'study_version': self.cfg.metadata.version,
+            'study_paths': self.study_paths
+        }
         
         # Validate configuration
         self._validate_config()
@@ -43,10 +63,16 @@ class StudyRunner:
                 
         elif not self.cfg.experiments:
             raise ValueError("At least one experiment configuration is required for non-parameter sweep studies")
-
+            
     def setup(self) -> None:
         """Set up study environment and initialize experiments"""
         logger.info(f"Setting up study: {self.cfg.metadata.name}")
+        
+        # Create directory structure
+        self.study_paths.ensure_study_structure()
+        
+        # Set up logging to file
+        self._setup_logging()
         
         # Set up MLflow tracking
         self._setup_tracking()
@@ -58,15 +84,19 @@ class StudyRunner:
         self._save_study_config()
         
         logger.info(f"Study setup completed for: {self.cfg.metadata.name}")
-
+        
+    def _setup_logging(self) -> None:
+        """Configure logging to file"""
+        log_file = self.study_paths.logs / "study.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        ))
+        logger.addHandler(file_handler)
+        
     def _setup_tracking(self) -> None:
         """Configure MLflow tracking"""
-        # Use MLflow config if provided, otherwise use default paths
-        tracking_uri = (self.cfg.paths.get_study_dir(self.cfg.metadata.name) / "mlflow")
-
-        logger.info(f"Setting up MLflow tracking with URI: {tracking_uri}")
-        
-        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_tracking_uri(str(self.study_paths.mlruns))
         mlflow.set_experiment(self.cfg.metadata.name)
         
         # Log study metadata
@@ -74,16 +104,17 @@ class StudyRunner:
             "study_type": self.cfg.type.value,
             "study_version": self.cfg.metadata.version,
             "authors": ", ".join(self.cfg.metadata.authors),
-            "tags": ", ".join(self.cfg.metadata.tags)
+            "tags": ", ".join(self.cfg.metadata.tags),
+            "timestamp": datetime.now().isoformat()
         })
-
+        
     def _initialize_experiments(self) -> None:
         """Initialize experiments based on study type"""
         if self.cfg.type == StudyType.PARAMETER_SWEEP:
             self._initialize_parameter_sweep()
         else:
             self._initialize_standard_experiments()
-
+            
     def _initialize_parameter_sweep(self) -> None:
         """Initialize experiments for parameter sweep study"""
         if not self.cfg.parameter_sweep or not self.cfg.parameter_sweep.enabled:
@@ -91,18 +122,25 @@ class StudyRunner:
             
         logger.info("Initializing parameter sweep experiments")
         param_configs = self._generate_parameter_combinations()
+        logger.info(f"Param Configs: {param_configs}")
+        logger.info(f"Generated {len(param_configs)} parameter combinations")
         
         for i, param_config in enumerate(param_configs):
             exp_name = f"sweep_{i}"
-            exp_config = self._create_sweep_experiment_config(param_config, exp_name)
-            self.experiment_runners[exp_name] = ExperimentRunner(exp_config, self.cfg.simulation)
+            exp_paths = self.study_paths.get_experiment_paths(exp_name)
+            exp_paths.ensure_experiment_structure()
             
-        logger.info(f"Created {len(param_configs)} parameter sweep experiments")
-
+            exp_config = self._create_sweep_experiment_config(param_config, exp_name)
+            
+            self.experiment_runners[exp_name] = ExperimentRunner(
+                cfg=exp_config,
+                sim_cfg=self.cfg.simulation,
+                paths=exp_paths,
+                study_metadata=self.study_metadata
+            )
+            
     def _generate_parameter_combinations(self) -> List[Dict[str, Any]]:
         """Generate all parameter combinations for sweep"""
-        from itertools import product
-        
         sweep_config = self.cfg.parameter_sweep
         if not sweep_config or not sweep_config.parameters:
             raise ValueError("Parameter sweep configuration is invalid")
@@ -115,7 +153,7 @@ class StudyRunner:
             combinations.append(dict(zip(param_names, values)))
             
         return combinations
-
+        
     def _create_sweep_experiment_config(self, param_config: Dict[str, Any], name: str) -> ExperimentConfig:
         """Create experiment configuration for a parameter combination"""
         # Start with base configuration
@@ -129,22 +167,30 @@ class StudyRunner:
             for part in parts:
                 current = current.setdefault(part, {})
             current[last] = value
+        
+        logger.info(f'Base Config for sweep: {config}')
             
-        # Create ExperimentConfig
+        scenario_config = config.copy()
+            
         return ExperimentConfig(
             name=name,
             description=f"Parameter sweep configuration: {param_config}",
-            scenarios={"default": config},
+            scenarios={"default": scenario_config},
             metrics=self.cfg.metrics if hasattr(self.cfg, 'metrics') else None,
-            random_seed=42
+            variant=f"sweep_{name}",
+            tags=[f"{k}={v}" for k, v in param_config.items()]
         )
-
+        
     def _initialize_standard_experiments(self) -> None:
         """Initialize standard (non-sweep) experiments"""
         logger.info("Initializing standard experiments")
         
         for exp_name, exp_cfg in self.cfg.experiments.items():
             logger.info(f"Initializing experiment: {exp_name}")
+            
+            # Get paths for this experiment
+            exp_paths = self.study_paths.get_experiment_paths(exp_name)
+            exp_paths.ensure_experiment_structure()
             
             # Ensure experiment config is properly typed
             if not isinstance(exp_cfg, ExperimentConfig):
@@ -154,9 +200,14 @@ class StudyRunner:
             if not exp_cfg.metrics and hasattr(self.cfg, 'metrics'):
                 exp_cfg.metrics = self.cfg.metrics
                 
-            self.experiment_runners[exp_name] = ExperimentRunner(exp_cfg, self.cfg.simulation)
-
-    def run(self) -> Dict[str, Any]:
+            self.experiment_runners[exp_name] = ExperimentRunner(
+                cfg=exp_cfg,
+                sim_cfg=self.cfg.simulation,
+                paths=exp_paths,
+                study_metadata=self.study_metadata
+            )
+            
+    async def run(self) -> Dict[str, Any]:
         """Execute all experiments in the study"""
         results = {}
         active_run = None
@@ -168,40 +219,39 @@ class StudyRunner:
             except Exception:
                 pass
                 
-            # Start new run
             active_run = mlflow.start_run(run_name=self.cfg.metadata.name)
             self._log_study_params()
 
-            # Execute experiments based on execution configuration
+            # Determine execution mode
             if (hasattr(self.cfg, 'execution') and 
-                hasattr(self.cfg.execution, 'distributed') and 
                 self.cfg.execution.distributed and 
                 self.cfg.settings.get('parallel_experiments', False)):
-                results = self._run_parallel()
+                results = await self._run_parallel()
             else:
-                results = self._run_sequential()
+                results = await self._run_sequential()
 
             # Process and save results
-            self._save_results(results)
-            self._log_study_metrics(results)
-
-            return results
+            processed_results = self._process_results(results)
+            self._log_study_metrics(processed_results)
+            
+            return processed_results
+            
         except Exception as e:
             logger.error(f"Study execution failed: {str(e)}")
             raise
+            
         finally:
-            # Ensure MLflow run is ended
             if active_run:
                 mlflow.end_run()
-
-    def _run_sequential(self) -> Dict[str, Any]:
+                
+    async def _run_sequential(self) -> Dict[str, Any]:
         """Run experiments sequentially"""
         results = {}
         
         for exp_name, runner in self.experiment_runners.items():
             try:
                 logger.info(f"Running experiment: {exp_name}")
-                results[exp_name] = runner.run()
+                results[exp_name] = await runner.run()
             except Exception as e:
                 logger.error(f"Experiment {exp_name} failed: {str(e)}")
                 results[exp_name] = {"status": "failed", "error": str(e)}
@@ -210,99 +260,173 @@ class StudyRunner:
                     raise
                     
         return results
-
-    def _run_parallel(self) -> Dict[str, Any]:
-        """Run experiments in parallel using Ray"""
-        import ray
         
+    async def _run_parallel(self) -> Dict[str, Any]:
+        """Run experiments in parallel using Ray"""
         if not ray.is_initialized():
             ray.init(
                 num_cpus=self.cfg.execution.max_parallel,
                 ignore_reinit_error=True
             )
         
-        # Convert experiment runners to Ray actors
-        futures = []
-        for exp_name, runner in self.experiment_runners.items():
-            future = runner.run.remote()
-            futures.append((exp_name, future))
-        
-        # Collect results
         results = {}
-        for exp_name, future in futures:
+        tasks = []
+        
+        for exp_name, runner in self.experiment_runners.items():
+            task = asyncio.create_task(runner.run())
+            tasks.append((exp_name, task))
+        
+        for exp_name, task in tasks:
             try:
-                results[exp_name] = ray.get(future)
+                results[exp_name] = await task
             except Exception as e:
                 logger.error(f"Experiment {exp_name} failed: {str(e)}")
                 results[exp_name] = {"status": "failed", "error": str(e)}
                 
                 if not self.cfg.settings.get('continue_on_error', False):
+                    # Cancel remaining tasks
+                    for _, remaining_task in tasks:
+                        remaining_task.cancel()
                     break
                     
         return results
-
+        
+    def _process_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Process and aggregate results from all experiments"""
+        processed = {
+            "study_name": self.cfg.metadata.name,
+            "study_type": self.cfg.type.value,
+            "timestamp": datetime.now().isoformat(),
+            "experiments": results,
+            "summary": {
+                "total_experiments": len(self.experiment_runners),
+                "completed_experiments": sum(
+                    1 for exp in results.values()
+                    if isinstance(exp, dict) and exp.get("status") != "failed"
+                ),
+                "failed_experiments": sum(
+                    1 for exp in results.values()
+                    if isinstance(exp, dict) and exp.get("status") == "failed"
+                )
+            }
+        }
+        
+        return processed
+        
     def _log_study_params(self) -> None:
         """Log study parameters to MLflow"""
-        mlflow.log_params({
+        params = {
             "study_name": self.cfg.metadata.name,
             "study_type": self.cfg.type.value,
             "num_experiments": len(self.experiment_runners),
-            "version": self.cfg.metadata.version
-        })
-
+            "version": self.cfg.metadata.version,
+            "random_seed": self.cfg.random_seed if hasattr(self.cfg, 'random_seed') else None
+        }
+        
+        if self.cfg.type == StudyType.PARAMETER_SWEEP:
+            params.update({
+                "sweep_parameters": str(list(self.cfg.parameter_sweep.parameters.keys())),
+                "num_combinations": len(self._generate_parameter_combinations())
+            })
+            
+        mlflow.log_params(params)
+        
     def _log_study_metrics(self, results: Dict[str, Any]) -> None:
         """Log study-level metrics to MLflow"""
         metrics = {
-            "completed_experiments": sum(1 for r in results.values() 
-                                      if isinstance(r, dict) and r.get("status") != "failed"),
-            "failed_experiments": sum(1 for r in results.values() 
-                                   if isinstance(r, dict) and r.get("status") == "failed")
+            "completed_experiments": results["summary"]["completed_experiments"],
+            "failed_experiments": results["summary"]["failed_experiments"],
+            "completion_rate": (results["summary"]["completed_experiments"] / 
+                              results["summary"]["total_experiments"])
         }
         mlflow.log_metrics(metrics)
-
+        
     def _save_study_config(self) -> None:
         """Save the study configuration"""
-        config_path = self.cfg.paths.get_study_dir(self.cfg.metadata.name) / "configs" / "study_config.yaml"
+        config_path = self.study_paths.config / "study_config.yaml"
         self.cfg.save(config_path)
         logger.info(f"Saved study configuration to {config_path}")
-
-    def _save_results(self, results: Dict[str, Any]) -> None:
-        """Save study results"""
-        study_dir = self.cfg.paths.get_study_dir(self.cfg.metadata.name)
-        results_path = study_dir / "results" / "study_results.yaml"
         
-        # Create backup if file exists and backup is enabled
-        if results_path.exists() and self.cfg.settings.get('backup_existing', True):
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = results_path.with_name(f"study_results_{timestamp}.yaml")
-            results_path.rename(backup_path)
+    def _extract_experiment_summary(self, exp_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract key information for experiment summary"""
+        if not isinstance(exp_results, dict):
+            return {"status": "invalid_results"}
+        return {
+            "status": exp_results.get("status", "unknown"),
+            "num_scenarios": len(exp_results.get("scenarios", {})),
+            "error": exp_results.get("error"),
+            "execution_time": exp_results.get("execution_time"),
+            "metrics": exp_results.get("metrics", {})
+        }
         
-        # Serialize results using the `to_dict` method for dataclasses
-        def serialize(obj: Any) -> Any:
-            if hasattr(obj, "to_dict"):
-                return obj.to_dict()
-            elif isinstance(obj, dict):
-                return {k: serialize(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [serialize(v) for v in obj]
-            elif isinstance(obj, tuple):
-                return tuple(serialize(v) for v in obj)
-            return obj
-
-        serialized_results = serialize(results)
-
-        # Save results
-        with open(results_path, 'w') as f:
-            yaml.safe_dump(serialized_results, f, default_flow_style=False)
-            
-        logger.info(f"Saved study results to {results_path}")
-
-
+    def _make_serializable(self, obj: Any) -> Any:
+        """Helper method to make objects serializable"""
+        if hasattr(obj, 'to_dict'):
+            return obj.to_dict()
+        elif isinstance(obj, dict):
+            return {k: self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_serializable(i) for i in obj]
+        elif isinstance(obj, (datetime, timedelta)):
+            return str(obj)
+        elif hasattr(obj, '__dict__'):
+            return self._make_serializable(obj.__dict__)
+        return obj
+        
     def cleanup(self) -> None:
         """Clean up study resources"""
         logger.info("Cleaning up study resources")
-        for runner in self.experiment_runners.values():
+        
+        try:
+            # Clean up experiment runners
+            for runner in self.experiment_runners.values():
+                try:
+                    runner.cleanup()
+                except Exception as e:
+                    logger.error(f"Error during experiment cleanup: {str(e)}")
+            
+            # Clean up Ray if it was initialized
+            if (hasattr(self.cfg, 'execution') and 
+                self.cfg.execution.distributed and 
+                ray.is_initialized()):
+                ray.shutdown()
+            
+            # Clean up MLflow
             try:
-                runner.cleanup()
-            except Exception as e:
-                logger.error(f"Error during cleanup: {str(e)}")
+                mlflow.end_run()
+            except Exception:
+                pass
+            
+            # Remove file handlers
+            for handler in logger.handlers[:]:
+                if isinstance(handler, logging.FileHandler):
+                    logger.removeHandler(handler)
+                    handler.close()
+                    
+            logger.info("Study cleanup completed")
+            
+        except Exception as e:
+            logger.error(f"Error during study cleanup: {str(e)}")
+            raise
+            
+    def export_study_artifacts(self, output_dir: Path) -> None:
+        """
+        Export study artifacts to a specified directory.
+        
+        Args:
+            output_dir: Directory to export artifacts to
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Export study configuration
+        config_dir = output_dir / "config"
+        config_dir.mkdir(exist_ok=True)
+        self.cfg.save(config_dir / "study_config.yaml")
+        
+        # Export MLflow artifacts
+        mlflow_dir = output_dir / "mlflow"
+        mlflow_dir.mkdir(exist_ok=True)
+        # This would require implementing MLflow export functionality
+        
+        logger.info(f"Exported study artifacts to {output_dir}")

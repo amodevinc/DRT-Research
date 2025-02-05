@@ -1,15 +1,35 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, Any, Optional
 import uuid
-
+from types import MappingProxyType
 class EventPriority(Enum):
     """Priority levels for events"""
     CRITICAL = 0  # System-critical events (crashes, errors)
     HIGH = 1      # Time-sensitive operations (pickups, dropoffs)
     NORMAL = 2    # Standard operations (route updates, status changes)
     LOW = 3       # Background operations (metrics collection, logging)
+    
+    def __lt__(self, other):
+        if not isinstance(other, EventPriority):
+            return NotImplemented
+        return self.value < other.value
+    
+    def __le__(self, other):
+        if not isinstance(other, EventPriority):
+            return NotImplemented
+        return self.value <= other.value
+    
+    def __gt__(self, other):
+        if not isinstance(other, EventPriority):
+            return NotImplemented
+        return self.value > other.value
+    
+    def __ge__(self, other):
+        if not isinstance(other, EventPriority):
+            return NotImplemented
+        return self.value >= other.value
     
 class EventStatus(Enum):
     """Status of an event"""
@@ -21,100 +41,95 @@ class EventStatus(Enum):
 
 class EventType(Enum):
     """
-    Comprehensive event types for DRT simulation covering passenger journeys,
-    vehicle operations, dispatch, routing, and scheduling.
+    Comprehensive event types for DRT simulation covering the complete lifecycle
+    from request creation to journey completion.
     """
     
-    # System Events
+    # System Lifecycle Events
     SIMULATION_START = "simulation.start"
     SIMULATION_END = "simulation.end"
     SIMULATION_ERROR = "simulation.error"
-    WARMUP_COMPLETED = "warmup.completed"
+    WARMUP_COMPLETED = "simulation.warmup.completed"
+    TIMESTEP_STARTED = "simulation.timestep.started"
+    TIMESTEP_COMPLETED = "simulation.timestep.completed"
     
-    # Request Lifecycle
-    REQUEST_CREATED = "request.created"
+    # Request Creation & Validation
+    REQUEST_RECEIVED = "request.received"
     REQUEST_VALIDATED = "request.validated"
-    REQUEST_REJECTED = "request.rejected"
+    REQUEST_VALIDATION_FAILED = "request.validation.failed"
     REQUEST_CANCELLED = "request.cancelled"
+    REQUEST_REJECTED = "request.rejected"
     REQUEST_EXPIRED = "request.expired"
     REQUEST_ASSIGNED = "request.assigned"
-    REQUEST_REASSIGNED = "request.reassigned"
-    REQUEST_NO_VEHICLE = "request.no_vehicle"
-    
-    # Passenger Journey - Access
-    PASSENGER_WALKING_TO_PICKUP = "passenger.walking.to_pickup"
-    PASSENGER_ARRIVED_AT_PICKUP_STOP = "passenger.arrived.pickup_stop"
-    PASSENGER_WAITING_FOR_VEHICLE = "passenger.waiting.pickup"
-    
-    # Passenger Journey - Service
-    REQUEST_PICKUP_STARTED = "request.pickup.started"
-    REQUEST_PICKUP_COMPLETED = "request.pickup.completed"
+
+    # Matching Process
+    MATCH_REQUEST_TO_VEHICLE = "match.request.to.vehicle"
+    MATCH_REQUEST_TO_VEHICLE_FAILED = "match.request.to.vehicle.failed"
+
+    # Passenger Journey Events
+    START_PASSENGER_JOURNEY = "passenger.journey.started"
+    PASSENGER_WALKING_TO_PICKUP = "passenger.walking.pickup.started"
+    PASSENGER_ARRIVED_PICKUP = "passenger.walking.pickup.completed"
+    PASSENGER_WAITING = "passenger.waiting.started"
+    PASSENGER_NO_SHOW = "passenger.no_show"
+    PASSENGER_BOARDING_COMPLETED = "passenger.boarding.completed"
     PASSENGER_IN_VEHICLE = "passenger.in_vehicle"
-    PASSENGER_DETOUR_STARTED = "passenger.detour.started"
-    PASSENGER_DETOUR_ENDED = "passenger.detour.ended"
-    REQUEST_DROPOFF_STARTED = "request.dropoff.started"
-    REQUEST_DROPOFF_COMPLETED = "request.dropoff.completed"
+    PASSENGER_ALIGHTING_COMPLETED = "passenger.alighting.completed"
+    PASSENGER_WALKING_TO_DESTINATION = "passenger.walking.destination.started"
+    PASSENGER_ARRIVED_DESTINATION = "passenger.walking.destination.completed"
+    PASSENGER_JOURNEY_COMPLETED = "passenger.journey.completed"
     
-    # Passenger Journey - Egress
-    PASSENGER_ARRIVED_AT_DESTINATION_STOP = "passenger.arrived.destination_stop"
-    PASSENGER_WALKING_TO_DESTINATION = "passenger.walking.to_dest"
-    PASSENGER_ARRIVED_AT_DESTINATION = "passenger.arrived.dest"
+    # Service Level Events
+    EXCESS_WAIT_TIME = "passenger.wait_time.exceeded"
+    EXCESS_RIDE_TIME = "passenger.ride_time.exceeded"
+    SERVICE_LEVEL_VIOLATION = "service.level.violation"
     
-    # Vehicle States
+    # Vehicle Operations
     VEHICLE_CREATED = "vehicle.created"
     VEHICLE_ACTIVATED = "vehicle.activated"
-    VEHICLE_ASSIGNED = "vehicle.assigned"
+    VEHICLE_ASSIGNMENT = "vehicle.assignment"
+    VEHICLE_ARRIVED_STOP = "vehicle.arrived.stop"
+    VEHICLE_BOARDING_STARTED = "vehicle.boarding.started"
+    VEHICLE_BOARDING_COMPLETED = "vehicle.boarding.completed"
+    VEHICLE_ALIGHTING_STARTED = "vehicle.alighting.started"
+    VEHICLE_ALIGHTING_COMPLETED = "vehicle.alighting.completed"
     VEHICLE_IDLE = "vehicle.idle"
     VEHICLE_BUSY = "vehicle.busy"
+    VEHICLE_ACTIVE_ROUTE_UPDATE = "vehicle.active.route.update"
     VEHICLE_AT_CAPACITY = "vehicle.at_capacity"
-    VEHICLE_AVAILABLE = "vehicle.available"
-    VEHICLE_BREAKDOWN = "vehicle.breakdown"
-    
-    # Vehicle Movement
-    VEHICLE_DEPARTED = "vehicle.departed"
-    VEHICLE_ARRIVED = "vehicle.arrived"
-    VEHICLE_REROUTED = "vehicle.rerouted"
-    VEHICLE_STOP_REACHED = "vehicle.stop.reached"
-    VEHICLE_ROUTE_STARTED = "vehicle.route.started"
-    VEHICLE_ROUTE_COMPLETED = "vehicle.route.completed"
-    
-    # Dispatch Events
-    DISPATCH_REQUESTED = "dispatch.requested"
-    DISPATCH_SUCCEEDED = "dispatch.succeeded"
-    DISPATCH_FAILED = "dispatch.failed"
-    DISPATCH_OPTIMIZATION_STARTED = "dispatch.optimization.started"
-    DISPATCH_OPTIMIZATION_COMPLETED = "dispatch.optimization.completed"
-    DISPATCH_BATCH_STARTED = "dispatch.batch.started"
-    DISPATCH_BATCH_COMPLETED = "dispatch.batch.completed"
-    
-    # Route Events
+    VEHICLE_DWELL_TIME_START = "vehicle.dwell.started"
+    VEHICLE_DWELL_TIME_VIOLATION = "vehicle.dwell.violation"
+    VEHICLE_DISPATCH_REQUEST = "vehicle.dispatch.request"
+    VEHICLE_REROUTE_REQUEST = "vehicle.reroute.request"
+    VEHICLE_EN_ROUTE = "vehicle.en_route"
+    VEHICLE_AT_STOP = "vehicle.at_stop"
+    VEHICLE_WAIT_TIMEOUT = "vehicle.wait.timeout"
+    VEHICLE_REBALANCING_REQUIRED = "vehicle.rebalancing.required"
+    VEHICLE_SERVICE_KPI_VIOLATION = "vehicle.service.kpi.violation"
+
+    # Route Management
     ROUTE_CREATED = "route.created"
+    ROUTE_ACTIVATION = "route.activation"
+    ROUTE_SEGMENT_STARTED = "route.segment.started"
+    ROUTE_SEGMENT_COMPLETED = "route.segment.completed"
+    ROUTE_UPDATE_REQUEST = "route.update.request"
     ROUTE_UPDATED = "route.updated"
-    ROUTE_OPTIMIZED = "route.optimized"
-    ROUTE_CANCELLED = "route.cancelled"
     ROUTE_COMPLETED = "route.completed"
-    ROUTE_DELAYED = "route.delayed"
-    ROUTE_DETOUR_ADDED = "route.detour.added"
-    ROUTE_STOPS_RESEQUENCED = "route.stops.resequenced"
+
+    # Optimization Events
+    SCHEDULED_GLOBAL_OPTIMIZATION = "optimization.global.scheduled"
+    GLOBAL_OPTIMIZATION_STARTED = "optimization.global.started"
+    GLOBAL_OPTIMIZATION_COMPLETED = "optimization.global.completed"
     
-    # Schedule Events
-    SCHEDULE_CREATED = "schedule.created"
-    SCHEDULE_UPDATED = "schedule.updated"
-    SCHEDULE_OPTIMIZED = "schedule.optimized"
-    SCHEDULE_VIOLATED = "schedule.violated"
-    SCHEDULE_BUFFER_ADJUSTED = "schedule.buffer.adjusted"
-    
-    # Time Window Events
-    PICKUP_WINDOW_STARTED = "time.pickup_window.start"
-    PICKUP_WINDOW_ENDED = "time.pickup_window.end"
-    DELIVERY_WINDOW_STARTED = "time.delivery_window.start"
-    DELIVERY_WINDOW_ENDED = "time.delivery_window.end"
-    
-    # Service Quality Events
-    EXCESS_WAIT_TIME = "service.excess_wait_time"
-    EXCESS_RIDE_TIME = "service.excess_ride_time"
-    MISSED_PICKUP_WINDOW = "service.missed_pickup_window"
-    MISSED_DELIVERY_WINDOW = "service.missed_delivery_window"
+    # Stop Management
+    STOP_ACTIVATED = "stop.activated"
+    STOP_DEACTIVATED = "stop.deactivated"
+    STOP_CONGESTED = "stop.congested"
+    STOP_CAPACITY_EXCEEDED = "stop.capacity.exceeded"
+    DETERMINE_VIRTUAL_STOPS = "determine.virtual.stops"
+    STOP_SELECTION_TICK = "stop.selection.tick"
+    STOP_SELECTION_COMPLETED = "stop.selection.completed" 
+    STOPS_UPDATED = "stops.updated"
     
     # Fleet Management
     FLEET_REBALANCING_NEEDED = "fleet.rebalancing.needed"
@@ -122,25 +137,16 @@ class EventType(Enum):
     FLEET_REBALANCING_COMPLETED = "fleet.rebalancing.completed"
     FLEET_CAPACITY_WARNING = "fleet.capacity.warning"
     
-    # Stop Events
-    STOP_ACTIVATED = "stop.activated"
-    STOP_DEACTIVATED = "stop.deactivated"
-    STOP_CONGESTED = "stop.congested"
-    STOP_CAPACITY_EXCEEDED = "stop.capacity.exceeded"
-    
-    # Demand Events
-    DEMAND_ZONE_SATURATION = "demand.zone.saturation"
-    DEMAND_SURGE_DETECTED = "demand.surge.detected"
-    
-    # Metrics Collection
+    # Metrics & Analysis
     METRICS_COLLECTED = "metrics.collected"
-    METRICS_THRESHOLD_EXCEEDED = "metrics.threshold.exceeded"
-    SERVICE_LEVEL_VIOLATED = "metrics.service_level.violated"
+    KPI_THRESHOLD_EXCEEDED = "metrics.kpi.threshold"
+    PERFORMANCE_SNAPSHOT = "metrics.performance.snapshot"
 
-@dataclass(order=True)
+@dataclass(order=True, frozen=True)
 class Event:
     """
-    Represents a simulation event.
+    Represents a simulation event with additional fields specific to DRT operations.
+    Includes support for recurring events.
     
     The comparison operators are implemented to support priority queue ordering,
     with events sorted by priority first, then timestamp.
@@ -153,44 +159,68 @@ class Event:
     # Optional fields (with defaults)
     id: str = field(default_factory=lambda: str(uuid.uuid4()), compare=False)
     status: EventStatus = field(default=EventStatus.PENDING, compare=False)
-    data: Dict[str, Any] = field(default_factory=dict, compare=False)
-    metadata: Dict[str, Any] = field(default_factory=dict, compare=False)
-    created_at: datetime = field(default_factory=datetime.now, compare=False)
-    processed_at: Optional[datetime] = field(default=None, compare=False)
-    completed_at: Optional[datetime] = field(default=None, compare=False)
+    
+    # Entity IDs
     vehicle_id: Optional[str] = field(default=None, compare=False)
     request_id: Optional[str] = field(default=None, compare=False)
     passenger_id: Optional[str] = field(default=None, compare=False)
     route_id: Optional[str] = field(default=None, compare=False)
+    stop_id: Optional[str] = field(default=None, compare=False)
+    
+    # Timing fields
+    scheduled_time: Optional[datetime] = field(default=None, compare=False)
+    actual_time: Optional[datetime] = field(default=None, compare=False)
+    created_at: datetime = field(default_factory=datetime.now, compare=False)
+    processed_at: Optional[datetime] = field(default=None, compare=False)
+    completed_at: Optional[datetime] = field(default=None, compare=False)
+    
+    # Recurring event fields
+    is_recurring: bool = field(default=False, compare=False)
+    recurrence_interval: Optional[float] = field(default=None, compare=False)  # in seconds
+    recurrence_end: Optional[datetime] = field(default=None, compare=False)
+    
+    # Service quality metrics
+    waiting_time: Optional[float] = field(default=None, compare=False)
+    ride_time: Optional[float] = field(default=None, compare=False)
+    walking_distance: Optional[float] = field(default=None, compare=False)
+    deviation_minutes: Optional[float] = field(default=None, compare=False)
+    service_metrics: Dict[str, float] = field(default_factory=dict, compare=False)
+    
+    # Additional data
+    location: Optional[Dict[str, float]] = field(default=None, compare=False)  # lat/lon or x/y coordinates
+    data: Dict[str, Any] = field(default_factory=dict, compare=False)
+    metadata: Dict[str, Any] = field(default_factory=dict, compare=False)
     
     def __post_init__(self):
-        """Validate event after initialization"""
-        if isinstance(self.event_type, str):
-            self.event_type = EventType(self.event_type)
-        if isinstance(self.priority, int):
-            self.priority = EventPriority(self.priority)
-        if isinstance(self.status, str):
-            self.status = EventStatus(self.status)
-    
-    def mark_processing(self) -> None:
-        """Mark event as being processed"""
-        self.status = EventStatus.PROCESSING
-        self.processed_at = datetime.now()
-    
-    def mark_completed(self) -> None:
-        """Mark event as completed"""
-        self.status = EventStatus.COMPLETED
-        self.completed_at = datetime.now()
-    
-    def mark_failed(self, error: Optional[str] = None) -> None:
-        """Mark event as failed"""
-        self.status = EventStatus.FAILED
-        self.completed_at = datetime.now()
-        if error:
-            self.metadata['error'] = error
+        """Convert mutable dictionaries to immutable MappingProxyTypes"""
+        # We need to use object.__setattr__ because the dataclass is frozen
+        object.__setattr__(self, 'data', MappingProxyType(self.data))
+        object.__setattr__(self, 'metadata', MappingProxyType(self.metadata))
+        object.__setattr__(self, 'service_metrics', MappingProxyType(self.service_metrics))
+        object.__setattr__(self, 'location', MappingProxyType(self.location) if self.location else None)
+
+    def create_next_recurrence(self) -> Optional['Event']:
+        """Create the next event in the recurrence sequence."""
+        if not self.is_recurring or not self.recurrence_interval:
+            return None
+            
+        next_time = self.timestamp + timedelta(seconds=self.recurrence_interval)
+        if self.recurrence_end and next_time > self.recurrence_end:
+            return None
+            
+        return Event(
+            event_type=self.event_type,
+            priority=self.priority,
+            timestamp=next_time,
+            is_recurring=True,
+            recurrence_interval=self.recurrence_interval,
+            recurrence_end=self.recurrence_end,
+            data=self.data.copy(),
+            metadata=self.metadata.copy()
+        )
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert event to dictionary format"""
+        """Convert event to dictionary format with proper handling of MappingProxyType"""
         return {
             'id': self.id,
             'event_type': self.event_type.value,
@@ -200,11 +230,24 @@ class Event:
             'created_at': self.created_at.isoformat(),
             'processed_at': self.processed_at.isoformat() if self.processed_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'data': self.data,
-            'metadata': self.metadata,
             'vehicle_id': self.vehicle_id,
             'request_id': self.request_id,
-            'route_id': self.route_id
+            'passenger_id': self.passenger_id,
+            'route_id': self.route_id,
+            'stop_id': self.stop_id,
+            'scheduled_time': self.scheduled_time.isoformat() if self.scheduled_time else None,
+            'actual_time': self.actual_time.isoformat() if self.actual_time else None,
+            'waiting_time': self.waiting_time,
+            'ride_time': self.ride_time,
+            'walking_distance': self.walking_distance,
+            'deviation_minutes': self.deviation_minutes,
+            'service_metrics': dict(self.service_metrics) if self.service_metrics else {},
+            'location': dict(self.location) if self.location else None,
+            'data': dict(self.data) if self.data else {},
+            'metadata': dict(self.metadata) if self.metadata else {},
+            'is_recurring': self.is_recurring,
+            'recurrence_interval': self.recurrence_interval,
+            'recurrence_end': self.recurrence_end.isoformat() if self.recurrence_end else None
         }
     
     @classmethod
@@ -217,6 +260,12 @@ class Event:
                        if data.get('processed_at') else None)
         completed_at = (datetime.fromisoformat(data['completed_at'])
                        if data.get('completed_at') else None)
+        scheduled_time = (datetime.fromisoformat(data['scheduled_time'])
+                         if data.get('scheduled_time') else None)
+        actual_time = (datetime.fromisoformat(data['actual_time'])
+                      if data.get('actual_time') else None)
+        recurrence_end = (datetime.fromisoformat(data['recurrence_end'])
+                         if data.get('recurrence_end') else None)
         
         return cls(
             id=data['id'],
@@ -227,10 +276,22 @@ class Event:
             created_at=created_at,
             processed_at=processed_at,
             completed_at=completed_at,
-            data=data.get('data', {}),
-            metadata=data.get('metadata', {}),
             vehicle_id=data.get('vehicle_id'),
             request_id=data.get('request_id'),
             passenger_id=data.get('passenger_id'),
-            route_id=data.get('route_id')
+            route_id=data.get('route_id'),
+            stop_id=data.get('stop_id'),
+            scheduled_time=scheduled_time,
+            actual_time=actual_time,
+            waiting_time=data.get('waiting_time'),
+            ride_time=data.get('ride_time'),
+            walking_distance=data.get('walking_distance'),
+            deviation_minutes=data.get('deviation_minutes'),
+            service_metrics=data.get('service_metrics', {}),
+            location=data.get('location'),
+            data=data.get('data', {}),
+            metadata=data.get('metadata', {}),
+            is_recurring=data.get('is_recurring', False),
+            recurrence_interval=data.get('recurrence_interval'),
+            recurrence_end=recurrence_end
         )

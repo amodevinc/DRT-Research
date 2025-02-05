@@ -1,324 +1,184 @@
-from typing import Optional, List, Dict
-from datetime import datetime, timedelta
+import traceback
+import asyncio
 
-from .base import BaseHandler
+from drt_sim.core.state.manager import StateManager
+from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.models.event import Event, EventType, EventPriority
-from drt_sim.models.route import Route, RouteStatus, RouteStop
-from drt_sim.models.request import Request, RequestStatus
-from drt_sim.models.vehicle import VehicleStatus
-from drt_sim.models.location import Location
+from drt_sim.models.route import Route, RouteStatus, RouteSegment, RouteStop
+from drt_sim.config.config import ScenarioConfig
+from drt_sim.models.vehicle import VehicleStatus, Vehicle
+from drt_sim.models.matching import Assignment
+from drt_sim.core.logging_config import setup_logger
+from drt_sim.network.manager import NetworkManager
 
-class RouteHandler(BaseHandler):
+logger = setup_logger(__name__)
+
+class RouteHandler:
     """
-    Handles all route-related events in the DRT simulation, managing route
-    creation, updates, optimization, and execution tracking.
+    Handles route lifecycle and operations in the DRT system.
+    Manages route creation, modifications, and coordinates with VehicleHandler.
     """
     
-    def handle_route_created(self, event: Event) -> Optional[List[Event]]:
-        """Handle creation of a new route"""
-        vehicle_id = event.vehicle_id
-        stops = event.data.get('stops', [])
-        
-        try:
-            # Create and validate route
-            route = Route(
-                id=event.data.get('route_id'),
-                vehicle_id=vehicle_id,
-                stops=stops,
-                creation_time=self.context.current_time
-            )
-            
-            if not self._validate_route(route):
-                return [self._create_route_invalid_event(route.id, "Route validation failed")]
-            
-            # Calculate timing for each stop
-            route_schedule = self._calculate_stop_timings(route)
-            route.scheduled_stops = route_schedule
-            
-            # Add to state manager
-            self.state_manager.route_worker.add_route(route)
-            
-            # Update vehicle status
-            self.state_manager.vehicle_worker.update_vehicle_state(
-                vehicle_id,
-                VehicleStatus.ASSIGNED,
-                {'current_route': route.id}
-            )
-            
-            self.logger.info(f"Created route {route.id} for vehicle {vehicle_id}")
-            
-            # Create route start event
-            return [Event(
-                event_type=EventType.VEHICLE_ROUTE_STARTED,
-                timestamp=self.context.current_time,
-                priority=EventPriority.HIGH,
-                vehicle_id=vehicle_id,
-                data={
-                    'route_id': route.id,
-                    'first_stop': route_schedule[0]
-                }
-            )]
-            
-        except Exception as e:
-            self.logger.error(f"Failed to create route: {str(e)}")
-            raise
+    def __init__(
+        self,
+        config: ScenarioConfig,
+        context: SimulationContext,
+        state_manager: StateManager,
+        network_manager: NetworkManager
+    ):
+        self.config = config
+        self.context = context
+        self.state_manager = state_manager
+        self.network_manager = network_manager
 
-    def handle_route_stop_reached(self, event: Event) -> Optional[List[Event]]:
-        """Handle vehicle arrival at route stop"""
-        vehicle_id = event.vehicle_id
-        route_id = event.data.get('route_id')
-        stop_id = event.data.get('stop_id')
-        
+    async def handle_route_update_request(self, event: Event) -> None:
+        """Handle route update request"""
         try:
-            route = self.state_manager.route_worker.get_route(route_id)
-            current_stop = next(stop for stop in route.stops if stop.id == stop_id)
+            logger.info(f"Handling route update request: {event}")
+            self.state_manager.begin_transaction()
             
-            follow_up_events = []
-            
-            # Update route status
-            self.state_manager.route_worker.update_stop_status(
-                route_id,
-                stop_id,
-                'reached',
-                {
-                    'arrival_time': self.context.current_time,
-                    'actual_load': event.data.get('current_load', 0)
-                }
-            )
-            
-            # Handle pickups at this stop
-            for request_id in current_stop.pickups:
-                follow_up_events.append(Event(
-                    event_type=EventType.REQUEST_PICKUP_STARTED,
-                    timestamp=self.context.current_time,
-                    priority=EventPriority.HIGH,
-                    request_id=request_id,
-                    vehicle_id=vehicle_id,
-                    data={'stop_id': stop_id}
-                ))
-            
-            # Handle dropoffs at this stop
-            for request_id in current_stop.dropoffs:
-                follow_up_events.append(Event(
-                    event_type=EventType.REQUEST_DROPOFF_STARTED,
-                    timestamp=self.context.current_time,
-                    priority=EventPriority.HIGH,
-                    request_id=request_id,
-                    vehicle_id=vehicle_id,
-                    data={'stop_id': stop_id}
-                ))
-            
-            # Check if this is the last stop
-            if self._is_last_stop(route, stop_id):
-                follow_up_events.append(Event(
-                    event_type=EventType.ROUTE_COMPLETED,
-                    timestamp=self.context.current_time,
-                    priority=EventPriority.NORMAL,
-                    vehicle_id=vehicle_id,
-                    data={'route_id': route_id}
-                ))
-            else:
-                # Schedule movement to next stop
-                next_stop = self._get_next_stop(route, stop_id)
-                follow_up_events.append(Event(
-                    event_type=EventType.VEHICLE_DEPARTED,
-                    timestamp=self.context.current_time + self.config.vehicle.service_time,
-                    priority=EventPriority.HIGH,
-                    vehicle_id=vehicle_id,
-                    data={
-                        'destination': next_stop.location,
-                        'route_id': route_id,
-                        'next_stop_id': next_stop.id
-                    }
-                ))
-            
-            return follow_up_events
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle route stop: {str(e)}")
-            raise
-
-    def handle_route_updated(self, event: Event) -> Optional[List[Event]]:
-        """Handle route update (new stops/removals)"""
-        route_id = event.data.get('route_id')
-        updates = event.data.get('updates', {})
-        
-        try:
-            # Get current route
-            route = self.state_manager.route_worker.get_route(route_id)
-            
-            # Apply updates
-            updated_route = self._apply_route_updates(route, updates)
-            if not updated_route:
-                return [self._create_route_update_failed_event(route_id, "Failed to apply updates")]
-            
-            # Recalculate timings
-            new_schedule = self._calculate_stop_timings(updated_route)
-            updated_route.scheduled_stops = new_schedule
-            
-            # Update route in state manager
-            self.state_manager.route_worker.update_route(route_id, updated_route)
-            
-            # Check for significant timing changes
-            if self._has_significant_delays(route.scheduled_stops, new_schedule):
-                return [Event(
-                    event_type=EventType.ROUTE_DELAYED,
-                    timestamp=self.context.current_time,
-                    priority=EventPriority.HIGH,
-                    data={
-                        'route_id': route_id,
-                        'delays': self._calculate_delays(route.scheduled_stops, new_schedule)
-                    }
-                )]
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Failed to update route: {str(e)}")
-            raise
-
-    def handle_route_optimization_needed(self, event: Event) -> Optional[List[Event]]:
-        """Handle route optimization request"""
-        route_id = event.data.get('route_id')
-        trigger = event.data.get('trigger', 'manual')
-        
-        try:
-            # Get current route
-            route = self.state_manager.route_worker.get_route(route_id)
-            
-            # Attempt optimization
-            optimized_route = self._optimize_route(route)
-            if not optimized_route:
-                return None
+            assignment = event.data['assignment']
+            if not assignment:
+                raise ValueError(f"Assignment not found")
                 
-            # If optimization improved the route
-            if self._is_route_improved(route, optimized_route):
-                return [Event(
-                    event_type=EventType.ROUTE_UPDATED,
-                    timestamp=self.context.current_time,
+            vehicle: Vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
+                
+            # Update or create route
+            route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
+            if not route_exists:
+                self.state_manager.route_worker.add_route(assignment.route)
+            else:
+                self.state_manager.route_worker.update_route(assignment.route)
+            
+            # Check vehicle's current status to determine appropriate dispatch
+            if vehicle.current_state.status == VehicleStatus.IDLE:
+                # Initial dispatch - vehicle hasn't started yet
+                self._create_update_vehicle_active_route_event(assignment.vehicle_id, assignment.route.id)
+                self._create_initial_dispatch_event(assignment.vehicle_id)
+            else:
+                # Vehicle is already in service - needs rerouting
+                self._create_reroute_dispatch_event(assignment.vehicle_id)
+                
+            self.state_manager.commit_transaction()
+            
+        except Exception as e:
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling route update request: {str(e)}")
+            await self._handle_route_error(event, str(e))
+
+    async def handle_stop_service_completed(self, event: Event) -> None:
+        """Handle completion of service at a stop."""
+        try:
+            self.state_manager.begin_transaction()
+            
+            route = self.state_manager.route_worker.get_route(event.data['route_id'])
+            if not route:
+                raise ValueError(f"Route {event.data['route_id']} not found")
+            
+            segment_index = event.data['segment_index']
+            current_segment: RouteSegment = route.segments[segment_index]
+            
+            # Mark current segment as completed
+            current_segment.completed = True
+            
+            # Check if this was the last segment
+            if segment_index == len(route.segments) - 1:
+                route.status = RouteStatus.COMPLETED
+                self._create_route_completed_event(route)
+            else:
+                # Move to next segment
+                route.current_segment_index += 1
+                next_segment: RouteSegment = route.segments[route.current_segment_index]
+                
+                # Create next segment start event
+                next_segment_event = Event(
+                    event_type=EventType.ROUTE_SEGMENT_STARTED,
                     priority=EventPriority.HIGH,
+                    timestamp=self.context.current_time,
+                    vehicle_id=route.vehicle_id,
                     data={
-                        'route_id': route_id,
-                        'updates': {
-                            'stops': optimized_route.stops,
-                            'optimization_time': self.context.current_time
-                        }
+                        'route_id': route.id,
+                        'segment_index': route.current_segment_index,
+                        'origin': next_segment.origin,
+                        'destination': next_segment.destination,
+                        'estimated_duration': next_segment.estimated_duration,
+                        'estimated_distance': next_segment.estimated_distance
                     }
-                )]
+                )
+                self.context.event_manager.publish_event(next_segment_event)
             
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Failed to optimize route: {str(e)}")
-            raise
-
-    def handle_route_detour_needed(self, event: Event) -> Optional[List[Event]]:
-        """Handle request for route detour"""
-        route_id = event.data.get('route_id')
-        reason = event.data.get('reason')
-        new_stop = event.data.get('new_stop')
-        
-        try:
-            # Get current route
-            route = self.state_manager.route_worker.get_route(route_id)
-            
-            # Calculate best detour
-            detour_route = self._calculate_detour(route, new_stop)
-            if not detour_route:
-                return [self._create_detour_failed_event(route_id, "No valid detour found")]
-            
-            # Validate the detour doesn't violate constraints
-            if not self._validate_detour_constraints(detour_route):
-                return [self._create_detour_failed_event(route_id, "Detour violates constraints")]
-            
-            # Create route update event
-            return [Event(
-                event_type=EventType.ROUTE_UPDATED,
-                timestamp=self.context.current_time,
-                priority=EventPriority.HIGH,
-                data={
-                    'route_id': route_id,
-                    'updates': {
-                        'stops': detour_route.stops,
-                        'detour_reason': reason
-                    }
-                }
-            )]
+            self.state_manager.route_worker.update_route(route)
+            self.state_manager.commit_transaction()
             
         except Exception as e:
-            self.logger.error(f"Failed to handle detour request: {str(e)}")
-            raise
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling stop service completion: {str(e)}")
+            await self._handle_route_error(event, str(e))
 
-    def _validate_route(self, route: Route) -> bool:
-        """Validate route parameters and constraints"""
-        try:
-            # Check basic route properties
-            if not route.stops:
-                self.logger.error(f"Route {route.id} has no stops")
-                return False
-            
-            # Validate stop sequence
-            if not self._validate_stop_sequence(route.stops):
-                self.logger.error(f"Invalid stop sequence in route {route.id}")
-                return False
-            
-            # Check time windows
-            if not self._validate_time_windows(route):
-                self.logger.error(f"Time window violations in route {route.id}")
-                return False
-            
-            # Check vehicle constraints
-            if not self._validate_vehicle_constraints(route):
-                self.logger.error(f"Vehicle constraint violations in route {route.id}")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Route validation error: {str(e)}")
-            return False
+    def _create_route_completed_event(self, route: Route) -> None:
+        """Create event for route completion."""
+        event = Event(
+            event_type=EventType.ROUTE_COMPLETED,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            vehicle_id=route.vehicle_id,
+            data={
+                'route_id': route.id,
+                'completion_time': self.context.current_time
+            }
+        )
+        self.context.event_manager.publish_event(event)
 
-    def _calculate_stop_timings(self, route: Route) -> List[RouteStop]:
-        """Calculate expected timing for each stop"""
-        # Implementation depends on routing system
-        pass
+    async def _handle_route_error(self, event: Event, error_msg: str) -> None:
+        """Handle errors in route processing."""
+        error_event = Event(
+            event_type=EventType.SIMULATION_ERROR,
+            priority=EventPriority.CRITICAL,
+            timestamp=self.context.current_time,
+            vehicle_id=event.vehicle_id if hasattr(event, 'vehicle_id') else None,
+            data={
+                'error': error_msg,
+                'original_event': event.to_dict(),
+                'error_type': 'route_processing_error'
+            }
+        )
+        self.context.event_manager.publish_event(error_event)
+    
+    def _create_initial_dispatch_event(self, vehicle_id: str) -> None:
+        """Create dispatch event for initial vehicle start"""
+        event = Event(
+            event_type=EventType.VEHICLE_DISPATCH_REQUEST,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            vehicle_id=vehicle_id,
+            data={
+                'dispatch_type': 'initial',
+                'timestamp': self.context.current_time
+            }
+        )
+        self.context.event_manager.publish_event(event)
+    
+    def _create_update_vehicle_active_route_event(self, vehicle_id: str, route_id: str) -> None:
+        """Create event to update vehicle's active route"""
+        event = Event(
+            event_type=EventType.VEHICLE_ACTIVE_ROUTE_UPDATE,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            vehicle_id=vehicle_id,
+            data={'route_id': route_id}
+        )
+        self.context.event_manager.publish_event(event)
 
-    def _optimize_route(self, route: Route) -> Optional[Route]:
-        """Optimize route stop sequence"""
-        # Implementation depends on optimization strategy
-        pass
-
-    def _calculate_detour(self, route: Route, new_stop: RouteStop) -> Optional[Route]:
-        """Calculate best detour incorporation"""
-        # Implementation depends on routing strategy
-        pass
-
-    def _validate_detour_constraints(self, route: Route) -> bool:
-        """Validate if detour meets all constraints"""
-        # Implementation depends on constraint definitions
-        pass
-
-    def _is_last_stop(self, route: Route, stop_id: str) -> bool:
-        """Check if stop is last in route"""
-        return route.stops[-1].id == stop_id
-
-    def _get_next_stop(self, route: Route, current_stop_id: str) -> RouteStop:
-        """Get next stop in route"""
-        current_idx = next(i for i, stop in enumerate(route.stops) 
-                         if stop.id == current_stop_id)
-        return route.stops[current_idx + 1]
-
-    def _has_significant_delays(self, original: List[RouteStop], 
-                              updated: List[RouteStop]) -> bool:
-        """Check if updates cause significant timing changes"""
-        # Implementation depends on delay threshold definitions
-        pass
-
-    def _calculate_delays(self, original: List[RouteStop], 
-                         updated: List[RouteStop]) -> Dict[str, timedelta]:
-        """Calculate delays for affected stops"""
-        delays = {}
-        for orig, upd in zip(original, updated):
-            if upd.scheduled_arrival > orig.scheduled_arrival:
-                delays[upd.id] = upd.scheduled_arrival - orig.scheduled_arrival
-        return delays
+    def _create_reroute_dispatch_event(self, vehicle_id: str) -> None:
+        """Create dispatch event for rerouting an active vehicle"""
+        event = Event(
+            event_type=EventType.VEHICLE_REROUTE_REQUEST,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            vehicle_id=vehicle_id,
+            data={
+                'dispatch_type': 'reroute',
+                'timestamp': self.context.current_time
+            }
+        )
+        self.context.event_manager.publish_event(event)

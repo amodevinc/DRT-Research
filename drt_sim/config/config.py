@@ -3,7 +3,7 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Union, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
-
+from drt_sim.models.matching.enums import AssignmentMethod, OptimizationMethod
 class DataclassYAMLMixin:
     """Mixin class to make dataclasses YAML serializable"""
     def to_dict(self) -> Dict[str, Any]:
@@ -24,6 +24,43 @@ class DataclassYAMLMixin:
             return obj
 
         return _serialize(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Any:
+        """Create a dataclass instance from a dictionary"""
+        def _deserialize(value: Any, field_type: type) -> Any:
+            if is_dataclass(field_type):
+                return field_type.from_dict(value)
+            elif isinstance(field_type, type) and issubclass(field_type, Enum):
+                return field_type(value)
+            elif field_type == datetime:
+                return datetime.fromisoformat(value)
+            elif field_type == timedelta:
+                return timedelta(seconds=float(value))
+            elif field_type == Path:
+                return Path(value)
+            elif hasattr(field_type, "__origin__"):  # Handle generic types
+                if field_type.__origin__ == list:
+                    item_type = field_type.__args__[0]
+                    return [_deserialize(item, item_type) for item in value]
+                elif field_type.__origin__ == dict:
+                    key_type, val_type = field_type.__args__
+                    return {_deserialize(k, key_type): _deserialize(v, val_type) for k, v in value.items()}
+                elif field_type.__origin__ == Union:
+                    if type(None) in field_type.__args__ and value is None:
+                        return None
+                    for arg in field_type.__args__:
+                        if arg != type(None):
+                            try:
+                                return _deserialize(value, arg)
+                            except:
+                                continue
+                    raise ValueError(f"Could not deserialize {value} as {field_type}")
+            return value
+
+        field_types = {field.name: field.type for field in cls.__dataclass_fields__.values()}
+        kwargs = {key: _deserialize(value, field_types[key]) for key, value in data.items() if key in field_types}
+        return cls(**kwargs)
 
 class StudyType(Enum):
     PARAMETER_SWEEP = "parameter_sweep"
@@ -55,22 +92,6 @@ class StudyPaths(DataclassYAMLMixin):
     configs_dir: str = "configs"
     logs_dir: str = "logs"
     artifacts_dir: str = "artifacts"
-
-    def get_study_dir(self, study_name: str) -> Path:
-        return Path(self.base_dir) / study_name
-
-    def create_study_dirs(self, study_name: str) -> Dict[str, Path]:
-        study_dir = self.get_study_dir(study_name)
-        dirs = {
-            "base": study_dir,
-            "results": study_dir / self.results_dir,
-            "configs": study_dir / self.configs_dir,
-            "logs": study_dir / self.logs_dir,
-            "artifacts": study_dir / self.artifacts_dir
-        }
-        for dir_path in dirs.values():
-            dir_path.mkdir(parents=True, exist_ok=True)
-        return dirs
 
 @dataclass
 class MetricDefinition(DataclassYAMLMixin):
@@ -158,6 +179,14 @@ class MetricsConfig(DataclassYAMLMixin):
     def validate_metrics(self) -> bool:
         active_metrics = self.get_active_metrics()
         return all(metric in self.definitions for metric in active_metrics)
+    
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        # Convert definition dictionaries to MetricDefinition instances
+        self.definitions = {
+            k: (v if isinstance(v, MetricDefinition) else MetricDefinition(**v))
+            for k, v in self.definitions.items()
+        }
 
 @dataclass
 class MLflowConfig(DataclassYAMLMixin):
@@ -184,6 +213,16 @@ class ExecutionConfig(DataclassYAMLMixin):
     timeout: int = 3600
     retry_attempts: int = 3
 
+
+@dataclass
+class NetworkInfo:
+    """Stores basic information about a loaded network"""
+    name: str
+    node_count: int
+    edge_count: int
+    bbox: Tuple[float, float, float, float]  # min_lon, min_lat, max_lon, max_lat
+    crs: str
+
 @dataclass
 class NetworkConfig(DataclassYAMLMixin):
     network_file: str = ""
@@ -191,6 +230,8 @@ class NetworkConfig(DataclassYAMLMixin):
     transfer_points_file: Optional[str] = None
     coordinate_system: str = "EPSG:4326"
     walking_speed: float = 1.4
+    driving_speed: float = 8.33
+    service_area_polygon: Optional[List[Tuple[float, float]]] = None
 
 @dataclass
 class CSVFileConfig(DataclassYAMLMixin):
@@ -214,6 +255,13 @@ class CSVDemandGeneratorConfig(DataclassYAMLMixin):
     demand_multiplier: float = 1.0
     combine_method: str = "weighted_sum"
 
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        self.files = [
+            f if isinstance(f, CSVFileConfig) else CSVFileConfig(**f)
+            for f in self.files
+        ]
+
 @dataclass
 class RandomDemandGeneratorConfig(DataclassYAMLMixin):
     demand_level: float = 0.0
@@ -229,86 +277,155 @@ class DemandConfig(DataclassYAMLMixin):
     generator_type: str = "csv"
     csv_config: CSVDemandGeneratorConfig = field(default_factory=CSVDemandGeneratorConfig)
     random_config: Optional[RandomDemandGeneratorConfig] = None
+    num_requests: int = 9999
+    
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        # Convert csv_config if it's a dictionary
+        if isinstance(self.csv_config, dict):
+            self.csv_config = CSVDemandGeneratorConfig(**self.csv_config)
+            
+        # Convert random_config if it's a dictionary
+        if isinstance(self.random_config, dict):
+            self.random_config = RandomDemandGeneratorConfig(**self.random_config)
 
 @dataclass
 class VehicleConfig(DataclassYAMLMixin):
     fleet_size: int = 10
     capacity: int = 4
     speed: float = 10.0
-    boarding_time: int = 5
-    alighting_time: int = 5
+    boarding_time: int = 10
+    alighting_time: int = 10
+    min_dwell_time: int = 10
+    max_dwell_time: int = 60
+    max_pickup_delay: int = 10
+    max_dropoff_delay: int = 10
+    rebalancing_enabled: bool = False
     depot_locations: List[Tuple[float, float]] = field(default_factory=lambda: [(37.5666, 127.0000)])
     battery_capacity: Optional[float] = None
     charging_rate: Optional[float] = None
+class CostFactorType(Enum):
+    """Types of cost factors that can be considered in matching"""
+    DISTANCE = "distance"
+    TIME = "time"
+    DELAY = "delay"
+    WAITING_TIME = "waiting_time"
+    DETOUR_TIME = "detour_time"
+    CAPACITY_UTILIZATION = "capacity_utilization"
+
+@dataclass
+class MatchingAssignmentConfig(DataclassYAMLMixin):
+    """Configuration for matching assignment"""
+    # Time constraints (in seconds)
+    max_waiting_time_mins: int = 10  # mins
+    max_detour_time_mins: int = 10  # mins
+    max_in_vehicle_time_mins: int = 10  # mins
+    max_distance: float = 10000.0  # meters
+    max_delay_mins: int = 10  # mins
+    capacity_threshold: float = 0.8
+
+    # Base weights for different cost factors
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        "waiting_time": 0.35,
+        "detour_time": 0.25,
+        "delay": 0.20,
+        "distance": 0.15,
+        "capacity_utilization": 0.05
+    })
+
+    default_weight: float = 0.1
+
+    def validate_weights(self) -> None:
+        """Validate that weights are properly configured"""
+        # Ensure all weights are valid cost factors
+        valid_factors = {factor.value for factor in CostFactorType}
+        invalid_factors = set(self.weights.keys()) - valid_factors
+        if invalid_factors:
+            raise ValueError(f"Invalid cost factors in weights: {invalid_factors}")
+            
+        # Normalize weights to sum to 1.0
+        total_weight = sum(self.weights.values())
+        if total_weight != 0:
+            self.weights = {k: v/total_weight for k, v in self.weights.items()}
+
+@dataclass 
+class MatchingClusteringConfig(DataclassYAMLMixin):
+    """Configuration for matching clustering"""
+    max_cluster_size: int = 10
+    max_cluster_radius: float = 1000.0
+    min_cluster_size: int = 2
+    time_window: int = 300
+    spatial_weight: float = 0.6
+    temporal_weight: float = 0.4
+
+@dataclass
+class MatchingOptimizationConfig(DataclassYAMLMixin):
+    """Configuration for matching optimization"""
+    optimization_interval: int = 300
+    max_optimization_time: int = 60
+    improvement_threshold: float = 0.05
+    max_iterations: int = 100
+    convergence_threshold: float = 0.01
+
+@dataclass
+class MatchingConfig:
+    """Configuration for matching strategy"""
+    assignment_method: AssignmentMethod = AssignmentMethod.INSERTION
+    optimization_method: OptimizationMethod = OptimizationMethod.NONE
+    assignment_config: MatchingAssignmentConfig = field(default_factory=MatchingAssignmentConfig)
+    optimization_config: MatchingOptimizationConfig = field(default_factory=MatchingOptimizationConfig)
+
+    def __post_init__(self):
+        """Initialize nested configurations and convert string values to enums"""
+        if isinstance(self.assignment_method, str):
+            self.assignment_method = AssignmentMethod(self.assignment_method)
+        if isinstance(self.optimization_method, str):
+            self.optimization_method = OptimizationMethod(self.optimization_method)
+
+        if isinstance(self.assignment_config, dict):
+            self.assignment_config = MatchingAssignmentConfig(**self.assignment_config)
+        if isinstance(self.optimization_config, dict):
+            self.optimization_config = MatchingOptimizationConfig(**self.optimization_config)
 
 @dataclass
 class AlgorithmConfig(DataclassYAMLMixin):
-    dispatch_strategy: str = "fcfs"
-    matching_algorithm: str = "batch"
+    """Configuration for system algorithms"""
     routing_algorithm: str = "dijkstra"
     cost_function: str = "simple"
     user_acceptance_model: str = "logit"
-    batch_interval: int = 30
-    optimization_horizon: int = 1800
     rebalancing_interval: int = 300
+    stop_selector: str = "coverage_based"
+    stop_assigner: str = "nearest"
 
-    dispatch_params: Optional[Dict[str, Any]] = None
-    matching_params: Optional[Dict[str, Any]] = None
     routing_params: Optional[Dict[str, Any]] = None
     cost_function_params: Optional[Dict[str, Any]] = None
     user_acceptance_params: Optional[Dict[str, Any]] = None
-    stop_selection_params: Optional[Dict[str, Any]] = None
+    stop_selector_params: Optional[Dict[str, Any]] = None
+    stop_assigner_params: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         """Initialize parameter objects based on selected strategies"""
-        if not self.dispatch_params:
-            self.dispatch_params = self._get_default_params(self.dispatch_strategy)
-        if not self.matching_params:
-            self.matching_params = self._get_default_params(self.matching_algorithm)
         if not self.routing_params:
             self.routing_params = self._get_default_params(self.routing_algorithm)
         if not self.cost_function_params:
             self.cost_function_params = self._get_default_params(self.cost_function)
         if not self.user_acceptance_params:
             self.user_acceptance_params = self._get_default_params(self.user_acceptance_model)
+        if not self.stop_selector_params:
+            self.stop_selector_params = self._get_default_params(self.stop_selector)
+        if not self.stop_assigner_params:
+            self.stop_assigner_params = self._get_default_params(self.stop_assigner)
+
+
 
     def _get_default_params(self, strategy: str) -> Dict[str, Any]:
         """Get default parameters for a given strategy"""
         defaults = {
-            # Dispatch defaults
-            "fcfs": {},
-            "genetic": {
-                "population_size": 100,
-                "num_generations": 50,
-                "mutation_rate": 0.1,
-                "crossover_rate": 0.8
-            },
-            # Matching defaults
-            "batch": {
-                "batch_interval": self.batch_interval,
-                "max_delay": 300,
-                "max_detour": 1.5
-            },
             # Routing defaults
             "dijkstra": {},
             "time_dependent": {
                 "update_interval": 300,
                 "max_alternatives": 3
-            },
-            # Cost function defaults
-            "simple": {
-                "weights": {
-                    "waiting_time": 0.4,
-                    "travel_time": 0.3,
-                    "vehicle_distance": 0.2,
-                    "occupancy": 0.1
-                },
-                "constraints": {
-                    "max_waiting_time": 1800,
-                    "max_travel_time": 1800,
-                    "max_vehicle_distance": 1800,
-                    "max_occupancy": 1800
-                }
             },
             # User acceptance defaults
             "logit": {
@@ -317,6 +434,50 @@ class AlgorithmConfig(DataclassYAMLMixin):
                     "travel_time": -0.005,
                     "fare": -0.1
                 }
+            },
+            # Stop selector defaults
+            "coverage_based": {
+                "strategy": "coverage_based",
+                "max_walking_distance": 400.0,
+                "min_stop_spacing": 100.0,
+                "max_stops": 10,
+                "coverage_radius": 1000.0,
+                "min_demand_threshold": 0.1,
+                "accessibility_weights": {"distance": 0.5, "time": 0.5}
+            },
+            "demand_based": {
+                "strategy": "demand_based",
+                "min_demand_threshold": 0.1,
+                "max_walking_distance": 400.0,
+                "min_stop_spacing": 100.0,
+                "max_stops": 10,
+                "coverage_radius": 1000.0,
+                "accessibility_weights": {"distance": 0.5, "time": 0.5}
+            },
+            # Stop assigner defaults
+            "nearest": {
+                "strategy": "nearest",
+                "max_walking_distance": 400.0,
+                "walking_speed": 1.4,
+                "max_wait_time": 600,
+                "max_alternatives": 3,
+                "weights": {"distance": 0.5, "congestion": 0.3, "accessibility": 0.2}
+            },
+            "multi_objective": {
+                "strategy": "multi_objective",
+                "max_walking_distance": 400.0,
+                "walking_speed": 1.4,
+                "max_wait_time": 600,
+                "max_alternatives": 3,
+                "weights": {"distance": 0.5, "congestion": 0.3, "accessibility": 0.2}
+            },
+            "accessibility": {
+                "strategy": "accessibility",
+                "max_walking_distance": 400.0,
+                "walking_speed": 1.4,
+                "max_wait_time": 600,
+                "max_alternatives": 3,
+                "weights": {"distance": 0.5, "congestion": 0.3, "accessibility": 0.2}
             }
         }
         return defaults.get(strategy, {})
@@ -327,9 +488,9 @@ class SimulationConfig(DataclassYAMLMixin):
     end_time: str = "2025-01-01 19:00:00"
     duration: int = 86400
     warm_up_duration: int = 1800
+    random_seed: int = 42
     time_step: int = 60
     time_scale_factor: float = 1.0
-    replications: int = 1
     save_state: bool = True
     save_interval: int = 3600
 
@@ -342,29 +503,68 @@ class ParameterSweepConfig(DataclassYAMLMixin):
     seed: int = 42
 
 @dataclass
+class ServiceConfig(DataclassYAMLMixin):
+    """Configuration for service handling"""
+    max_wait_time: int = 600
+    max_ride_time: int = 600
+    max_walking_distance: float = 400.0
+    max_journey_time: int = 1200
+
+@dataclass
+class RouteConfig(DataclassYAMLMixin):
+    """Configuration for route handling"""
+    max_detour_factor: float = 1.5
+    max_route_duration: int = 1800
+    max_stops_per_route: int = 10
+    max_segment_delay: int = 600
+    reoptimization_trigger_delay: int = 600
+
+@dataclass
+class StopConfig(DataclassYAMLMixin):
+    """Configuration for stop handling"""
+    max_occupancy: int = 5
+    congestion_threshold: int = 2
+    max_vehicle_queue: int = 10
+    max_passenger_queue: int = 10
+    min_service_interval: int = 60
+    max_dwell_time: int = 120
+
+@dataclass
 class ScenarioConfig(DataclassYAMLMixin):
     """Configuration for a specific simulation scenario"""
     name: str
     description: str = ""
-    demand: DemandConfig = field(default_factory=DemandConfig)
-    vehicle: VehicleConfig = field(default_factory=VehicleConfig)
-    algorithm: AlgorithmConfig = field(default_factory=AlgorithmConfig)
-    network: NetworkConfig = field(default_factory=NetworkConfig)
-    metrics: Optional[MetricsConfig] = None
+    replications: int = 1
+    service: Union[ServiceConfig, Dict[str, Any]] = field(default_factory=ServiceConfig)
+    route: Union[RouteConfig, Dict[str, Any]] = field(default_factory=RouteConfig)
+    stop: Union[StopConfig, Dict[str, Any]] = field(default_factory=StopConfig)
+    demand: Union[DemandConfig, Dict[str, Any]] = field(default_factory=DemandConfig)
+    vehicle: Union[VehicleConfig, Dict[str, Any]] = field(default_factory=VehicleConfig)
+    algorithm: Union[AlgorithmConfig, Dict[str, Any]] = field(default_factory=AlgorithmConfig)
+    matching: Union[MatchingConfig, Dict[str, Any]] = field(default_factory=MatchingConfig)
+    network: Union[NetworkConfig, Dict[str, Any]] = field(default_factory=NetworkConfig)
+    metrics: Optional[Union[MetricsConfig, Dict[str, Any]]] = None
 
-    def merge_with_base(self, base_config: Dict[str, Any]) -> 'ScenarioConfig':
-        """Merge this scenario config with base configuration"""
-        def deep_merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
-            result = d1.copy()
-            for k, v in d2.items():
-                if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-                    result[k] = deep_merge(result[k], v)
-                else:
-                    result[k] = v
-            return result
-            
-        merged_dict = deep_merge(base_config, self.__dict__)
-        return ScenarioConfig(**merged_dict)
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        if isinstance(self.service, dict):
+            self.service = ServiceConfig(**self.service)
+        if isinstance(self.route, dict):
+            self.route = RouteConfig(**self.route)
+        if isinstance(self.stop, dict):
+            self.stop = StopConfig(**self.stop)
+        if isinstance(self.demand, dict):
+            self.demand = DemandConfig(**self.demand)
+        if isinstance(self.vehicle, dict):
+            self.vehicle = VehicleConfig(**self.vehicle)
+        if isinstance(self.algorithm, dict):
+            self.algorithm = AlgorithmConfig(**self.algorithm)
+        if isinstance(self.matching, dict):
+            self.matching = MatchingConfig(**self.matching)
+        if isinstance(self.network, dict):
+            self.network = NetworkConfig(**self.network)
+        if isinstance(self.metrics, dict):
+            self.metrics = MetricsConfig(**self.metrics)
 
 @dataclass
 class ExperimentConfig(DataclassYAMLMixin):
@@ -375,7 +575,16 @@ class ExperimentConfig(DataclassYAMLMixin):
     metrics: Optional[MetricsConfig] = None
     variant: str = "default"
     tags: List[str] = field(default_factory=list)
-    random_seed: int = 42
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        # Convert scenario dictionaries to ScenarioConfig instances
+        self.scenarios = {
+            k: (v if isinstance(v, ScenarioConfig) else ScenarioConfig(**v))
+            for k, v in self.scenarios.items()
+        }
+        # Convert metrics dictionary to MetricsConfig instance if needed
+        if isinstance(self.metrics, dict):
+            self.metrics = MetricsConfig(**self.metrics)
 
 @dataclass
 class StudyConfig(DataclassYAMLMixin):
@@ -400,7 +609,44 @@ class StudyConfig(DataclassYAMLMixin):
     })
 
     def __post_init__(self):
-        self.paths.create_study_dirs(self.metadata.name)
+        """Initialize all nested configurations"""
+        # Convert metadata dictionary to StudyMetadata instance if needed
+        if isinstance(self.metadata, dict):
+            self.metadata = StudyMetadata(**self.metadata)
+
+        # Convert type string to StudyType enum if needed
+        if isinstance(self.type, str):
+            self.type = StudyType(self.type)
+
+        # Convert paths dictionary to StudyPaths instance if needed
+        if isinstance(self.paths, dict):
+            self.paths = StudyPaths(**self.paths)
+
+        # Convert experiments dictionaries to ExperimentConfig instances
+        self.experiments = {
+            k: (v if isinstance(v, ExperimentConfig) else ExperimentConfig(**v))
+            for k, v in self.experiments.items()
+        }
+
+        # Convert metrics dictionary to MetricsConfig instance if needed
+        if isinstance(self.metrics, dict):
+            self.metrics = MetricsConfig(**self.metrics)
+
+        # Convert parameter_sweep dictionary to ParameterSweepConfig instance if needed
+        if isinstance(self.parameter_sweep, dict):
+            self.parameter_sweep = ParameterSweepConfig(**self.parameter_sweep)
+
+        # Convert other configurations
+        if isinstance(self.mlflow, dict):
+            self.mlflow = MLflowConfig(**self.mlflow)
+        if isinstance(self.ray, dict):
+            self.ray = RayConfig(**self.ray)
+        if isinstance(self.execution, dict):
+            self.execution = ExecutionConfig(**self.execution)
+        if isinstance(self.simulation, dict):
+            self.simulation = SimulationConfig(**self.simulation)
+
+        # Set default name if not provided
         if not self.metadata.name:
             self.metadata.name = f"study_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -475,6 +721,7 @@ class StudyConfig(DataclassYAMLMixin):
         """Load study configuration from file with proper dataclass instantiation"""
         import yaml
         from typing import get_type_hints, get_args, get_origin
+        from copy import deepcopy
         
         def _convert_to_dataclass(data: Dict, target_class: Any) -> Any:
             """Recursively convert dictionaries to dataclass instances"""
@@ -489,7 +736,9 @@ class StudyConfig(DataclassYAMLMixin):
             
             for key, value in data.items():
                 if key not in hints:
-                    kwargs[key] = value
+                    # For fields not in type hints (like base_config contents),
+                    # we want to preserve the complete dictionary structure
+                    kwargs[key] = deepcopy(value)
                     continue
                     
                 target_type = hints[key]
@@ -501,6 +750,11 @@ class StudyConfig(DataclassYAMLMixin):
                 # Handle Enums
                 if isinstance(value, str) and isinstance(target_type, type) and issubclass(target_type, Enum):
                     kwargs[key] = target_type(value)
+                    continue
+                
+                # Special handling for base_config field
+                if key == 'base_config':
+                    kwargs[key] = deepcopy(value)
                     continue
                 
                 # Handle Lists
@@ -529,8 +783,45 @@ class StudyConfig(DataclassYAMLMixin):
             
             return target_class(**kwargs)
 
-        with open(path) as f:
-            data = yaml.safe_load(f)
-            
-        # Convert the loaded data into a StudyConfig instance
-        return _convert_to_dataclass(data, cls)
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+                
+            # Ensure base_config exists and is properly copied
+            if 'base_config' in data:
+                data['base_config'] = deepcopy(data['base_config'])
+                
+            # Convert the loaded data into a StudyConfig instance
+            return _convert_to_dataclass(data, cls)
+        except Exception as e:
+            raise ValueError(f"Failed to load study configuration: {str(e)}") from e
+
+@dataclass
+class GlobalOptimizationConfig(DataclassYAMLMixin):
+    """Configuration for global system optimization"""
+    optimization_interval: int = 300  # How often to run optimization (seconds)
+    max_optimization_time: int = 60   # Maximum time allowed for optimization (seconds)
+    improvement_threshold: float = 0.05  # Minimum improvement required to apply changes (5%)
+    max_iterations: int = 100  # Maximum number of iterations for optimization
+    convergence_threshold: float = 0.01  # Threshold for convergence (1%)
+    
+    # Weights for different optimization objectives
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        "waiting_time": 0.3,
+        "vehicle_utilization": 0.3,
+        "total_distance": 0.2,
+        "load_balancing": 0.2
+    })
+    
+    # Constraints for optimization
+    constraints: Dict[str, Any] = field(default_factory=lambda: {
+        "max_reassignments": 5,  # Maximum number of requests to reassign per vehicle
+        "max_route_changes": 3,  # Maximum number of route changes per vehicle
+        "min_improvement_per_change": 0.02  # Minimum improvement required per change (2%)
+    })
+    
+    # Time windows for looking ahead/behind
+    time_windows: Dict[str, int] = field(default_factory=lambda: {
+        "look_ahead": 1800,  # Look ahead window (30 minutes)
+        "look_behind": 900   # Look behind window (15 minutes)
+    })

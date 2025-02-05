@@ -1,0 +1,359 @@
+metrics:
+  - name: "passenger.wait_time"
+    description: "Time from request submission until the passenger boards a vehicle."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - passenger_id
+      - request_id
+      - vehicle_id
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "passenger.ride_time"
+    description: "Time from boarding to alighting."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - passenger_id
+      - vehicle_id
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "passenger.walk_time_to_origin_stop"
+    description: "Time taken to walk from the passenger's origin to the origin stop."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - passenger_id
+      - origin
+      - origin_stop
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "passenger.walk_time_from_destination_stop"
+    description: "Time taken to walk from the destination stop to the passenger's final destination."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - passenger_id
+      - destination
+      - destination_stop
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "passenger.total_journey_time"
+    description: "Total journey time, including wait, ride, and walk times."
+    metric_type: "aggregate"
+    unit: "seconds"
+    required_context:
+      - passenger_id
+      - wait_time
+      - ride_time
+      - walk_time_to_origin_stop
+      - walk_time_from_destination_stop
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "passenger.no_show"
+    description: "Event indicating that a passenger did not show up for pickup."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - passenger_id
+      - request_id
+      - expected_pickup_time
+      - no_show_reason
+    aggregations:
+      - count
+
+  - name: "request.received"
+    description: "A new request has been submitted."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - request_id
+      - request_time
+      - origin
+      - destination
+    aggregations:
+      - count
+
+  - name: "request.assigned"
+    description: "A request has been successfully assigned to a vehicle."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - request_id
+      - vehicle_id
+      - assignment_time
+      - origin_stop
+      - destination_stop
+    aggregations:
+      - count
+
+  - name: "request.rejected"
+    description: "A request was rejected."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - request_id
+      - rejection_time
+      - rejection_reason
+    aggregations:
+      - count
+
+  - name: "vehicle.utilization"
+    description: "Ratio of time a vehicle is occupied with passengers to total time."
+    metric_type: "snapshot"
+    unit: "ratio"
+    required_context:
+      - vehicle_id
+      - occupied_time
+      - total_time
+      - timestamp
+    aggregations:
+      - mean
+      - min
+      - max
+
+  - name: "vehicle.wait_time"
+    description: "Total time a vehicle spends waiting idle."
+    metric_type: "aggregate"
+    unit: "seconds"
+    required_context:
+      - vehicle_id
+      - wait_period_start
+      - wait_period_end
+    aggregations:
+      - sum
+      - mean
+
+  - name: "vehicle.occupied_distance"
+    description: "Total distance traveled with passengers."
+    metric_type: "aggregate"
+    unit: "kilometers"
+    required_context:
+      - vehicle_id
+    aggregations:
+      - sum
+
+  - name: "vehicle.empty_distance"
+    description: "Total distance traveled without passengers."
+    metric_type: "aggregate"
+    unit: "kilometers"
+    required_context:
+      - vehicle_id
+    aggregations:
+      - sum
+
+  - name: "vehicle.dwell_time"
+    description: "Time a vehicle spends at stops waiting for boarding/alighting."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - vehicle_id
+      - stop_id
+      - dwell_start_time
+      - dwell_end_time
+      - reason
+    aggregations:
+      - sum
+      - mean
+
+  - name: "vehicle.stops_served"
+    description: "Count of stops at which a vehicle has serviced requests."
+    metric_type: "aggregate"
+    unit: "count"
+    required_context:
+      - vehicle_id
+      - stop_ids
+    aggregations:
+      - sum
+
+  - name: "stop.occupancy"
+    description: "Number of passengers waiting at a stop at a given time."
+    metric_type: "snapshot"
+    unit: "count"
+    required_context:
+      - stop_id
+      - current_occupancy
+      - capacity
+      - timestamp
+    aggregations:
+      - mean
+      - min
+      - max
+
+  - name: "simulation.step_duration"
+    description: "Duration of a simulation step."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - step_number
+      - current_time
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "simulation.total_steps"
+    description: "Total number of simulation steps executed."
+    metric_type: "aggregate"
+    unit: "count"
+    required_context:
+      - total_steps
+    aggregations:
+      - count
+
+  - name: "simulation.event_processing_time"
+    description: "Time taken to process events during a simulation step."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - step_number
+      - processing_start
+      - processing_end
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "simulation.replication_time"
+    description: "Total time taken for a simulation replication."
+    metric_type: "aggregate"
+    unit: "seconds"
+    required_context:
+      - replication_id
+      - start_time
+      - end_time
+    aggregations:
+      - count
+      - mean
+
+  - name: "matching.success_rate"
+    description: "Ratio of successfully matched requests to total matching attempts."
+    metric_type: "aggregate"
+    unit: "ratio"
+    required_context:
+      - success_count
+      - failure_count
+    aggregations:
+      - computed
+
+  - name: "matching.failure_reason"
+    description: "Records failure reasons for unmatched requests."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - request_id
+      - origin
+      - destination
+      - failure_reason
+      - timestamp
+    aggregations:
+      - count
+
+  - name: "route.completion_time"
+    description: "Time taken for a route to be completed from start to end."
+    metric_type: "event"
+    unit: "seconds"
+    required_context:
+      - vehicle_id
+      - route_id
+      - start_time
+      - end_time
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "route.deviation"
+    description: "Difference between the planned route distance and the actual distance traveled."
+    metric_type: "event"
+    unit: "kilometers"
+    required_context:
+      - vehicle_id
+      - route_id
+      - planned_distance
+      - actual_distance
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+
+  - name: "service.violations"
+    description: "Count of service-level violations (e.g., excessive wait or ride times)."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - passenger_id
+      - vehicle_id
+      - violation_type
+      - measured_value
+      - threshold
+      - timestamp
+    aggregations:
+      - count
+
+  - name: "service.on_time_rate"
+    description: "Percentage of passengers served within acceptable time thresholds."
+    metric_type: "aggregate"
+    unit: "ratio"
+    required_context:
+      - on_time_count
+      - late_count
+    aggregations:
+      - computed
+
+  - name: "service.capacity_utilization"
+    description: "Ratio of current occupancy to maximum capacity for vehicles."
+    metric_type: "snapshot"
+    unit: "ratio"
+    required_context:
+      - vehicle_id
+      - current_occupancy
+      - maximum_capacity
+      - timestamp
+    aggregations:
+      - mean
+      - min
+      - max
+
+  - name: "demand.generated"
+    description: "Total number of generated demand events."
+    metric_type: "aggregate"
+    unit: "count"
+    required_context:
+      - timestamp
+      - demand_source
+    aggregations:
+      - count

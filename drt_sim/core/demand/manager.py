@@ -67,6 +67,7 @@ class DemandManager:
     ) -> Tuple[List[Event], List[Request]]:
         """
         Generate demand events and their associated requests for the current time step.
+        Limited by max number of requests specified in config.
         
         Args:
             current_time: Current simulation time
@@ -76,6 +77,11 @@ class DemandManager:
             Tuple containing (list of events, list of valid requests)
         """
         try:
+            # Check if we've reached the maximum number of requests
+            if (self.config.num_requests is not None and 
+                self.metrics['total_requests'] >= self.config.num_requests):
+                return [], []
+
             # Get events from generator
             events = self.generator.generate(current_time, time_step)
             
@@ -84,7 +90,13 @@ class DemandManager:
             valid_events = []
             
             for event in events:
-                if event.event_type != EventType.REQUEST_CREATED:
+                # Stop if we've reached the maximum number of requests
+                if (self.config.num_requests is not None and 
+                    self.metrics['total_requests'] >= self.config.num_requests):
+                    logger.info(f"Maximum number of requests reached: {self.metrics['total_requests']}")
+                    break
+                    
+                if event.event_type != EventType.REQUEST_RECEIVED:
                     continue
                     
                 request = event.data.get("request")
@@ -115,7 +127,7 @@ class DemandManager:
         """Validate a generated request."""
         try:
             # Check locations
-            if not request.pickup_location or not request.dropoff_location:
+            if not request.origin or not request.destination:
                 return False
                 
             # Check timestamps
@@ -123,8 +135,8 @@ class DemandManager:
                 return False
                 
             # Check for duplicate pickup/dropoff
-            if (request.pickup_location.lat == request.dropoff_location.lat and
-                request.pickup_location.lon == request.dropoff_location.lon):
+            if (request.origin.lat == request.destination.lat and
+                request.origin.lon == request.destination.lon):
                 return False
             
             return True

@@ -4,24 +4,30 @@ import logging
 from pathlib import Path
 
 from drt_sim.models.simulation import SimulationStatus
-
-from .context import SimulationContext
-from .engine import SimulationEngine
+from drt_sim.core.monitoring.metrics_collector import MetricsCollector
+from drt_sim.core.monitoring.types.metrics import MetricName
+from drt_sim.core.simulation.context import SimulationContext
+from drt_sim.core.simulation.engine import SimulationEngine
 from drt_sim.models.simulation import SimulationState
 from drt_sim.core.state.manager import StateManager
 from drt_sim.core.events.manager import EventManager
 from drt_sim.core.demand.manager import DemandManager
+from drt_sim.core.user.manager import UserProfileManager
 from drt_sim.config.config import ScenarioConfig, SimulationConfig
-from drt_research_platform.drt_sim.handlers.request_handler import RequestHandler
-from drt_sim.handlers.vehicle_handlers import VehicleHandler
-from drt_sim.handlers.system_handlers import SystemHandler
+from drt_sim.handlers.request_handler import RequestHandler
+from drt_sim.handlers.vehicle_handler import VehicleHandler
 from drt_sim.handlers.passenger_handler import PassengerHandler
-from drt_sim.handlers.dispatch_handler import DispatchHandler
 from drt_sim.handlers.route_handler import RouteHandler
 from drt_sim.handlers.stop_handler import StopHandler
+from drt_sim.handlers.matching_handler import MatchingHandler
+from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.event import EventType
-
-logger = logging.getLogger(__name__)
+from drt_sim.core.logging_config import setup_logger
+from drt_sim.network.manager import NetworkManager
+from drt_sim.models.base import SimulationEncoder
+import traceback
+import json
+logger = setup_logger(__name__)
 
 class SimulationOrchestrator:
     """
@@ -33,7 +39,8 @@ class SimulationOrchestrator:
         self,
         cfg: ScenarioConfig,
         sim_cfg: SimulationConfig,
-        output_dir: Optional[Path] = None
+        output_dir: Optional[Path] = None,
+        metrics_collector: Optional[MetricsCollector] = None
     ):
         """
         Initialize the simulation orchestrator.
@@ -42,10 +49,12 @@ class SimulationOrchestrator:
             cfg: Scenario configuration
             sim_cfg: Simulation configuration
             output_dir: Optional output directory for simulation artifacts
+            metrics_collector: Optional metrics collector from parent scenario
         """
         self.cfg = cfg
         self.sim_cfg = sim_cfg
-        self.output_dir = output_dir or Path("simulation_output")
+        self.output_dir = output_dir
+        self.metrics_collector = metrics_collector
         
         # Core components - initialized in initialize()
         self.context: Optional[SimulationContext] = None
@@ -53,12 +62,9 @@ class SimulationOrchestrator:
         self.state_manager: Optional[StateManager] = None
         self.event_manager: Optional[EventManager] = None
         self.demand_manager: Optional[DemandManager] = None
-        
-        # Event handlers
-        self.request_handler: Optional[RequestHandler] = None
-        self.vehicle_handler: Optional[VehicleHandler] = None
-        self.system_handler: Optional[SystemHandler] = None
-        
+        self.network_manager: Optional[NetworkManager] = None
+        self.user_profile_manager: Optional[UserProfileManager] = None
+        self.route_service: Optional[RouteService] = None
         # Tracking
         self.initialized: bool = False
         self.step_count: int = 0
@@ -72,37 +78,54 @@ class SimulationOrchestrator:
         try:
             logger.info("Initializing simulation components")
             
-            # Create context first as other components depend on it
-            self.context = SimulationContext(
-                start_time=datetime.fromisoformat(self.sim_cfg.start_time),
-                end_time=datetime.fromisoformat(self.sim_cfg.end_time),
-                time_step=timedelta(seconds=self.sim_cfg.time_step),
-                warm_up_duration=timedelta(seconds=self.sim_cfg.warm_up_duration)
-            )
             
             # Initialize state management
             self.state_manager = StateManager(config=self.cfg, sim_cfg=self.sim_cfg)
             
             # Initialize event system
             self.event_manager = EventManager()
+
+            # Create context first as other components depend on it
+            self.context = SimulationContext(
+                start_time=datetime.fromisoformat(self.sim_cfg.start_time),
+                end_time=datetime.fromisoformat(self.sim_cfg.end_time),
+                time_step=timedelta(seconds=self.sim_cfg.time_step),
+                warm_up_duration=timedelta(seconds=self.sim_cfg.warm_up_duration),
+                event_manager=self.event_manager,
+                metrics_collector=self.metrics_collector
+            )
             
             # Initialize demand management
             self.demand_manager = DemandManager(
                 config=self.cfg.demand
             )
-            
-            # Initialize handlers
-            self._initialize_handlers()
-            
+
+            # Initialize network manager
+            self.network_manager = NetworkManager(config=self.cfg.network)
+
+            # Initialize user profile manager
+            self.user_profile_manager = UserProfileManager()
+
             # Initialize simulation engine last
             self.engine = SimulationEngine(
                 context=self.context,
                 state_manager=self.state_manager,
                 event_manager=self.event_manager
             )
+            self.route_service = RouteService(
+                network_manager=self.network_manager,
+                sim_context=self.context,
+                config=self.cfg,
+            )
+            
+            # Initialize handlers
+            self._initialize_handlers()
             
             # Register handlers with event manager
             self._register_handlers()
+
+            # Schedule all demand before starting simulation
+            self._schedule_all_demand()
 
             self.initialized = True
             logger.info("Simulation initialization completed successfully")
@@ -117,13 +140,8 @@ class SimulationOrchestrator:
         self.request_handler = RequestHandler(
             config=self.cfg,
             context=self.context,
-            state_manager=self.state_manager
-        )
-        
-        self.dispatch_handler = DispatchHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager
+            state_manager=self.state_manager,
+            network_manager=self.network_manager
         )
         
         self.vehicle_handler = VehicleHandler(
@@ -141,19 +159,24 @@ class SimulationOrchestrator:
         self.route_handler = RouteHandler(
             config=self.cfg,
             context=self.context,
-            state_manager=self.state_manager
+            state_manager=self.state_manager,
+            network_manager=self.network_manager
         )
         
         self.stop_handler = StopHandler(
             config=self.cfg,
             context=self.context,
-            state_manager=self.state_manager
+            state_manager=self.state_manager,
+            network_manager=self.network_manager
         )
         
-        self.system_handler = SystemHandler(
+        self.matching_handler = MatchingHandler(
             config=self.cfg,
             context=self.context,
-            state_manager=self.state_manager
+            state_manager=self.state_manager,
+            network_manager=self.network_manager,
+            user_profile_manager=self.user_profile_manager,
+            route_service=self.route_service
         )
 
     def _register_handlers(self) -> None:
@@ -163,79 +186,70 @@ class SimulationOrchestrator:
             
         # Define handler mapping
         handlers_map = {
-            # Request Lifecycle Events
-            EventType.REQUEST_CREATED: self.request_handler.handle_request_created,
-            EventType.REQUEST_VALIDATED: self.request_handler.handle_request_validated,
+            # Request Events
+            EventType.REQUEST_RECEIVED: self.request_handler.handle_request_received,
             EventType.REQUEST_REJECTED: self.request_handler.handle_request_rejected,
+            EventType.REQUEST_VALIDATION_FAILED: self.request_handler.handle_request_validation_failed,
             EventType.REQUEST_ASSIGNED: self.request_handler.handle_request_assigned,
-            EventType.REQUEST_REASSIGNED: self.request_handler.handle_request_reassigned,
             EventType.REQUEST_CANCELLED: self.request_handler.handle_request_cancelled,
-            EventType.REQUEST_PICKUP_STARTED: self.request_handler.handle_request_pickup_started,
-            EventType.REQUEST_PICKUP_COMPLETED: self.request_handler.handle_request_pickup_completed,
-            EventType.REQUEST_DROPOFF_STARTED: self.request_handler.handle_request_dropoff_started,
-            EventType.REQUEST_DROPOFF_COMPLETED: self.request_handler.handle_request_dropoff_completed,
             EventType.REQUEST_EXPIRED: self.request_handler.handle_request_expired,
-            EventType.REQUEST_NO_VEHICLE: self.request_handler.handle_request_no_vehicle,
-
-            # Dispatch Events
-            EventType.DISPATCH_REQUESTED: self.dispatch_handler.handle_dispatch_requested,
-            EventType.DISPATCH_ASSIGNED: self.dispatch_handler.handle_dispatch_assigned,
-            EventType.DISPATCH_REJECTED: self.dispatch_handler.handle_dispatch_rejected,
             
-            # Passenger Journey Events
-            EventType.PASSENGER_WALKING_TO_PICKUP: self.passenger_handler.handle_passenger_walking_to_pickup,
-            EventType.PASSENGER_ARRIVED_AT_PICKUP_STOP: self.passenger_handler.handle_passenger_arrived_at_pickup_stop,
-            EventType.PASSENGER_IN_VEHICLE: self.passenger_handler.handle_passenger_in_vehicle,
-            EventType.PASSENGER_ARRIVED_AT_DESTINATION_STOP: self.passenger_handler.handle_passenger_arrived_at_destination_stop,
-            EventType.PASSENGER_WALKING_TO_DESTINATION: self.passenger_handler.handle_passenger_walking_to_destination,
-            EventType.PASSENGER_ARRIVED_AT_DESTINATION: self.passenger_handler.handle_passenger_arrived_at_destination,
+            # Matching Events
+            EventType.MATCH_REQUEST_TO_VEHICLE: self.matching_handler.handle_match_request_to_vehicle,
             
             # Vehicle Events
-            EventType.VEHICLE_CREATED: self.vehicle_handler.handle_vehicle_created,
-            EventType.VEHICLE_ACTIVATED: self.vehicle_handler.handle_vehicle_activated,
-            EventType.VEHICLE_DEPARTED: self.vehicle_handler.handle_vehicle_departed,
-            EventType.VEHICLE_ARRIVED: self.vehicle_handler.handle_vehicle_arrived,
-            EventType.VEHICLE_REROUTED: self.vehicle_handler.handle_vehicle_rerouted,
-            EventType.VEHICLE_BREAKDOWN: self.vehicle_handler.handle_vehicle_breakdown,
-            EventType.VEHICLE_AT_CAPACITY: self.vehicle_handler.handle_vehicle_at_capacity,
+            EventType.VEHICLE_ARRIVED_STOP: self.vehicle_handler.handle_vehicle_arrived_stop,
+            EventType.VEHICLE_DISPATCH_REQUEST: self.vehicle_handler.handle_vehicle_dispatch_request,
+            EventType.VEHICLE_ACTIVE_ROUTE_UPDATE: self.vehicle_handler.handle_vehicle_active_route_id_update,
+            EventType.VEHICLE_REROUTE_REQUEST: self.vehicle_handler.handle_vehicle_reroute_request,
+            EventType.VEHICLE_EN_ROUTE: self.vehicle_handler.handle_vehicle_en_route,
+            EventType.VEHICLE_REBALANCING_REQUIRED: self.vehicle_handler.handle_vehicle_rebalancing_required,
+            EventType.VEHICLE_WAIT_TIMEOUT: self.vehicle_handler.handle_vehicle_wait_timeout,
+            # Passenger Events
+            EventType.START_PASSENGER_JOURNEY: self.passenger_handler.handle_start_passenger_journey,
+            EventType.PASSENGER_WALKING_TO_PICKUP: self.passenger_handler.handle_passenger_walking_to_pickup,
+            EventType.PASSENGER_ARRIVED_PICKUP: self.passenger_handler.handle_passenger_arrived_pickup,
+            EventType.PASSENGER_BOARDING_COMPLETED: self.passenger_handler.handle_boarding_completed,
+            EventType.PASSENGER_ALIGHTING_COMPLETED: self.passenger_handler.handle_alighting_completed,
+            EventType.PASSENGER_ARRIVED_DESTINATION: self.passenger_handler.handle_passenger_arrived_destination,
+            EventType.PASSENGER_NO_SHOW: self.passenger_handler.handle_passenger_no_show,
+            EventType.SERVICE_LEVEL_VIOLATION: self.passenger_handler.handle_service_level_violation,
             
             # Route Events
-            EventType.ROUTE_CREATED: self.route_handler.handle_route_created,
-            EventType.ROUTE_UPDATED: self.route_handler.handle_route_updated,
-            EventType.ROUTE_COMPLETED: self.route_handler.handle_route_completed,
-            EventType.ROUTE_DELAYED: self.route_handler.handle_route_delayed,
-            EventType.ROUTE_DETOUR_NEEDED: self.route_handler.handle_route_detour_needed,
-            EventType.ROUTE_OPTIMIZATION_NEEDED: self.route_handler.handle_route_optimization_needed,
-            EventType.VEHICLE_ROUTE_STARTED: self.route_handler.handle_route_started,
-            EventType.ROUTE_STOP_REACHED: self.route_handler.handle_route_stop_reached,
+            EventType.ROUTE_UPDATE_REQUEST: self.route_handler.handle_route_update_request,
             
             # Stop Events
-            EventType.STOP_ACTIVATED: self.stop_handler.handle_stop_activated,
-            EventType.STOP_DEACTIVATED: self.stop_handler.handle_stop_deactivated,
-            EventType.STOP_CONGESTED: self.stop_handler.handle_stop_congested,
-            EventType.STOP_CAPACITY_EXCEEDED: self.stop_handler.handle_stop_capacity_exceeded,
-            
-            # Passenger Events
-            EventType.PASSENGER_WALKING_TO_PICKUP: self.passenger_handler.handle_passenger_walking_to_pickup,
-            EventType.PASSENGER_ARRIVED_AT_PICKUP_STOP: self.passenger_handler.handle_passenger_arrived_at_pickup_stop,
-            EventType.PASSENGER_IN_VEHICLE: self.passenger_handler.handle_passenger_in_vehicle,
-            EventType.PASSENGER_ARRIVED_AT_DESTINATION_STOP: self.passenger_handler.handle_passenger_arrived_at_destination_stop,
-            EventType.PASSENGER_WALKING_TO_DESTINATION: self.passenger_handler.handle_passenger_walking_to_destination,
-            EventType.PASSENGER_ARRIVED_AT_DESTINATION: self.passenger_handler.handle_passenger_arrived_at_destination,
-            
-            # System Events
-            EventType.SIMULATION_START: self.system_handler.handle_simulation_initialized,
-            EventType.SIMULATION_END: self.system_handler.handle_simulation_completed,
-            EventType.SIMULATION_ERROR: self.system_handler.handle_system_error,
-            EventType.WARMUP_COMPLETED: self.system_handler.handle_warmup_completed
+            EventType.DETERMINE_VIRTUAL_STOPS: self.stop_handler.handle_determine_virtual_stops,
+            EventType.STOP_SELECTION_TICK: self.stop_handler.handle_stop_selection_tick,
+            EventType.STOP_ACTIVATED: self.stop_handler.handle_stop_activation_request,
+            EventType.STOP_DEACTIVATED: self.stop_handler.handle_stop_deactivation_request,
         }
         
-        # Register all handlers
+        # Register validation rules
+        validation_rules = {
+            EventType.REQUEST_RECEIVED: [
+                lambda e: hasattr(e, 'request_id'),
+                lambda e: hasattr(e, 'passenger_id'),
+            ],
+            EventType.VEHICLE_ASSIGNMENT: [
+                lambda e: hasattr(e, 'vehicle_id'),
+                lambda e: hasattr(e, 'request_id'),
+            ],
+            # Add other validation rules as needed
+        }
+        
+        # Register all handlers with their validation rules and error handlers
         for event_type, handler in handlers_map.items():
             if not callable(handler):
                 raise ValueError(f"Invalid handler for event type {event_type}")
-            self.event_manager.register_handler(event_type, handler)
-            logger.debug(f"Registered handler for {event_type.value}")
+                
+            self.event_manager.register_handler(
+                event_type=event_type,
+                handler=handler,
+                validation_rules=validation_rules.get(event_type)
+            )
+            
+            logger.debug(f"Registered handler for {event_type}")
         
     def _setup_initial_state(self) -> None:
         """Set up the initial simulation state."""
@@ -250,52 +264,69 @@ class SimulationOrchestrator:
         
         self.state_manager.set_state(initial_state)
         logger.info("Initial simulation state configured")
+
+    def save_event_history(self, output_path: Path) -> None:
+        """Save the complete event history"""
+        if not self.event_manager:
+            logger.warning("No event manager available")
+            return
             
-    def step(self) -> Dict[str, Any]:
-        """
-        Execute one simulation step.
-        
-        Returns:
-            Dict containing step results
-        """
+        try:
+            events = self.event_manager.get_serializable_history()
+            with open(output_path, 'w') as f:
+                json.dump(events, f, cls=SimulationEncoder, indent=2)
+            logger.info(f"Saved event history to {output_path}")
+        except Exception as e:
+            logger.error(f"Failed to save event history: {str(e)}\n{traceback.format_exc()}")
+            
+    async def step(self) -> Dict[str, Any]:
+        """Execute one simulation step."""
         if not self.initialized:
             raise RuntimeError("Simulation not initialized")
             
         try:
-            # Process demand for current timestep
-            self._process_demand()
-            # Execute simulation step
-            step_results = self.engine.step()
-            # Update step count
-            self.step_count += 1
+            step_start_time = datetime.now()
             
-            return step_results
+            # Execute simulation step
+            step_metrics = await self.engine.step()
+            
+            # Log step execution time
+            step_duration = (datetime.now() - step_start_time).total_seconds()
+            # if self.metrics_collector:
+            #     self.metrics_collector.log(
+            #         MetricName.SIMULATION_STEP_DURATION,
+            #         step_duration,
+            #         {
+            #             'step': self.step_count,
+            #             'current_time': self.context.current_time.isoformat()
+            #         }
+            #     )
+            
+            self.step_count += 1
+            return step_metrics
             
         except Exception as e:
             logger.error(f"Error during simulation step: {str(e)}")
-            self.context.status = SimulationStatus.FAILED
             raise
+
+    def _schedule_all_demand(self) -> None:
+        """Schedule all demand events for the entire simulation period."""
+        if not self.demand_manager or not self.engine:
+            raise RuntimeError("Required components not initialized")
             
-    def _process_demand(self) -> None:
-        """Process demand for the current time step."""
-        if not self.demand_manager:
-            raise RuntimeError("Demand manager not initialized")
-        if not self.event_manager:
-            raise RuntimeError("Event manager not initialized")
-            
-        # Generate new events and requests for current timestep
+        # Generate all demand events for the entire simulation period
         events, requests = self.demand_manager.generate_demand(
-            self.context.current_time,
-            self.context.time_step
+            self.context.start_time,
+            self.context.end_time - self.context.start_time
         )
         
-        # Process each event through the event manager
+        # Schedule all events through the engine
         for event in events:
-            self.event_manager.process_event(event)
+            self.engine.schedule_event(event)
             
-        logger.debug(
-            f"Processed {len(events)} demand events "
-            f"containing {len(requests)} requests for timestep"
+        logger.info(
+            f"Scheduled {len(events)} demand events "
+            f"containing {len(requests)} requests for entire simulation"
         )
             
     def get_state(self) -> SimulationState:
@@ -335,29 +366,24 @@ class SimulationOrchestrator:
         self.state_manager.load_state(path)
         
     def cleanup(self) -> None:
-        """Clean up simulation resources."""
-        logger.info("Cleaning up simulation resources")
-        
+        """Clean up simulation resources and export metrics."""
         try:
-            # Clean up components in reverse order of initialization
-            if self.engine:
-                self.engine.cleanup()
+            if self.initialized:
+                # Export metrics if collector exists and output directory is set
+                if self.metrics_collector:
+                    self.metrics_collector.flush_hierarchical()
+                    
+                # Clean up other components
+                if self.state_manager:
+                    self.state_manager.cleanup()
+                if self.event_manager:
+                    self.event_manager.cleanup()
+                if self.demand_manager:
+                    self.demand_manager.cleanup()
+                    
+                self.initialized = False
+                logger.info("Simulation cleanup completed")
                 
-            if self.demand_manager:
-                self.demand_manager.cleanup()
-                
-            if self.event_manager:
-                self.event_manager.cleanup()
-                
-            if self.state_manager:
-                self.state_manager.cleanup()
-                
-            # Reset flags and counters
-            self.initialized = False
-            self.step_count = 0
-            
-            logger.info("Simulation cleanup completed")
-            
         except Exception as e:
-            logger.error(f"Error during cleanup: {str(e)}")
+            logger.error(f"Error during simulation cleanup: {str(e)}")
             raise

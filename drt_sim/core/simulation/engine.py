@@ -1,7 +1,5 @@
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
-import logging
-import heapq
+from datetime import datetime
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 from drt_sim.core.simulation.context import SimulationContext
@@ -10,7 +8,9 @@ from drt_sim.models.simulation import SimulationStatus
 from drt_sim.core.state.manager import StateManager
 from drt_sim.models.event import Event
 from drt_sim.config.config import DataclassYAMLMixin
-logger = logging.getLogger(__name__)
+from drt_sim.core.logging_config import setup_logger
+
+logger = setup_logger(__name__)
 
 @dataclass
 class SimulationStep(DataclassYAMLMixin):
@@ -54,10 +54,6 @@ class SimulationEngine:
         self.total_steps_executed = 0
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
-        
-        # Event queue for future events
-        self.future_events: List[Event] = []
-        heapq.heapify(self.future_events)
     
     def initialize(self) -> None:
         """Initialize the simulation engine"""
@@ -70,9 +66,6 @@ class SimulationEngine:
             # Reset counters
             self.total_events_processed = 0
             self.total_steps_executed = 0
-            
-            # Clear future events
-            self.future_events.clear()
             
             # Set initial simulation status
             if self.context.warm_up_duration.total_seconds() > 0:
@@ -87,7 +80,7 @@ class SimulationEngine:
             self.context.status = SimulationStatus.FAILED
             raise
     
-    def step(self) -> SimulationStep:
+    async def step(self) -> SimulationStep:
         """
         Execute one simulation step.
         
@@ -95,33 +88,25 @@ class SimulationEngine:
             SimulationStep containing results of the step
         """
         step_start_time = datetime.now()
-        events_processed = 0
         
         try:
             # Process all events for current time step
-            current_events = self._get_current_events()
-            for event in current_events:
-                self.event_manager.process_event(event)
-                events_processed += 1
+            processed_events = await self.event_manager.process_events(self.context.current_time)
+            events_processed = len(processed_events)
             
-            # Update total counts
+            # Update counts and state
             self.total_events_processed += events_processed
             self.total_steps_executed += 1
             
-            # Take state snapshot
             self.state_manager.take_snapshot(self.context.current_time)
             
-            # Advance simulation time
+            # Advance time and check completion
             self.context.advance_time()
-            
-            # Check for simulation completion
             self._check_completion()
             
-            # Calculate step execution time
             execution_time = (datetime.now() - step_start_time).total_seconds()
             
-            # Create step result
-            step_result = SimulationStep(
+            return SimulationStep(
                 timestamp=self.context.current_time,
                 events_processed=events_processed,
                 state_snapshot=self.state_manager.get_current_state(),
@@ -130,27 +115,10 @@ class SimulationEngine:
                 execution_time=execution_time
             )
             
-            return step_result
-            
         except Exception as e:
             logger.error(f"Error during simulation step: {str(e)}")
             self.context.status = SimulationStatus.FAILED
             raise
-    
-    def _get_current_events(self) -> List[Event]:
-        """Get all events for current time step"""
-        current_events = []
-        
-        # Get events from future events queue
-        while (self.future_events and 
-               self.future_events[0].timestamp <= self.context.current_time):
-            event = heapq.heappop(self.future_events)
-            current_events.append(event)
-        
-        # Sort events by priority
-        current_events.sort(key=lambda x: x.priority)
-        
-        return current_events
     
     def schedule_event(self, event: Event) -> None:
         """
@@ -162,7 +130,7 @@ class SimulationEngine:
         if event.timestamp < self.context.current_time:
             raise ValueError("Cannot schedule event in the past")
         
-        heapq.heappush(self.future_events, event)
+        self.event_manager.publish_event(event)
     
     def _check_completion(self) -> None:
         """Check if simulation should complete"""
@@ -181,7 +149,7 @@ class SimulationEngine:
             return
         
         # Check for no more events
-        if not self.future_events and self.context.status == SimulationStatus.RUNNING:
+        if self.event_manager.event_queue.empty() and self.context.status == SimulationStatus.RUNNING:
             logger.info("No more events to process")
             self.context.status = SimulationStatus.COMPLETED
     
@@ -192,7 +160,7 @@ class SimulationEngine:
             'steps_executed': self.total_steps_executed,
             'events_per_step': (self.total_events_processed / self.total_steps_executed 
                               if self.total_steps_executed > 0 else 0),
-            'future_events': len(self.future_events)
+            'queued_events': self.event_manager.event_queue.qsize()
         }
     
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -215,9 +183,6 @@ class SimulationEngine:
         try:
             # Record end time
             self.end_time = datetime.now()
-            
-            # Clear future events
-            self.future_events.clear()
             
             # Log final statistics
             logger.info("Simulation engine cleanup complete")

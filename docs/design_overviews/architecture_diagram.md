@@ -1,50 +1,82 @@
 ```mermaid
-flowchart TD
-    subgraph Study["Study Level (e.g., Fleet Size Impact)"]
-        StudyConfig["Study Configuration\n- Study type (parameter sweep/comparative)\n- Base parameters\n- Metrics to collect"]
-        Studies["Available Studies\n- Fleet size optimization\n- Demand pattern analysis\n- Service area coverage\n- Vehicle capacity impact"]
-    end
-
-    subgraph Experiments["Experiment Level"]
-        ExpSetup["Experiment Setup\n- Parameter variations\n- Replications\n- Random seeds"]
-        ExpTypes["Experiment Types\n- Base case\n- Peak demand\n- Weekend service\n- Special events"]
-    end
-
-    subgraph Scenarios["Scenario Level"]
-        ScenConfig["Scenario Configuration\n- Network data\n- Demand patterns\n- Fleet characteristics"]
-        Components["Core Components\n- Routing algorithm\n- Dispatch strategy\n- User acceptance model"]
-    end
-
-    subgraph Results["Results & Analysis"]
-        Metrics["Key Metrics\n- Wait times\n- Vehicle utilization\n- Service coverage\n- User satisfaction"]
-        Visualization["Visualization Types\n- Performance heatmaps\n- Time series plots\n- Geographic visualizations\n- KPI dashboards"]
-        Analysis["Analysis Tools\n- Statistical testing\n- Scenario comparison\n- Sensitivity analysis"]
-    end
-
-    Study --> |"Defines scope"| Experiments
-    Experiments --> |"Configures"| Scenarios
-    Scenarios --> |"Generates"| Results
-
-    subgraph DataFlow["Data Flow"]
-        Raw["Raw Simulation Data"]
-        Processed["Processed Metrics"]
-        Insights["Research Insights"]
-    end
-
-    Results --> |"Produces"| DataFlow
-
-    subgraph MLflow["MLflow Tracking"]
-        Params["Parameters"]
-        Metrics2["Metrics"]
-        Artifacts["Artifacts"]
-    end
-
-    DataFlow --> |"Tracked in"| MLflow
-
-    style Study fill:#f9f,stroke:#333,stroke-width:2px
-    style Experiments fill:#bbf,stroke:#333,stroke-width:2px
-    style Scenarios fill:#bfb,stroke:#333,stroke-width:2px
-    style Results fill:#fbb,stroke:#333,stroke-width:2px
-    style DataFlow fill:#ddd,stroke:#333,stroke-width:2px
-    style MLflow fill:#ff9,stroke:#333,stroke-width:2px
+graph TD
+    %% Main Components
+    CLI[CLI Entry Point<br/>run_study.py]
+    SR[StudyRunner]
+    ER[ExperimentRunner]
+    SCR[ScenarioRunner]
+    SO[SimulationOrchestrator]
+    SE[SimulationEngine]
+    SM[StateManager]
+    EM[EventManager]
+    
+    %% State Workers
+    SW_V[VehicleStateWorker]
+    SW_R[RequestStateWorker]
+    SW_RT[RouteStateWorker]
+    SW_P[PassengerStateWorker]
+    SW_S[StopStateWorker]
+    
+    %% Event Handlers
+    EH_V[VehicleHandler]
+    EH_R[RequestHandler]
+    EH_RT[RouteHandler]
+    EH_P[PassengerHandler]
+    EH_D[DispatchHandler]
+    EH_S[StopHandler]
+    
+    %% Other Components
+    DM[DemandManager]
+    NM[NetworkManager]
+    ML[MLflow Tracking]
+    
+    %% Hierarchical Relationships
+    CLI --> SR
+    SR --> ER
+    ER --> SCR
+    SCR --> SO
+    SO --> SE
+    SO --> SM
+    SO --> EM
+    SO --> DM
+    SO --> NM
+    
+    %% State Management Relationships
+    SM --> SW_V
+    SM --> SW_R
+    SM --> SW_RT
+    SM --> SW_P
+    SM --> SW_S
+    
+    %% Event Handler Relationships
+    EM --> EH_V
+    EM --> EH_R
+    EM --> EH_RT
+    EM --> EH_P
+    EM --> EH_D
+    EM --> EH_S
+    
+    %% Cross-Component Interactions
+    SR -.-> ML
+    ER -.-> ML
+    SCR -.-> ML
+    
+    EH_V -.-> SM
+    EH_R -.-> SM
+    EH_RT -.-> SM
+    EH_P -.-> SM
+    EH_S -.-> SM
+    
+    SE -.-> EM
+    
+    %% Styling
+    classDef primary fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef secondary fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef tertiary fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    classDef quaternary fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    
+    class CLI,SR,ER,SCR primary
+    class SO,SE,SM,EM secondary
+    class SW_V,SW_R,SW_RT,SW_P,SW_S tertiary
+    class EH_V,EH_R,EH_RT,EH_P,EH_D,EH_S quaternary
 ```

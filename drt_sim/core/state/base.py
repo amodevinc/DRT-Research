@@ -24,15 +24,11 @@ class StateContainer(Generic[T]):
         """Get item by ID"""
         return self._items.get(id)
         
-    def update(self, id: str, updates: Dict[str, Any]) -> None:
+    def update(self, id: str, item: T) -> None:
         """Update existing item"""
         if id not in self._items:
             raise KeyError(f"Item {id} not found")
-        item = self._items[id]
-        for key, value in updates.items():
-            if not hasattr(item, key):
-                raise AttributeError(f"Invalid attribute {key} for item {id}")
-            setattr(item, key, value)
+        self._items[id] = item
             
     def remove(self, id: str) -> None:
         """Remove item from container"""
@@ -83,11 +79,6 @@ class StateWorker(ABC):
     @abstractmethod
     def take_snapshot(self, timestamp: datetime) -> None:
         """Take state snapshot"""
-        pass
-        
-    @abstractmethod
-    def get_metrics(self) -> Dict[str, Any]:
-        """Get worker metrics"""
         pass
         
     @abstractmethod

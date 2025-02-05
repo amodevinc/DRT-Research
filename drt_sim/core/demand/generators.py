@@ -32,16 +32,16 @@ class BaseDemandGenerator(ABC):
     def _create_request(
         self,
         request_time: datetime,
-        pickup_location: Location,
-        dropoff_location: Location
+        origin: Location,
+        destination: Location
     ) -> Request:
         """Create a new request"""
         self.request_counter += 1
         return Request(
             id=f"R{self.request_counter}",
             passenger_id=f"P{self.request_counter}",
-            pickup_location=pickup_location,
-            dropoff_location=dropoff_location,
+            origin=origin,
+            destination=destination,
             request_time=request_time,
             type=RequestType.IMMEDIATE,
             status=RequestStatus.PENDING
@@ -54,7 +54,7 @@ class BaseDemandGenerator(ABC):
         
         return Event(
             id=event_id,
-            event_type=EventType.REQUEST_CREATED,
+            event_type=EventType.REQUEST_RECEIVED,
             priority=EventPriority.HIGH,  # Requests are high priority
             timestamp=request.request_time,
             data={"request": request},
@@ -91,13 +91,13 @@ class RandomDemandGenerator(BaseDemandGenerator):
             current_time += timedelta(hours=hours_until_next)
             
             if current_time < actual_end_time:
-                pickup_loc = self._generate_location()
-                dropoff_loc = self._generate_location()
+                origin = self._generate_location()
+                destination = self._generate_location()
                 
                 request = self._create_request(
                     request_time=current_time,
-                    pickup_location=pickup_loc,
-                    dropoff_location=dropoff_loc
+                    origin=origin,
+                    destination=destination
                 )
                 events.append(self._create_event(request))
         
@@ -233,11 +233,11 @@ class CSVDemandGenerator(BaseDemandGenerator):
                     
                     request = self._create_request(
                         request_time=request_time,
-                        pickup_location=Location(
+                        origin=Location(
                             lat=row[self.config.columns["pickup_lat"]],
                             lon=row[self.config.columns["pickup_lon"]]
                         ),
-                        dropoff_location=Location(
+                        destination=Location(
                             lat=row[self.config.columns["dropoff_lat"]],
                             lon=row[self.config.columns["dropoff_lon"]]
                         )

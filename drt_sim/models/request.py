@@ -1,6 +1,6 @@
 # drt_sim/models/request.py
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, ClassVar
+from typing import Optional, Dict, Any, ClassVar
 from enum import Enum
 from .base import ModelBase
 from datetime import datetime
@@ -22,8 +22,10 @@ class RequestStatus(Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     REJECTED = "rejected"
-    PICKED_UP = "picked_up"
-    DROPPED_OFF = "dropped_off"
+    EXPIRED = "expired"
+    RECEIVED = "received"
+    VALIDATED = "validated"
+    VALIDATION_FAILED = "validation_failed"
 
 @dataclass
 class RequestConstraints(ModelBase):
@@ -59,31 +61,27 @@ class Request(ModelBase):
     type: RequestType
     id: str
     passenger_id: str
-    pickup_location: Location
-    dropoff_location: Location
+    origin: Location
+    destination: Location
     request_time: datetime
     status: RequestStatus
     constraints: Optional[RequestConstraints] = None
-    assigned_vehicle_id: Optional[str] = None
-    estimated_price: Optional[float] = None
-    pickup_time: Optional[datetime] = None
-    dropoff_time: Optional[datetime] = None
     _version: ClassVar[str] = "1.0"
+    assignment_id: Optional[str] = None
+    estimated_price: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             'type': self.type.value,
             'id': self.id,
             'passenger_id': self.passenger_id,
-            'pickup_location': self.pickup_location.to_dict(),
-            'dropoff_location': self.dropoff_location.to_dict(),
+            'origin': self.origin.to_dict(),
+            'destination': self.destination.to_dict(),
             'request_time': self.request_time.isoformat(),
             'status': self.status.value,
             'constraints': self.constraints.to_dict() if self.constraints else None,
-            'assigned_vehicle_id': self.assigned_vehicle_id,
             'estimated_price': self.estimated_price,
-            'pickup_time': self.pickup_time.isoformat() if self.pickup_time else None,
-            'dropoff_time': self.dropoff_time.isoformat() if self.dropoff_time else None,
+            'assignment_id': self.assignment_id,
             '_version': self._version
         }
 
@@ -93,14 +91,12 @@ class Request(ModelBase):
             type=RequestType(data['type']),
             id=data['id'],
             passenger_id=data['passenger_id'],
-            pickup_location=Location.from_dict(data['pickup_location']),
-            dropoff_location=Location.from_dict(data['dropoff_location']),
+            origin=Location.from_dict(data['origin']),
+            destination=Location.from_dict(data['destination']),
             request_time=datetime.fromisoformat(data['request_time']),
-            status=RequestStatus(data['status']),
             constraints=RequestConstraints.from_dict(data['constraints']) if data.get('constraints') else None,
-            assigned_vehicle_id=data.get('assigned_vehicle_id'),
+            status=RequestStatus(data['status']),
             estimated_price=data.get('estimated_price'),
-            pickup_time=datetime.fromisoformat(data['pickup_time']) if data.get('pickup_time') else None,
-            dropoff_time=datetime.fromisoformat(data['dropoff_time']) if data.get('dropoff_time') else None
+            assignment_id=data.get('assignment_id')
         )
 

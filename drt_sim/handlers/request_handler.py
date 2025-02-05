@@ -1,388 +1,466 @@
-from typing import Optional, List
-from datetime import datetime, timedelta
-
-from .base import BaseHandler
+from dataclasses import dataclass
+from datetime import timedelta
+from typing import Dict, Any
+import traceback
+from drt_sim.core.monitoring.types.metrics import MetricName
+from drt_sim.core.state.manager import StateManager
+from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.request import Request, RequestStatus
-from drt_sim.models.vehicle import VehicleStatus
+from drt_sim.models.location import Location
+from drt_sim.config.config import ScenarioConfig
+from drt_sim.core.logging_config import setup_logger
+from drt_sim.network.manager import NetworkManager
+from drt_sim.models.matching import Assignment
+logger = setup_logger(__name__)
 
-class RequestHandler(BaseHandler):
+@dataclass
+class RequestValidationResult:
+    """Results of request validation"""
+    is_valid: bool
+    errors: list[str]
+    warnings: list[str]
+
+class RequestHandler:
     """
-    Handles all request-related events in the DRT simulation, managing the complete
-    lifecycle of passenger requests from creation to completion.
+    Handles the complete lifecycle of transportation requests in the DRT system.
     """
     
-    def handle_request_created(self, event: Event) -> Optional[List[Event]]:
-        """
-        Handle new request creation. Validates the request and initiates the dispatch process.
-        """
+    def __init__(
+        self,
+        config: ScenarioConfig,
+        context: SimulationContext,
+        state_manager: StateManager,
+        network_manager: NetworkManager
+    ):
+        self.config = config
+        self.context = context
+        self.state_manager = state_manager
+        self.network_manager = network_manager
+        self.validation_rules = self._setup_validation_rules()
+        self.initialized = True
+        
+    def _setup_validation_rules(self) -> Dict[str, Any]:
+        """Initialize request validation rules from config"""
+        return {
+            'max_walking_distance': self.config.service.max_walking_distance,
+        }
+
+    def handle_request_received(self, event: Event) -> None:
+        """Handle initial receipt of a new transportation request."""
+        if not self.initialized:
+            raise RuntimeError("Handler not initialized")
+            
         try:
-            # Extract request from event data
-            request_data = event.data.get('request')
-            if not request_data:
-                raise ValueError(f"No request data found in event {event.id}")
+            self.state_manager.begin_transaction()
             
-            # Create and validate request
-            request = Request(**request_data)
-            if not self._validate_request(request):
-                return [self._create_request_rejected_event(
-                    request.id,
-                    "Request validation failed"
-                )]
+            # Extract request data and create request object
+            request: Request = event.data['request']
             
-            # Add request to state manager
+            # Add request to state management
             self.state_manager.request_worker.add_request(request)
             
-            self.logger.info(f"Created new request: {request.id}")
+            # Validate request
+            validation_result = self._validate_request(request)
             
-            # Create dispatch request event
-            return [Event(
-                event_type=EventType.DISPATCH_REQUESTED,
-                timestamp=self.context.current_time,
-                priority=EventPriority.HIGH,
-                request_id=request.id,
-                data={'request': request_data}
-            )]
+            if validation_result.is_valid:
+                # Update status and create validation event
+                self.state_manager.request_worker.update_request_status(
+                    request.id,
+                    RequestStatus.VALIDATED
+                )
+                self._create_determine_virtual_stops_event(request)
+            else:
+                # Update status and create rejection event
+                self.state_manager.request_worker.update_request_status(
+                    request.id,
+                    RequestStatus.REJECTED
+                )
+                self._create_request_validation_failed_event(request, validation_result)
+            
+            self.state_manager.commit_transaction()
+            logger.info(f"Processed new request {request.id}")
             
         except Exception as e:
-            self.logger.error(f"Failed to handle request creation: {str(e)}")
-            raise
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error processing request: {str(e)}\n{traceback.format_exc()}")
+            self._handle_request_error(event, str(e))
+    
+    def handle_request_rejected(self, event: Event) -> None:
+        """Handle request rejection."""
+        if not self.initialized:
+            raise RuntimeError("Handler not initialized")
             
-    def handle_request_rejected(self, event: Event) -> Optional[List[Event]]:
-        """Handle request rejection"""
-        request_id = event.request_id
-        reason = event.data.get('reason', 'Unspecified')
-        
         try:
-            # Update request status
+            self.state_manager.begin_transaction()
+            
+            request = self.state_manager.request_worker.get_request(event.request_id)
+            if not request:
+                raise ValueError(f"Request {event.request_id} not found")
+            
+            rejection_metadata = {
+                'rejection_time': self.context.current_time,
+                'rejection_reason': event.data.get('reason', 'Unknown reason'),
+                'rejection_stage': request.status.value
+            }
+            
             self.state_manager.request_worker.update_request_status(
-                request_id,
+                request.id,
                 RequestStatus.REJECTED,
-                {
-                    'rejection_time': self.context.current_time,
-                    'rejection_reason': reason
-                }
             )
             
-            self.logger.info(f"Request {request_id} rejected: {reason}")
+            self.state_manager.commit_transaction()
+            logger.info(f"Request {request.id} rejected: {rejection_metadata['rejection_reason']}")
             
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle request rejection: {str(e)}")
-            raise
-
-    def handle_request_assigned(self, event: Event) -> Optional[List[Event]]:
-        """Handle request assignment to vehicle"""
-        request_id = event.request_id
-        vehicle_id = event.data.get('vehicle_id')
-        pickup_time = event.data.get('estimated_pickup_time')
-        dropoff_time = event.data.get('estimated_dropoff_time')
-        
-        try:
-            # Update request status
-            self.state_manager.request_worker.update_request_status(
-                request_id,
-                RequestStatus.ASSIGNED,
-                {
-                    'assigned_vehicle': vehicle_id,
-                    'assignment_time': self.context.current_time,
-                    'estimated_pickup_time': pickup_time,
-                    'estimated_dropoff_time': dropoff_time
-                }
-            )
-            
-            # Update vehicle status
-            self.state_manager.vehicle_worker.update_vehicle_state(
-                vehicle_id,
-                VehicleStatus.ASSIGNED,
-                {
-                    'assigned_request': request_id,
-                    'next_pickup_time': pickup_time
-                }
-            )
-            
-            self.logger.info(f"Request {request_id} assigned to vehicle {vehicle_id}")
-            
-            # Create vehicle movement event if needed
-            vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
-            request = self.state_manager.request_worker.get_request(request_id)
-            
-            if vehicle.current_location != request.pickup_location:
-                return [Event(
-                    event_type=EventType.VEHICLE_DEPARTED,
-                    timestamp=self.context.current_time,
-                    priority=EventPriority.HIGH,
-                    vehicle_id=vehicle_id,
-                    request_id=request_id,
-                    data={
-                        'destination': request.pickup_location,
-                        'purpose': 'pickup'
-                    }
-                )]
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle request assignment: {str(e)}")
-            raise
-
-    def handle_request_pickup_started(self, event: Event) -> Optional[List[Event]]:
-        """Handle start of request pickup process"""
-        request_id = event.request_id
-        vehicle_id = event.data.get('vehicle_id')
-        
-        try:
-            # Update request status
-            self.state_manager.request_worker.update_request_status(
-                request_id,
-                RequestStatus.PICKUP_STARTED,
-                {
-                    'pickup_start_time': self.context.current_time,
-                }
-            )
-            
-            # Update vehicle status
-            self.state_manager.vehicle_worker.update_vehicle_state(
-                vehicle_id,
-                VehicleStatus.LOADING,
-                {'current_action': 'pickup'}
-            )
-            
-            self.logger.info(f"Started pickup for request {request_id}")
-            
-            # Schedule pickup completion based on boarding time
-            return [Event(
-                event_type=EventType.REQUEST_PICKUP_COMPLETED,
-                timestamp=self.context.current_time + timedelta(
-                    seconds=self.config.vehicle.boarding_time
-                ),
-                priority=EventPriority.HIGH,
-                request_id=request_id,
-                vehicle_id=vehicle_id
-            )]
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle pickup start: {str(e)}")
-            raise
-
-    def handle_request_pickup_completed(self, event: Event) -> Optional[List[Event]]:
-        """Handle completion of request pickup"""
-        request_id = event.request_id
-        vehicle_id = event.data.get('vehicle_id')
-        
-        try:
-            request = self.state_manager.request_worker.get_request(request_id)
-            
-            # Update request status
-            self.state_manager.request_worker.update_request_status(
-                request_id,
-                RequestStatus.IN_VEHICLE,
-                {
-                    'pickup_time': self.context.current_time,
-                    'pickup_location': request.pickup_location
-                }
-            )
-            
-            # Update vehicle status and start journey to dropoff
-            self.state_manager.vehicle_worker.update_vehicle_state(
-                vehicle_id,
-                VehicleStatus.OCCUPIED,
-                {
-                    'current_passengers': [request_id],
-                    'next_destination': request.dropoff_location
-                }
-            )
-            
-            self.logger.info(f"Completed pickup for request {request_id}")
-            
-            # Create vehicle departure event for dropoff
-            return [Event(
-                event_type=EventType.VEHICLE_DEPARTED,
-                timestamp=self.context.current_time,
-                priority=EventPriority.HIGH,
-                vehicle_id=vehicle_id,
-                request_id=request_id,
-                data={
-                    'destination': request.dropoff_location,
-                    'purpose': 'dropoff'
-                }
-            )]
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle pickup completion: {str(e)}")
-            raise
-
-    def handle_request_dropoff_started(self, event: Event) -> Optional[List[Event]]:
-        """Handle start of request dropoff process"""
-        request_id = event.request_id
-        vehicle_id = event.data.get('vehicle_id')
-        
-        try:
-            # Update request status
-            self.state_manager.request_worker.update_request_status(
-                request_id,
-                RequestStatus.DROPOFF_STARTED,
-                {
-                    'dropoff_start_time': self.context.current_time,
-                }
-            )
-            
-            # Update vehicle status
-            self.state_manager.vehicle_worker.update_vehicle_state(
-                vehicle_id,
-                VehicleStatus.UNLOADING,
-                {'current_action': 'dropoff'}
-            )
-            
-            self.logger.info(f"Started dropoff for request {request_id}")
-            
-            # Schedule dropoff completion based on alighting time
-            return [Event(
-                event_type=EventType.REQUEST_DROPOFF_COMPLETED,
-                timestamp=self.context.current_time + timedelta(
-                    seconds=self.config.vehicle.alighting_time
-                ),
-                priority=EventPriority.HIGH,
-                request_id=request_id,
-                vehicle_id=vehicle_id
-            )]
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle dropoff start: {str(e)}")
-            raise
-
-    def handle_request_dropoff_completed(self, event: Event) -> Optional[List[Event]]:
-        """Handle completion of request dropoff"""
-        request_id = event.request_id
-        vehicle_id = event.data.get('vehicle_id')
-        
-        try:
-            request = self.state_manager.request_worker.get_request(request_id)
-            
-            # Update request status with final metrics
-            self.state_manager.request_worker.update_request_status(
-                request_id,
-                RequestStatus.COMPLETED,
-                {
-                    'dropoff_time': self.context.current_time,
-                    'dropoff_location': request.dropoff_location,
-                    'service_duration': (self.context.current_time - 
-                                      request.creation_time).total_seconds(),
-                    'final_cost': self._calculate_final_cost(request)
-                }
-            )
-            
-            # Update vehicle status
-            self.state_manager.vehicle_worker.update_vehicle_state(
-                vehicle_id,
-                VehicleStatus.IDLE,
-                {
-                    'current_passengers': [],
-                    'last_service': request_id
-                }
-            )
-            
-            self.logger.info(f"Completed dropoff for request {request_id}")
-            
-            # Create rebalancing evaluation event
-            return [Event(
-                event_type=EventType.REBALANCING_NEEDED,
-                timestamp=self.context.current_time,
-                priority=EventPriority.LOW,
-                vehicle_id=vehicle_id,
-                data={'last_service_location': request.dropoff_location}
-            )]
-            
-        except Exception as e:
-            self.logger.error(f"Failed to handle dropoff completion: {str(e)}")
-            raise
-
-    def handle_request_cancelled(self, event: Event) -> Optional[List[Event]]:
-        """Handle request cancellation"""
-        request_id = event.request_id
-        reason = event.data.get('reason', 'Unspecified')
-        
-        try:
-            request = self.state_manager.request_worker.get_request(request_id)
-            
-            # Update request status
-            self.state_manager.request_worker.update_request_status(
-                request_id,
-                RequestStatus.CANCELLED,
-                {
-                    'cancellation_time': self.context.current_time,
-                    'cancellation_reason': reason,
-                    'cancellation_penalty': self._calculate_cancellation_penalty(request)
-                }
-            )
-            
-            # If request was assigned, free up vehicle
-            if request.assigned_vehicle:
-                self.state_manager.vehicle_worker.update_vehicle_state(
-                    request.assigned_vehicle,
-                    VehicleStatus.IDLE,
+            # Log rejection metrics
+            if self.context.metrics_collector:
+                self.context.metrics_collector.log(
+                    MetricName.REQUEST_REJECTED,
+                    1,
                     {
-                        'current_passengers': [],
-                        'last_cancelled_service': request_id
+                        'request_id': request.id,
+                        'rejection_reason': rejection_metadata['rejection_reason'],
+                        'rejection_time': self.context.current_time.isoformat()
                     }
                 )
             
-            self.logger.info(f"Cancelled request {request_id}: {reason}")
-            
-            return None
-            
         except Exception as e:
-            self.logger.error(f"Failed to handle request cancellation: {str(e)}")
-            raise
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling request rejection: {str(e)}")
+            self._handle_request_error(event, str(e))
 
-    def _validate_request(self, request: Request) -> bool:
-        """
-        Validate request parameters
-        """
+    def handle_request_validation_failed(self, event: Event) -> None:
+        """Handle failed request validation."""
         try:
-            # Check pickup time is in the future
-            if request.pickup_time < self.context.current_time:
-                self.logger.error(f"Request {request.id} pickup time is in the past")
-                return False
-                
-            # Check locations are within service area
-            if not self._is_in_service_area(request.pickup_location):
-                self.logger.error(f"Request {request.id} pickup location outside service area")
-                return False
-                
-            if not self._is_in_service_area(request.dropoff_location):
-                self.logger.error(f"Request {request.id} dropoff location outside service area")
-                return False
-                
-            # Additional validations as needed...
-            return True
+            self.state_manager.begin_transaction()
+            
+            request = self.state_manager.request_worker.get_request(event.request_id)
+            if not request:
+                raise ValueError(f"Request {event.request_id} not found")
+            
+            self.state_manager.request_worker.update_request_status(
+                request.id,
+                RequestStatus.REJECTED,
+            )
+            
+            self.state_manager.commit_transaction()
             
         except Exception as e:
-            self.logger.error(f"Request validation error: {str(e)}")
-            return False
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling validation failure: {str(e)}")
+            self._handle_request_error(event, str(e))
 
-    def _calculate_final_cost(self, request: Request) -> float:
-        """Calculate final cost for completed request"""
-        # Implementation depends on pricing model
-        pass
+    def handle_request_assigned(self, event: Event) -> None:
+        """Handle successful request assignment to vehicle."""
+        try:
+            self.state_manager.begin_transaction()
+            assignment: Assignment | None = event.data.get('assignment', None)
+            if not assignment:
+                raise ValueError("Assignment not found in event data")
+            
+            request = self.state_manager.request_worker.get_request(assignment.request_id)
+            if not request:
+                raise ValueError(f"Request {assignment.request_id} not found")
+            
+            self.state_manager.request_worker.update_request_status(
+                request.id,
+                RequestStatus.ASSIGNED,
+            )
+            
+            # Create passenger journey start event
+            self._create_passenger_journey_start_event(assignment)
+            self._create_update_route_request_event(assignment)
+            
+            self.state_manager.commit_transaction()
+            
+            # Calculate and log assignment delay
+            if self.context.metrics_collector:
+                stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
+                self.context.metrics_collector.log(
+                    MetricName.REQUEST_ASSIGNED,
+                    1,
+                    {
+                        'request_id': assignment.request_id,
+                        'vehicle_id': assignment.vehicle_id,
+                        'assignment_time': self.context.current_time.isoformat(),
+                        'origin_stop': stop_assignment.origin_stop.location.to_dict(),
+                        'destination_stop': stop_assignment.destination_stop.location.to_dict()
+                    }
+                )
+            
+        except Exception as e:
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling request assignment: {str(e)}\n{traceback.format_exc()}")
+            self._handle_request_error(event, str(e))
 
-    def _calculate_cancellation_penalty(self, request: Request) -> float:
-        """Calculate penalty for cancelled request"""
-        # Implementation depends on cancellation policy
-        pass
+    def handle_request_cancelled(self, event: Event) -> None:
+        """Handle request cancellation."""
+        try:
+            self.state_manager.begin_transaction()
+            
+            request = self.state_manager.request_worker.get_request(event.request_id)
+            if not request:
+                raise ValueError(f"Request {event.request_id} not found")
+            
+            cancellation_metadata = {
+                'cancellation_time': self.context.current_time,
+                'cancellation_reason': event.data.get('reason'),
+                'cancellation_stage': request.status.value
+            }
+            
+            self.state_manager.request_worker.update_request_status(
+                request.id,
+                RequestStatus.CANCELLED,
+                cancellation_metadata
+            )
+            
+            self._create_vehicle_request_cancelled_event(request, cancellation_metadata)
+            
+            self.state_manager.commit_transaction()
+            
+        except Exception as e:
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling request cancellation: {str(e)}")
+            self._handle_request_error(event, str(e))
 
-    def _is_in_service_area(self, location) -> bool:
-        """Check if location is within service area"""
-        # Implementation depends on service area definition
-        pass
-
-    def _create_request_rejected_event(self, request_id: str, reason: str) -> Event:
-        """Create rejection event"""
-        return Event(
-            event_type=EventType.REQUEST_REJECTED,
-            timestamp=self.context.current_time,
-            priority=EventPriority.HIGH,
-            request_id=request_id,
-            data={'reason': reason}
+    def _validate_request(self, request: Request) -> RequestValidationResult:
+        """Validate request against business rules."""
+        errors = []
+        warnings = []
+        
+        # Service hours validation
+        if not self._is_within_service_hours(request):
+            errors.append("Requested time outside service hours")
+        
+        # Advance booking validation
+        if not self._is_valid_booking_time(request):
+            errors.append("Request exceeds maximum advance booking period")
+        
+        # Service area validation
+        if not self._is_within_service_area(request):
+            errors.append("Location outside service area")
+        
+        # Walking distance validation
+        pickup_walk = self._validate_walking_distance(request.origin)
+        dropoff_walk = self._validate_walking_distance(request.destination)
+        
+        if pickup_walk > self.validation_rules['max_walking_distance']:
+            errors.append("Pickup location too far from nearest stop")
+        if dropoff_walk > self.validation_rules['max_walking_distance']:
+            errors.append("Dropoff location too far from nearest stop")
+        
+        # Minimum notice period validation
+        if not self._has_minimum_notice(request):
+            errors.append("Request does not meet minimum notice period")
+        
+        return RequestValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings
         )
+
+    def _is_within_service_hours(self, request: Request) -> bool:
+        """Check if request time falls within service hours."""
+        service_hours = self.validation_rules['service_hours'] if 'service_hours' in self.validation_rules else None
+        if service_hours:
+            request_time = request.request_time.time()
+            return service_hours['start'] <= request_time <= service_hours['end']
+        return True
+
+    def _is_valid_booking_time(self, request: Request) -> bool:
+        """Validate advance booking time."""
+        if not request.request_time:
+            return True
+        
+        max_days = self.validation_rules['max_advance_booking_days'] if 'max_advance_booking_days' in self.validation_rules else None
+        if max_days:
+            max_future = self.context.current_time + timedelta(days=max_days)
+            return request.request_time <= max_future
+        return True
+
+    def _is_within_service_area(self, request: Request) -> bool:
+        """Check if locations are within service area."""
+        service_area = self.validation_rules['service_area'] if 'service_area' in self.validation_rules else None
+        if service_area:
+            return (
+                self._location_in_polygon(request.origin, service_area) and
+                self._location_in_polygon(request.destination, service_area)
+            )
+        return True
+
+    def _location_in_polygon(self, location: Location, polygon: list) -> bool:
+        """Check if location falls within a polygon."""
+        # Implement point-in-polygon check
+        return True  # Placeholder implementation
+
+    def _validate_walking_distance(self, location: Location) -> float:
+        """Calculate walking distance to nearest stop."""
+        # Implement actual distance calculation
+        return 0.0  # Placeholder implementation
+
+    def _has_minimum_notice(self, request: Request) -> bool:
+        """Check if request meets minimum notice period."""
+        min_notice = timedelta(minutes=self.validation_rules['min_notice_minutes']) if 'min_notice_minutes' in self.validation_rules else None
+        if not request.request_time:
+            return True
+        if min_notice:
+            return request.request_time >= self.context.current_time + min_notice
+        return True
+
+    def _create_request_validated_event(self, request: Request, validation_result: RequestValidationResult) -> None:
+        """Create REQUEST_VALIDATED event."""
+        event = Event(
+            event_type=EventType.REQUEST_VALIDATED,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            request_id=request.id,
+            passenger_id=request.passenger_id,
+            data={
+                'warnings': validation_result.warnings,
+                'origin': request.origin.to_dict(),
+                'destination': request.destination.to_dict(),
+                'requested_pickup_time': request.request_time
+            }
+        )
+        self.context.event_manager.publish_event(event)
+
+    def _create_request_validation_failed_event(self, request: Request, validation_result: RequestValidationResult) -> None:
+        """Create REQUEST_VALIDATION_FAILED event."""
+        event = Event(
+            event_type=EventType.REQUEST_VALIDATION_FAILED,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            request_id=request.id,
+            passenger_id=request.passenger_id,
+            data={
+                'errors': validation_result.errors,
+                'origin': request.origin.to_dict(),
+                'destination': request.destination.to_dict(),
+                'requested_pickup_time': request.pickup_time
+            }
+        )
+        self.context.event_manager.publish_event(event)
+    
+    def _create_determine_virtual_stops_event(self, request: Request) -> None:
+        """Create DETERMINE_VIRTUAL_STOPS event."""
+        event = Event(
+            event_type=EventType.DETERMINE_VIRTUAL_STOPS,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            request_id=request.id,
+            passenger_id=request.passenger_id,
+            data={
+                'origin': request.origin.to_dict(),
+                'destination': request.destination.to_dict(),
+            }
+        )
+        logger.info(f"Creating DETERMINE_VIRTUAL_STOPS event for request {request.id}")
+        self.context.event_manager.publish_event(event)
+
+    def _create_passenger_journey_start_event(self, assignment: Assignment) -> None:
+        """Create event for passenger to start journey to pickup."""
+        event = Event(
+            event_type=EventType.START_PASSENGER_JOURNEY,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            data={
+                'assignment': assignment
+            }
+        )
+        self.context.event_manager.publish_event(event)
+
+    def _create_vehicle_request_cancelled_event(self, request: Request, cancellation_metadata: Dict[str, Any]) -> None:
+        """Create event to notify vehicle of cancellation."""
+        event = Event(
+            event_type=EventType.REQUEST_CANCELLED,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            request_id=request.id,
+            data={
+                'cancellation_metadata': cancellation_metadata,
+            }
+        )
+        self.context.event_manager.publish_event(event)
+
+    def _handle_request_error(self, event: Event, error_msg: str) -> None:
+        """Handle errors in request processing."""
+        logger.error(f"Error processing request event {event.id}: {error_msg}")
+        error_event = Event(
+            event_type=EventType.SIMULATION_ERROR,
+            priority=EventPriority.CRITICAL,
+            timestamp=self.context.current_time,
+            request_id=event.request_id,
+            data={
+                'error': error_msg,
+                'original_event': event.to_dict(),
+                'error_type': 'request_processing_error'
+            }
+        )
+        self.context.event_manager.publish_event(error_event)
+
+    def handle_request_expired(self, event: Event) -> None:
+        """Handle request expiration."""
+        try:
+            self.state_manager.begin_transaction()
+            
+            request = self.state_manager.request_worker.get_request(event.request_id)
+            if not request:
+                raise ValueError(f"Request {event.request_id} not found")
+            
+            expiration_metadata = {
+                'expiration_time': self.context.current_time,
+                'expiration_reason': event.data.get('reason', 'Request timed out')
+            }
+            
+            self.state_manager.request_worker.update_request_status(
+                request.id,
+                RequestStatus.EXPIRED,
+                expiration_metadata
+            )
+            
+            self.state_manager.commit_transaction()
+            
+        except Exception as e:
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling request expiration: {str(e)}")
+            self._handle_request_error(event, str(e))
+
+    def handle_request_no_vehicle(self, event: Event) -> None:
+        """Handle case when no suitable vehicle is found."""
+        try:
+            self.state_manager.begin_transaction()
+            
+            request = self.state_manager.request_worker.get_request(event.request_id)
+            if not request:
+                raise ValueError(f"Request {event.request_id} not found")
+            
+            no_vehicle_metadata = {
+                'no_vehicle_time': self.context.current_time,
+                'reason': event.data.get('reason', 'No suitable vehicle available')
+            }
+            
+            self.state_manager.request_worker.update_request_status(
+                request.id,
+                RequestStatus.REJECTED,
+                no_vehicle_metadata
+            )
+            
+            self.state_manager.commit_transaction()
+            
+        except Exception as e:
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling no vehicle available: {str(e)}")
+            self._handle_request_error(event, str(e))
+
+    def _create_update_route_request_event(self, assignment: Assignment) -> None:
+        """Create event to update vehicle route after request assignment."""
+        event = Event(
+            event_type=EventType.ROUTE_UPDATE_REQUEST,
+            priority=EventPriority.NORMAL,
+            timestamp=self.context.current_time,
+            request_id=assignment.request_id,
+            data={
+                'assignment': assignment
+            }
+        )
+        self.context.event_manager.publish_event(event)

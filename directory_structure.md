@@ -3,6 +3,7 @@
 Root: `/Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform`
 
 - README.md
+- crawl.py
 - data/
     - demands/
         - S1_real_time.csv
@@ -25,17 +26,28 @@ Root: `/Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform`
         - knut_drive.graphml
         - knut_walk.graphml
         - nyc_network.geojson
+- docs/
+    - context/
+        - current-implementation.md
+        - research-platform.md
+        - state-handler-documentation.md
+        - study-experiment-scenario.md
+    - design_overviews/
+        - arch.svg
+        - architecture_diagram.md
+    - guides/
+        - designing-experiments.md
+    - system-design.md
 - drt_sim/
     - __init__.py
     - algorithms/
         - __init__.py
         - base_interfaces/
             - __init__.py
-            - cost_function_base.py
             - demand_predictor_base.py
-            - dispatch_base.py
             - matching_base.py
             - routing_base.py
+            - stop_assigner_base.py
             - stop_selector_base.py
             - user_acceptance_base.py
         - cost_functions/
@@ -43,24 +55,33 @@ Root: `/Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform`
             - multi_objective_cost.py
             - simple_cost.py
             - user_experience_weighted.py
-        - dispatch/
-            - __init__.py
-            - fcfs_dispatch.py
-            - ga_dispatch.py
-            - heuristic_dispatch.py
-            - naive_dispatch.py
-            - rl_dispatch.py
         - matching/
             - __init__.py
+            - assignment/
+                - auction.py
+                - insertion.py
             - batch_matching.py
+            - clustering/
+                - spatiotemporal.py
             - exact_optimizer.py
             - heuristic_matching.py
-        - plugin_loader.py
+            - optimization/
+                - rolling_horizon.py
+        - optimization/
+            - global_optimizer.py
         - routing/
             - __init__.py
             - dijkstra_routing.py
             - genetic_routing.py
             - time_dependent_routing.py
+        - stop/
+            - assigner/
+                - accessibility.py
+                - multi_objective.py
+                - nearest.py
+            - selector/
+                - coverage_based.py
+                - demand_based.py
         - user_acceptance_models/
             - __init__.py
             - logit_acceptance.py
@@ -76,29 +97,21 @@ Root: `/Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform`
     - config/
         - __init__.py
         - config.py
-        - parameters.py
     - core/
         - __init__.py
         - demand/
             - __init__.py
             - generators.py
             - manager.py
-            - pattern_models.py
-            - prebooking_manager.py
             - user_acceptance.py
             - user_profiles.py
         - events/
-            - dispatcher.py
             - manager.py
-            - processor.py
-            - validator.py
-        - hooks.py
         - logging_config.py
         - monitoring/
             - metrics_collector.py
             - resource_monitor.py
-        - persistence/
-            - state_store.py
+        - paths.py
         - simulation/
             - context.py
             - engine.py
@@ -106,13 +119,25 @@ Root: `/Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform`
         - state/
             - base.py
             - manager.py
-            - workers.py
+            - workers/
+                - __init__.py
+                - assignment_state_worker.py
+                - passenger_state_worker.py
+                - request_state_worker.py
+                - route_state_worker.py
+                - stop_assignment_state_worker.py
+                - stop_state_worker.py
+                - vehicle_state_worker.py
+        - user/
+            - manager.py
     - handlers/
         - __init__.py
-        - base.py
-        - request_handlers.py
-        - system_handlers.py
-        - vehicle_handlers.py
+        - matching_handler.py
+        - passenger_handler.py
+        - request_handler.py
+        - route_handler.py
+        - stop_handler.py
+        - vehicle_handler.py
     - integration/
         - __init__.py
         - external_solvers.py
@@ -121,43 +146,36 @@ Root: `/Users/alainmorrisdev/development/KNUT/DRT/drt_research_platform`
     - models/
         - base.py
         - event.py
-        - experiment.py
         - location.py
+        - matching/
+            - __init__.py
+            - enums.py
+            - types.py
         - metrics.py
         - passenger.py
         - request.py
         - route.py
         - simulation.py
-        - state.py
         - stop.py
+        - user.py
         - vehicle.py
     - network/
         - __init__.py
-        - disruptions.py
-        - graph_operations.py
-        - multi_modal_integration.py
-        - network_loader.py
-        - transfer_points.py
+        - manager.py
     - runners/
         - __init__.py
         - experiment_runner.py
         - scenario_runner.py
         - study_runner.py
-    - stops/
-        - __init__.py
-        - adaptive_stop_placement.py
-        - stop_scoring.py
-        - stop_selector.py
-    - studies/
-        - configs/
-            - fleet_demand_study.yaml
-            - user_behavior_study.yaml
     - utils/
         - __init__.py
         - caching.py
         - geometry.py
         - random_seed_manager.py
+    - visualizations/
+        - animations/
+        - dashboards/
+        - plots/
 - requirements.txt
 - run_study.py
 - setup.py
-- tools/
