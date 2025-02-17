@@ -3,17 +3,17 @@ from typing import Dict, Any, Optional
 import logging
 from pathlib import Path
 
-from drt_sim.models.simulation import SimulationStatus
-from drt_sim.core.monitoring.metrics_collector import MetricsCollector
-from drt_sim.core.monitoring.types.metrics import MetricName
+from drt_sim.models.state import SimulationStatus
+from drt_sim.core.monitoring.metrics.collector import MetricsCollector
+from drt_sim.core.monitoring.visualization.manager import VisualizationManager
 from drt_sim.core.simulation.context import SimulationContext
-from drt_sim.core.simulation.engine import SimulationEngine
-from drt_sim.models.simulation import SimulationState
+from drt_sim.core.simulation.engine import SimulationEngine, SimulationStep
+from drt_sim.models.state import SimulationState
 from drt_sim.core.state.manager import StateManager
 from drt_sim.core.events.manager import EventManager
 from drt_sim.core.demand.manager import DemandManager
 from drt_sim.core.user.manager import UserProfileManager
-from drt_sim.config.config import ScenarioConfig, SimulationConfig
+from drt_sim.config.config import ParameterSet, SimulationConfig
 from drt_sim.handlers.request_handler import RequestHandler
 from drt_sim.handlers.vehicle_handler import VehicleHandler
 from drt_sim.handlers.passenger_handler import PassengerHandler
@@ -22,13 +22,12 @@ from drt_sim.handlers.stop_handler import StopHandler
 from drt_sim.handlers.matching_handler import MatchingHandler
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.event import EventType
-from drt_sim.core.logging_config import setup_logger
 from drt_sim.network.manager import NetworkManager
 from drt_sim.models.base import SimulationEncoder
 import traceback
 import json
-logger = setup_logger(__name__)
-
+import logging
+logger = logging.getLogger(__name__)
 class SimulationOrchestrator:
     """
     High-level coordinator for the simulation system. Manages the interactions between
@@ -37,10 +36,12 @@ class SimulationOrchestrator:
     
     def __init__(
         self,
-        cfg: ScenarioConfig,
+        cfg: ParameterSet,
         sim_cfg: SimulationConfig,
         output_dir: Optional[Path] = None,
-        metrics_collector: Optional[MetricsCollector] = None
+        metrics_collector: Optional[MetricsCollector] = None,
+        replication_id: Optional[str] = None,
+        artifact_dir: Optional[Path] = None
     ):
         """
         Initialize the simulation orchestrator.
@@ -50,12 +51,16 @@ class SimulationOrchestrator:
             sim_cfg: Simulation configuration
             output_dir: Optional output directory for simulation artifacts
             metrics_collector: Optional metrics collector from parent scenario
+            replication_id: Optional replication ID for logging
+            artifact_dir: Optional artifact directory for MLflow logging
         """
         self.cfg = cfg
         self.sim_cfg = sim_cfg
         self.output_dir = output_dir
         self.metrics_collector = metrics_collector
-        
+        self.replication_id = replication_id
+        self.artifact_dir = artifact_dir
+    
         # Core components - initialized in initialize()
         self.context: Optional[SimulationContext] = None
         self.engine: Optional[SimulationEngine] = None
@@ -65,6 +70,8 @@ class SimulationOrchestrator:
         self.network_manager: Optional[NetworkManager] = None
         self.user_profile_manager: Optional[UserProfileManager] = None
         self.route_service: Optional[RouteService] = None
+        self.visualization_manager: Optional[VisualizationManager] = None
+        
         # Tracking
         self.initialized: bool = False
         self.step_count: int = 0
@@ -78,6 +85,9 @@ class SimulationOrchestrator:
         try:
             logger.info("Initializing simulation components")
             
+            # Initialize visualization manager if output directory is provided
+            if self.output_dir:
+                self.visualization_manager = VisualizationManager(self.output_dir)
             
             # Initialize state management
             self.state_manager = StateManager(config=self.cfg, sim_cfg=self.sim_cfg)
@@ -167,7 +177,8 @@ class SimulationOrchestrator:
             config=self.cfg,
             context=self.context,
             state_manager=self.state_manager,
-            network_manager=self.network_manager
+            network_manager=self.network_manager,
+            visualization_manager=self.visualization_manager
         )
         
         self.matching_handler = MatchingHandler(
@@ -279,7 +290,7 @@ class SimulationOrchestrator:
         except Exception as e:
             logger.error(f"Failed to save event history: {str(e)}\n{traceback.format_exc()}")
             
-    async def step(self) -> Dict[str, Any]:
+    async def step(self) -> SimulationStep:
         """Execute one simulation step."""
         if not self.initialized:
             raise RuntimeError("Simulation not initialized")
@@ -288,7 +299,7 @@ class SimulationOrchestrator:
             step_start_time = datetime.now()
             
             # Execute simulation step
-            step_metrics = await self.engine.step()
+            simulation_step = await self.engine.step()
             
             # Log step execution time
             step_duration = (datetime.now() - step_start_time).total_seconds()
@@ -301,9 +312,8 @@ class SimulationOrchestrator:
             #             'current_time': self.context.current_time.isoformat()
             #         }
             #     )
-            
             self.step_count += 1
-            return step_metrics
+            return simulation_step
             
         except Exception as e:
             logger.error(f"Error during simulation step: {str(e)}")
@@ -319,6 +329,7 @@ class SimulationOrchestrator:
             self.context.start_time,
             self.context.end_time - self.context.start_time
         )
+        self.state_manager.request_worker.load_historical_requests(requests)
         
         # Schedule all events through the engine
         for event in events:
@@ -366,20 +377,18 @@ class SimulationOrchestrator:
         self.state_manager.load_state(path)
         
     def cleanup(self) -> None:
-        """Clean up simulation resources and export metrics."""
+        """Clean up simulation resources."""
         try:
             if self.initialized:
-                # Export metrics if collector exists and output directory is set
-                if self.metrics_collector:
-                    self.metrics_collector.flush_hierarchical()
-                    
-                # Clean up other components
+                # Clean up components
                 if self.state_manager:
                     self.state_manager.cleanup()
                 if self.event_manager:
                     self.event_manager.cleanup()
                 if self.demand_manager:
                     self.demand_manager.cleanup()
+                if self.visualization_manager:
+                    self.visualization_manager.cleanup()
                     
                 self.initialized = False
                 logger.info("Simulation cleanup completed")

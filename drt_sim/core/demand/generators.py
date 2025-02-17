@@ -9,7 +9,9 @@ from drt_sim.models.location import Location
 from drt_sim.config.config import (
     DemandConfig, CSVDemandGeneratorConfig, RandomDemandGeneratorConfig
 )
-from drt_sim.core.logging_config import setup_logger
+from drt_sim.models.location import haversine_distance
+import logging
+logger = logging.getLogger(__name__)
 
 class BaseDemandGenerator(ABC):
     """Abstract base class for demand generators"""
@@ -17,7 +19,6 @@ class BaseDemandGenerator(ABC):
         self.config = config
         self.request_counter = 0
         self.event_counter = 0
-        self.logger = setup_logger(self.__class__.__name__)
 
     @abstractmethod
     def generate(
@@ -37,6 +38,10 @@ class BaseDemandGenerator(ABC):
     ) -> Request:
         """Create a new request"""
         self.request_counter += 1
+        distance = haversine_distance(origin, destination)
+        if distance < 200:
+            logger.warning(f"Request {self.request_counter} has a distance of {distance} meters. It's too short to be a valid request, skipping.")
+            return None
         return Request(
             id=f"R{self.request_counter}",
             passenger_id=f"P{self.request_counter}",
@@ -99,7 +104,8 @@ class RandomDemandGenerator(BaseDemandGenerator):
                     origin=origin,
                     destination=destination
                 )
-                events.append(self._create_event(request))
+                if request:
+                    events.append(self._create_event(request))
         
         return events
 
@@ -142,7 +148,7 @@ class RandomDemandGenerator(BaseDemandGenerator):
 
     def cleanup(self):
         """Cleanup resources"""
-        self.logger.info("Random demand generator cleaned up")
+        logger.info("Random demand generator cleaned up")
 
 class CSVDemandGenerator(BaseDemandGenerator):
     """Generates demand from multiple CSV files with weights"""
@@ -156,7 +162,7 @@ class CSVDemandGenerator(BaseDemandGenerator):
         """Load and prepare data from multiple CSV files"""
         try:
             for file_config in self.config.files:
-                self.logger.info(f"Loading CSV file: {file_config.file_path}")
+                logger.info(f"Loading CSV file: {file_config.file_path}")
                 df = pd.read_csv(file_config.file_path)
                 
                 # Convert timestamp column
@@ -182,13 +188,13 @@ class CSVDemandGenerator(BaseDemandGenerator):
                 # Store weight with the dataframe
                 self.dataframes.append((df, file_config.weight))
                 
-                self.logger.info(
+                logger.info(
                     f"Loaded {len(df)} records from {file_config.file_path} "
                     f"with weight {file_config.weight}"
                 )
                 
         except Exception as e:
-            self.logger.error(f"Error loading CSV data: {str(e)}")
+            logger.error(f"Error loading CSV data: {str(e)}")
             raise
 
     def generate(
@@ -242,7 +248,8 @@ class CSVDemandGenerator(BaseDemandGenerator):
                             lon=row[self.config.columns["dropoff_lon"]]
                         )
                     )
-                    file_events.append(self._create_event(request))
+                    if request:
+                        file_events.append(self._create_event(request))
                 
                 # Apply weight to determine how many events to include
                 if self.config.combine_method == "weighted_sum":
@@ -254,44 +261,13 @@ class CSVDemandGenerator(BaseDemandGenerator):
             # Sort all events by time
             all_events.sort(key=lambda x: x.timestamp)
             
-            # Apply overall demand multiplier
-            if self.config.demand_multiplier != 1.0:
-                all_events = self._apply_demand_multiplier(all_events)
-            
             return all_events
             
         except Exception as e:
             import traceback
-            self.logger.error(f"Error generating events: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"Error generating events: {str(e)}\n{traceback.format_exc()}")
             raise
-    def _apply_demand_multiplier(self, events: List[Event]) -> List[Event]:
-        """Adjust number of events based on demand multiplier"""
-        if self.config.demand_multiplier < 1.0:
-            return random.sample(events, int(len(events) * self.config.demand_multiplier))
-        elif self.config.demand_multiplier > 1.0:
-            extra_events = []
-            num_extra = int(len(events) * (self.config.demand_multiplier - 1))
-            
-            for _ in range(num_extra):
-                original_event = random.choice(events)
-                self.event_counter += 1
-                
-                # Create new event with proper Event constructor
-                new_event = Event(
-                    id=f"E{self.event_counter}_REQ_{original_event.request_id}",
-                    event_type=EventType.REQUEST_CREATED,
-                    priority=EventPriority.HIGH,
-                    timestamp=original_event.timestamp + timedelta(minutes=random.uniform(-5, 5)),
-                    data=original_event.data.copy(),
-                    request_id=original_event.request_id
-                )
-                extra_events.append(new_event)
-            
-            events.extend(extra_events)
-            events.sort(key=lambda x: x.timestamp)
-        return events
-
     def cleanup(self):
         """Cleanup resources"""
         self.dataframes = []
-        self.logger.info("CSV demand generator cleaned up")
+        logger.info("CSV demand generator cleaned up")

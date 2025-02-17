@@ -1,7 +1,5 @@
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
-import logging
-
 from drt_sim.config.config import DemandConfig
 from drt_sim.models.event import Event, EventType
 from drt_sim.models.request import Request, RequestStatus
@@ -10,7 +8,7 @@ from drt_sim.core.demand.generators import (
     CSVDemandGenerator,
     RandomDemandGenerator,
 )
-
+import logging
 logger = logging.getLogger(__name__)
 
 class DemandManager:
@@ -27,7 +25,7 @@ class DemandManager:
             config: Demand configuration
         """
         self.config = config
-        self.logger = logging.getLogger(__name__)
+        logger.info(f"Demand manager initialized with config: {self.config}")
         
         # Initialize counters and state
         self.request_counter = 0
@@ -36,6 +34,7 @@ class DemandManager:
         
         # Initialize demand generator based on config
         self.generator = self._create_generator()
+        logger.info(f"Demand generator initialized: {self.generator}")
         
         # Initialize metrics
         self.metrics: Dict[str, float] = {
@@ -50,6 +49,7 @@ class DemandManager:
         """Create appropriate demand generator based on configuration."""
         try:
             if self.config.generator_type == "csv":
+                logger.info(f"CSV Config: {self.config.csv_config}")
                 return CSVDemandGenerator(self.config.csv_config)
             elif self.config.generator_type == "random":
                 return RandomDemandGenerator(self.config.random_config)
@@ -57,7 +57,7 @@ class DemandManager:
                 raise ValueError(f"Unknown generator type: {self.config.generator_type}")
                 
         except Exception as e:
-            self.logger.error(f"Failed to create demand generator: {str(e)}")
+            logger.error(f"Failed to create demand generator: {str(e)}")
             raise
     
     def generate_demand(
@@ -120,7 +120,7 @@ class DemandManager:
             return valid_events, valid_requests
             
         except Exception as e:
-            self.logger.error(f"Error generating demand: {str(e)}")
+            logger.error(f"Error generating demand: {str(e)}")
             return [], []
     
     def _validate_request(self, request: Request) -> bool:
@@ -142,7 +142,7 @@ class DemandManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"Error validating request: {str(e)}")
+            logger.error(f"Error validating request: {str(e)}")
             return False
     
     def update_request_status(
@@ -184,12 +184,12 @@ class DemandManager:
                     self.metrics['cancelled_requests'] += 1
             
             # Log status change
-            self.logger.debug(
+            logger.debug(
                 f"Request {request_id} status changed from {old_status} to {new_status}"
             )
             
         except Exception as e:
-            self.logger.error(f"Error updating request status: {str(e)}")
+            logger.error(f"Error updating request status: {str(e)}")
             raise
     
     def get_active_requests(self) -> List[Request]:
@@ -213,7 +213,7 @@ class DemandManager:
             self.active_requests.clear()
             self.completed_requests.clear()
             self.metrics.clear()
-            self.logger.info("Demand manager cleanup completed")
+            logger.info("Demand manager cleanup completed")
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {str(e)}")
+            logger.error(f"Error during cleanup: {str(e)}")
             raise

@@ -32,6 +32,8 @@ class VehicleState(ModelBase):
     energy_consumption: float = 0.0
     passengers: List[str] = field(default_factory=list)
     last_updated: datetime = field(default_factory=datetime.now)
+    cumulative_occupied_time: float = 0.0
+    in_service_start_time: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -43,7 +45,9 @@ class VehicleState(ModelBase):
             'distance_traveled': self.distance_traveled,
             'energy_consumption': self.energy_consumption,
             'passengers': self.passengers,
-            'last_updated': self.last_updated.isoformat()
+            'last_updated': self.last_updated.isoformat(),
+            'cumulative_occupied_time': self.cumulative_occupied_time,
+            'in_service_start_time': self.in_service_start_time.isoformat() if self.in_service_start_time else None
         }
 
     @classmethod
@@ -57,7 +61,9 @@ class VehicleState(ModelBase):
             distance_traveled=data['distance_traveled'],
             energy_consumption=data['energy_consumption'],
             passengers=data['passengers'],
-            last_updated=datetime.fromisoformat(data['last_updated'])
+            last_updated=datetime.fromisoformat(data['last_updated']),
+            cumulative_occupied_time=data.get('cumulative_occupied_time', 0.0),
+            in_service_start_time=datetime.fromisoformat(data['in_service_start_time']) if data['in_service_start_time'] else None
         )
 
     def update_active_route_id(self, new_route_id: str) -> None:

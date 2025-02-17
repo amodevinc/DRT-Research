@@ -4,14 +4,14 @@ from drt_sim.core.state.manager import StateManager
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.vehicle import VehicleStatus
-from drt_sim.config.config import ScenarioConfig
-from drt_sim.core.logging_config import setup_logger
+from drt_sim.config.config import ParameterSet
 from drt_sim.models.route import RouteSegment, RouteStatus, RouteStop, Route
 from drt_sim.models.stop import StopPurpose
 from drt_sim.models.passenger import PassengerStatus
+from drt_sim.core.monitoring.types.metrics import MetricName
 import traceback
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class VehicleHandler:
     """
@@ -21,7 +21,7 @@ class VehicleHandler:
     
     def __init__(
         self,
-        config: ScenarioConfig,
+        config: ParameterSet,
         context: SimulationContext,
         state_manager: StateManager
     ):
@@ -58,6 +58,11 @@ class VehicleHandler:
             self.state_manager.begin_transaction()
             
             vehicle_id = event.vehicle_id
+            route_id = event.data['route_id']
+            self.state_manager.vehicle_worker.update_vehicle_active_route_id(
+                vehicle_id,
+                route_id
+            )
             vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
             if not vehicle:
                 raise ValueError(f"Vehicle {vehicle_id} not found")
@@ -81,11 +86,13 @@ class VehicleHandler:
                 self.state_manager.route_worker.update_route(route)
             
             # Update vehicle status to in service
-            logger.info(f"Updating vehicle {vehicle_id} status to IN_SERVICE")
-            self.state_manager.vehicle_worker.update_vehicle_status(
-                vehicle_id,
-                VehicleStatus.IN_SERVICE
-            )
+            if vehicle.current_state.status != VehicleStatus.IN_SERVICE:
+                logger.info(f"Updating vehicle {vehicle_id} status to IN_SERVICE")
+                self.state_manager.vehicle_worker.update_vehicle_status(
+                    vehicle_id,
+                    VehicleStatus.IN_SERVICE,
+                    self.context.current_time
+                )
             
             # Create movement event for the current segment
             logger.info(f"Creating movement event for vehicle {vehicle_id} on segment {current_segment.id}")
@@ -113,6 +120,11 @@ class VehicleHandler:
             
             vehicle_id = event.vehicle_id
             vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+            route_id = event.data['route_id']
+            self.state_manager.vehicle_worker.update_vehicle_active_route_id(
+                vehicle_id,
+                route_id
+            )
             
             if not vehicle:
                 raise ValueError(f"Vehicle {vehicle_id} not found")
@@ -127,11 +139,13 @@ class VehicleHandler:
             if not current_segment:
                 raise ValueError(f"No current segment found in route for vehicle {vehicle_id}")
                 
-            # Update vehicle status with new route information
-            self.state_manager.vehicle_worker.update_vehicle_status(
-                vehicle_id,
-                VehicleStatus.IN_SERVICE
-            )
+            if vehicle.current_state.status != VehicleStatus.IN_SERVICE:
+                # Update vehicle status with new route information
+                self.state_manager.vehicle_worker.update_vehicle_status(
+                    vehicle_id,
+                    VehicleStatus.IN_SERVICE,
+                    self.context.current_time
+                )
             
             # Create movement event for current segment
             self._create_vehicle_movement_event(
@@ -160,6 +174,7 @@ class VehicleHandler:
             # self.state_manager.vehicle_worker.update_vehicle_status(
             #     vehicle_id,
             #     VehicleStatus.REBALANCING,
+            #       self.context.current_time
             # )
             
             # # Create movement event to depot
@@ -258,7 +273,23 @@ class VehicleHandler:
                 vehicle_id,
                 event.data['destination']
             )
-                
+            # Log distance metric if available
+            distance = event.data.get('actual_distance', 0)
+            if vehicle.current_state.current_occupancy > 0:
+                self.context.metrics_collector.log(
+                    MetricName.VEHICLE_OCCUPIED_DISTANCE,
+                    distance,
+                    self.context.current_time,
+                    { 'vehicle_id': vehicle_id }
+                )
+            else:
+                self.context.metrics_collector.log(
+                    MetricName.VEHICLE_EMPTY_DISTANCE,
+                    distance,
+                    self.context.current_time,
+                    { 'vehicle_id': vehicle_id }
+                )
+            
             # Handle rebalancing arrival
             if event.data.get('movement_type') == 'rebalancing':
                 self._handle_rebalancing_arrival(vehicle_id, event.data)
@@ -280,6 +311,7 @@ class VehicleHandler:
         self.state_manager.vehicle_worker.update_vehicle_status(
             vehicle_id,
             VehicleStatus.IDLE,
+            self.context.current_time
         )
 
     def _handle_regular_stop_arrival(self, vehicle_id: str, event: Event) -> None:
@@ -303,6 +335,13 @@ class VehicleHandler:
         
         # Handle passenger operations at stop
         current_time = self._handle_stop_operations(vehicle_id, current_stop)
+        if self.context.metrics_collector:
+            self.context.metrics_collector.log(
+                MetricName.VEHICLE_STOPS_SERVED,
+                1,
+                self.context.current_time,
+                { 'vehicle_id': vehicle_id }
+            )
         
         # Determine next action based on route completion
         if self._is_route_completed(route):
@@ -408,6 +447,7 @@ class VehicleHandler:
                 self.context.event_manager.publish_event(event)
                 # Update for next passenger's boarding time
                 current_boarding_time += timedelta(seconds=self.config.vehicle.boarding_time)
+                self.state_manager.vehicle_worker.increment_vehicle_occupancy(vehicle_id)
         # Check for missing passengers and create wait timeout if needed
         expected_passengers = route_stop.pickup_passengers
         expected_passenger_ids = self.state_manager.passenger_worker.get_all_passenger_ids_for_request_ids(expected_passengers)
@@ -448,8 +488,13 @@ class VehicleHandler:
                     logger.warning(f"Passenger {passenger_id} not found during wait timeout check")
                     continue
                     
+                # Skip if passenger is already cancelled
+                if passenger_state.status == PassengerStatus.CANCELLED:
+                    logger.info(f"Passenger {passenger_id} already cancelled, skipping no-show event")
+                    continue
+                    
                 # Only consider passengers who never made it to the stop
-                if passenger_state.status in [PassengerStatus.WALKING_TO_PICKUP, PassengerStatus.CANCELLED]:
+                if passenger_state.status == PassengerStatus.WALKING_TO_PICKUP:
                     still_missing_passengers.append(passenger_id)
             
             # Mark remaining missing passengers as no-show
@@ -476,11 +521,26 @@ class VehicleHandler:
             if route:
                 self._handle_route_continuation(vehicle_id, route, self.context.current_time)
             
+            # Log dwell time metric from wait timeout event
+            if self.context.metrics_collector:
+                dwell_duration = (self.context.current_time - event.data['wait_start_time']).total_seconds()
+                self.context.metrics_collector.log(
+                    MetricName.VEHICLE_DWELL_TIME,
+                    dwell_duration,
+                    self.context.current_time,
+                    {
+                        'vehicle_id': vehicle_id,
+                        'stop_id': event.data['stop_id'],
+                        'dwell_start_time': event.data['wait_start_time'],
+                        'dwell_end_time': self.context.current_time.isoformat(),
+                        'reason': 'wait_timeout'
+                    }
+                )
             self.state_manager.commit_transaction()
             
         except Exception as e:
             self.state_manager.rollback_transaction()
-            logger.error(f"Error handling wait timeout: {str(e)}")
+            logger.error(f"Error handling wait timeout: {traceback.format_exc()}")
             self._handle_vehicle_error(event, str(e))
 
     def _handle_dropoff_arrival(self, vehicle_id: str, route_stop: RouteStop, current_time: datetime) -> datetime:
@@ -517,8 +577,18 @@ class VehicleHandler:
                     }
                 )
                 self.context.event_manager.publish_event(event)
+                self.context.metrics_collector.log(
+                    MetricName.VEHICLE_PASSENGERS_SERVED,
+                    1,
+                    self.context.current_time,
+                    {
+                        'vehicle_id': vehicle_id,
+                        'passenger_id': passenger.id
+                    }
+                )
                 # Update for next passenger's alighting time
                 current_alighting_time += timedelta(seconds=self.config.vehicle.alighting_time)
+                self.state_manager.vehicle_worker.decrement_vehicle_occupancy(vehicle_id)
         return current_alighting_time
 
     def _handle_pickup_delay_violation(
@@ -597,7 +667,7 @@ class VehicleHandler:
         logger.info(f"Movement data: {movement_data}")
         event = Event(
             event_type=EventType.VEHICLE_EN_ROUTE,
-            priority=EventPriority.NORMAL,
+            priority=EventPriority.HIGH,
             timestamp=current_time,
             vehicle_id=vehicle_id,
             data=movement_data
@@ -612,7 +682,7 @@ class VehicleHandler:
         
         event = Event(
             event_type=EventType.VEHICLE_REBALANCING_REQUIRED,
-            priority=EventPriority.NORMAL,
+            priority=EventPriority.HIGH,
             timestamp=self.context.current_time,
             vehicle_id=vehicle_id,
             data={

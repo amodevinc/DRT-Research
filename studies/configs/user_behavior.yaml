@@ -1,89 +1,89 @@
-metadata:
-  name: "user_behavior_study"
-  description: "Study impact of user acceptance models and waiting time tolerance"
-  version: "1.0.0"
-  tags: ["user-behavior", "acceptance-models", "service-quality"]
-  authors: ["Research Team"]
-  created_at: "2025-01-05T16:00:00"
+name: "user_behavior_study"
+description: "Study impact of user acceptance models and waiting time tolerance"
+version: "1.0.0"
+authors:
+  - "Research Team"
+tags:
+  - "user-behavior"
+  - "acceptance-models"
+  - "service-quality"
 
 type: "scenario_comparison"
 
-experiments:
-  acceptance_model_comparison:
-    name: "acceptance_model_comparison"
-    description: "Compare different user acceptance models"
-    scenarios:
-      simple_logit:
-        name: "simple_logit"
-        algorithm:
-          user_acceptance_model: "logit"
-          dispatch_strategy: "fcfs"
-        demand:
-          generator_type: "csv"
-          csv_config:
-            files:
-              - file_path: "data/demands/base_real_time.csv"
-                weight: 1.0
-
-      ml_based:
-        name: "ml_based"
-        algorithm:
-          user_acceptance_model: "ml_acceptance"
-          dispatch_strategy: "fcfs"
-        demand:
-          generator_type: "csv"
-          csv_config:
-            files:
-              - file_path: "data/demands/base_real_time.csv"
-                weight: 1.0
-
-  waiting_time_sensitivity:
-    name: "waiting_time_sensitivity"
-    description: "Study impact of different waiting time thresholds"
-    scenarios:
-      low_tolerance:
-        name: "low_tolerance"
-        algorithm:
-          user_acceptance_model: "logit"
-          dispatch_strategy: "fcfs"
-          max_waiting_time: 600  # 10 minutes
-        demand:
-          generator_type: "csv"
-          csv_config:
-            files:
-              - file_path: "data/demands/base_real_time.csv"
-                weight: 1.0
-
-      high_tolerance:
-        name: "high_tolerance"
-        algorithm:
-          user_acceptance_model: "logit"
-          dispatch_strategy: "fcfs"
-          max_waiting_time: 1200  # 20 minutes
-        demand:
-          generator_type: "csv"
-          csv_config:
-            files:
-              - file_path: "data/demands/base_real_time.csv"
-                weight: 1.0
-
-metrics:
-  collect_interval: 300
-  save_interval: 1800
-  default_metrics:
-    - waiting_time
-    - service_rate
-    - rejection_rate
-  additional_metrics:
-    - user_satisfaction
-    - acceptance_rate
-    - cancellation_rate
-    - time_tolerance_distribution
-
 simulation:
-  start_time: "2025-01-01 07:00:00"
-  end_time: "2025-01-01 19:00:00"
+  start_time: "2024-10-24 07:00:00"
+  end_time: "2024-10-24 23:00:00"
   warm_up_duration: 1800
   time_step: 60
   time_scale_factor: 1.0
-  replications: 5
+
+base_config:
+  network:
+    network_file: "data/networks/hwaseong_drive.graphml"
+    walk_network_file: "data/networks/hwaseong_walk.graphml"
+    coordinate_system: "EPSG:4326"
+    walking_speed: 1.4
+    driving_speed: 8.33
+    service_area_polygon:
+      - [126.827032, 37.198957]
+      - [126.822082, 37.203549]
+      - [126.818869, 37.206509]
+      - [126.817734, 37.209793]
+      - [126.832442, 37.216226]
+      - [126.833297, 37.209711]
+      - [126.836499, 37.210003]
+      - [126.838809, 37.206861]
+      - [126.844007, 37.201823]
+      - [126.828538, 37.198760]
+  
+  demand:
+    generator_type: "csv"
+    num_requests: 10
+    csv_config:
+      files:
+        - file_path: "data/demands/base_real_time.csv"
+          weight: 1.0
+      columns:
+        request_time: "time"
+        pickup_lat: "o_y"
+        pickup_lon: "o_x"
+        dropoff_lat: "d_y"
+        dropoff_lon: "d_x"
+
+parameter_sets:
+  acceptance_model_comparison_simple_logit:
+    name: "simple_logit"
+    experiment: "acceptance_model_comparison"
+    description: "Compare different user acceptance models (simple logit scenario)"
+    replications: 1
+    algorithm:
+      user_acceptance_model: "logit"
+      dispatch_strategy: "fcfs"
+  acceptance_model_comparison_ml_based:
+    name: "ml_based"
+    experiment: "acceptance_model_comparison"
+    description: "Compare different user acceptance models (ML-based scenario)"
+    replications: 1
+    algorithm:
+      user_acceptance_model: "ml_acceptance"
+      dispatch_strategy: "fcfs"
+
+  waiting_time_sensitivity_low_tolerance:
+    name: "low_tolerance"
+    experiment: "waiting_time_sensitivity"
+    description: "Study impact of different waiting time thresholds (low tolerance)"
+    replications: 1
+    algorithm:
+      user_acceptance_model: "logit"
+      dispatch_strategy: "fcfs"
+      max_waiting_time: 600
+
+  waiting_time_sensitivity_high_tolerance:
+    name: "high_tolerance"
+    experiment: "waiting_time_sensitivity"
+    description: "Study impact of different waiting time thresholds (high tolerance)"
+    replications: 1
+    algorithm:
+      user_acceptance_model: "logit"
+      dispatch_strategy: "fcfs"
+      max_waiting_time: 1200

@@ -2,9 +2,10 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from collections import defaultdict
 from drt_sim.core.state.base import StateWorker, StateContainer
-from drt_sim.core.logging_config import setup_logger
 from drt_sim.models.stop import StopAssignment
-from drt_sim.models.simulation import StopAssignmentSystemState
+from drt_sim.models.state import StopAssignmentSystemState
+import logging
+logger = logging.getLogger(__name__)
 
 class StopAssignmentStateWorker(StateWorker):
     """Manages state for stop assignments"""
@@ -12,7 +13,6 @@ class StopAssignmentStateWorker(StateWorker):
     def __init__(self):
         self.assignments = StateContainer[StopAssignment]()
         self.initialized = False
-        self.logger = setup_logger(__name__)
         # Index for quick lookups
         self.request_to_assignment: Dict[str, str] = {}
         self.stop_to_assignments: Dict[str, List[str]] = defaultdict(list)
@@ -20,7 +20,7 @@ class StopAssignmentStateWorker(StateWorker):
     def initialize(self, config: Optional[Any] = None) -> None:
         """Initialize stop assignment state worker"""
         self.initialized = True
-        self.logger.info("Stop assignment state worker initialized")
+        logger.info("Stop assignment state worker initialized")
     
     def add_assignment(self, assignment: StopAssignment) -> None:
         """
@@ -48,12 +48,12 @@ class StopAssignmentStateWorker(StateWorker):
             self.stop_to_assignments[assignment.origin_stop.id].append(assignment.id)
             self.stop_to_assignments[assignment.destination_stop.id].append(assignment.id)
             
-            self.logger.debug(
+            logger.debug(
                 f"Added assignment {assignment.id} for request {assignment.request_id}"
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to add assignment: {str(e)}")
+            logger.error(f"Failed to add assignment: {str(e)}")
             raise
     
     def get_assignment(self, assignment_id: str) -> Optional[StopAssignment]:
@@ -155,7 +155,7 @@ class StopAssignmentStateWorker(StateWorker):
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to get stop assignment system state: {str(e)}")
+            logger.error(f"Failed to get stop assignment system state: {str(e)}")
             raise
 
     def update_state(self, state: StopAssignmentSystemState) -> None:
@@ -171,10 +171,10 @@ class StopAssignmentStateWorker(StateWorker):
             self.request_to_assignment = state.assignments_by_request
             self.stop_to_assignments = defaultdict(list, state.assignments_by_stop)
 
-            self.logger.info("Stop assignment system state updated successfully")
+            logger.info("Stop assignment system state updated successfully")
             
         except Exception as e:
-            self.logger.error(f"Failed to update stop assignment system state: {str(e)}")
+            logger.error(f"Failed to update stop assignment system state: {str(e)}")
             raise
 
     def restore_state(self, saved_state: Dict[str, Any]) -> None:
@@ -196,10 +196,10 @@ class StopAssignmentStateWorker(StateWorker):
             # Restore using update_state
             self.update_state(saved_state)
             
-            self.logger.debug("Restored stop assignment system state")
+            logger.debug("Restored stop assignment system state")
             
         except Exception as e:
-            self.logger.error(f"Error restoring stop assignment system state: {str(e)}")
+            logger.error(f"Error restoring stop assignment system state: {str(e)}")
             raise
     
     def cleanup(self) -> None:
@@ -208,7 +208,7 @@ class StopAssignmentStateWorker(StateWorker):
         self.request_to_assignment.clear()
         self.stop_to_assignments.clear()
         self.initialized = False
-        self.logger.info("Stop assignment state worker cleaned up")
+        logger.info("Stop assignment state worker cleaned up")
     
     def begin_transaction(self) -> None:
         """Begin state transaction"""

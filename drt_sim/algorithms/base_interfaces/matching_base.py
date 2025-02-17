@@ -11,12 +11,12 @@ from drt_sim.core.state.manager import StateManager
 from drt_sim.algorithms.matching.assignment.insertion import InsertionAssigner
 from drt_sim.algorithms.matching.assignment.auction import AuctionAssigner
 from drt_sim.core.simulation.context import SimulationContext
-from drt_sim.core.logging_config import setup_logger
+
 from drt_sim.core.user.manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.stop import StopAssignment
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class MatchingStrategy(ABC):
     """Abstract base class for matching strategies."""

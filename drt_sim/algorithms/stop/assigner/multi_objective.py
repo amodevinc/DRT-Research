@@ -12,9 +12,9 @@ from drt_sim.models.request import Request
 from drt_sim.models.vehicle import VehicleStatus
 from drt_sim.models.vehicle import Vehicle
 from drt_sim.models.location import Location
-from drt_sim.core.logging_config import setup_logger
 from datetime import timedelta
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 @dataclass
 class StopScore:
@@ -53,13 +53,7 @@ class MultiObjectiveStopAssigner(StopAssigner):
     async def assign_stops(self,
                     request: Request,
                     available_stops: List[Stop]) -> StopAssignment:
-        # Get all viable active stops
-        viable_stops = [
-            stop for stop in available_stops
-            if stop.status == StopStatus.ACTIVE
-        ]
-        
-        if not viable_stops:
+        if not available_stops:
             raise ValueError("No active stops available")
 
         # Pre-filter stops using fast haversine distance calculation
@@ -69,7 +63,7 @@ class MultiObjectiveStopAssigner(StopAssigner):
         origin_candidates = []
         dest_candidates = []
         
-        for stop in viable_stops:
+        for stop in available_stops:
             # Origin distance
             origin_dist = haversine_distance(
                 request.origin.lat, 

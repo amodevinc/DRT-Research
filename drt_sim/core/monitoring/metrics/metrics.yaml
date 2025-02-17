@@ -1,3 +1,5 @@
+schema_version: "1.0.0"
+
 metrics:
   - name: "passenger.wait_time"
     description: "Time from request submission until the passenger boards a vehicle."
@@ -13,6 +15,10 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "passenger.ride_time"
     description: "Time from boarding to alighting."
@@ -27,6 +33,10 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "passenger.walk_time_to_origin_stop"
     description: "Time taken to walk from the passenger's origin to the origin stop."
@@ -42,6 +52,10 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "passenger.walk_time_from_destination_stop"
     description: "Time taken to walk from the destination stop to the passenger's final destination."
@@ -57,23 +71,10 @@ metrics:
       - max
       - std
       - count
-
-  - name: "passenger.total_journey_time"
-    description: "Total journey time, including wait, ride, and walk times."
-    metric_type: "aggregate"
-    unit: "seconds"
-    required_context:
-      - passenger_id
-      - wait_time
-      - ride_time
-      - walk_time_to_origin_stop
-      - walk_time_from_destination_stop
-    aggregations:
-      - mean
-      - min
-      - max
-      - std
-      - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "passenger.no_show"
     description: "Event indicating that a passenger did not show up for pickup."
@@ -81,23 +82,25 @@ metrics:
     unit: "count"
     required_context:
       - passenger_id
-      - request_id
-      - expected_pickup_time
-      - no_show_reason
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "request.received"
     description: "A new request has been submitted."
     metric_type: "event"
     unit: "count"
     required_context:
-      - request_id
-      - request_time
-      - origin
-      - destination
+      - request
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "request.assigned"
     description: "A request has been successfully assigned to a vehicle."
@@ -107,10 +110,16 @@ metrics:
       - request_id
       - vehicle_id
       - assignment_time
+      - request_origin
+      - request_destination
       - origin_stop
       - destination_stop
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "request.rejected"
     description: "A request was rejected."
@@ -122,50 +131,58 @@ metrics:
       - rejection_reason
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "vehicle.utilization"
-    description: "Ratio of time a vehicle is occupied with passengers to total time."
-    metric_type: "snapshot"
-    unit: "ratio"
+    description: "Percentage of time the vehicle is in service and processing requests vs total service time, logged per vehicle at each step."
+    metric_type: "event"
+    unit: "percentage"
     required_context:
       - vehicle_id
-      - occupied_time
-      - total_time
-      - timestamp
     aggregations:
       - mean
       - min
       - max
-
-  - name: "vehicle.wait_time"
-    description: "Total time a vehicle spends waiting idle."
-    metric_type: "aggregate"
-    unit: "seconds"
-    required_context:
-      - vehicle_id
-      - wait_period_start
-      - wait_period_end
-    aggregations:
-      - sum
-      - mean
+      - std
+      - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "vehicle.occupied_distance"
     description: "Total distance traveled with passengers."
-    metric_type: "aggregate"
-    unit: "kilometers"
+    metric_type: "event"
+    unit: "meters"
     required_context:
       - vehicle_id
     aggregations:
       - sum
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "vehicle.empty_distance"
-    description: "Total distance traveled without passengers."
-    metric_type: "aggregate"
+    description: "Distance traveled by the vehicle without passengers."
+    metric_type: "event"
     unit: "kilometers"
     required_context:
       - vehicle_id
     aggregations:
+      - mean
+      - min
+      - max
+      - std
       - sum
+      - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "vehicle.dwell_time"
     description: "Time a vehicle spends at stops waiting for boarding/alighting."
@@ -180,20 +197,41 @@ metrics:
     aggregations:
       - sum
       - mean
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "vehicle.stops_served"
     description: "Count of stops at which a vehicle has serviced requests."
-    metric_type: "aggregate"
+    metric_type: "event"
     unit: "count"
     required_context:
       - vehicle_id
-      - stop_ids
     aggregations:
       - sum
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
+
+  - name: "vehicle.passengers_served"
+    description: "Count of passengers served by a vehicle"
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - vehicle_id
+      - passenger_id
+    aggregations:
+      - sum
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "stop.occupancy"
     description: "Number of passengers waiting at a stop at a given time."
-    metric_type: "snapshot"
+    metric_type: "event"
     unit: "count"
     required_context:
       - stop_id
@@ -204,6 +242,10 @@ metrics:
       - mean
       - min
       - max
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "simulation.step_duration"
     description: "Duration of a simulation step."
@@ -218,15 +260,23 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "simulation.total_steps"
     description: "Total number of simulation steps executed."
-    metric_type: "aggregate"
+    metric_type: "event"
     unit: "count"
     required_context:
       - total_steps
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "simulation.event_processing_time"
     description: "Time taken to process events during a simulation step."
@@ -242,10 +292,14 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "simulation.replication_time"
     description: "Total time taken for a simulation replication."
-    metric_type: "aggregate"
+    metric_type: "event"
     unit: "seconds"
     required_context:
       - replication_id
@@ -254,16 +308,24 @@ metrics:
     aggregations:
       - count
       - mean
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "matching.success_rate"
     description: "Ratio of successfully matched requests to total matching attempts."
-    metric_type: "aggregate"
+    metric_type: "event"
     unit: "ratio"
     required_context:
       - success_count
       - failure_count
     aggregations:
       - computed
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "matching.failure_reason"
     description: "Records failure reasons for unmatched requests."
@@ -277,6 +339,10 @@ metrics:
       - timestamp
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "route.completion_time"
     description: "Time taken for a route to be completed from start to end."
@@ -293,6 +359,10 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
 
   - name: "route.deviation"
     description: "Difference between the planned route distance and the actual distance traveled."
@@ -309,6 +379,10 @@ metrics:
       - max
       - std
       - count
+    visualizations:
+      time_series: false
+      distribution: true
+      summary: true
 
   - name: "service.violations"
     description: "Count of service-level violations (e.g., excessive wait or ride times)."
@@ -323,20 +397,28 @@ metrics:
       - timestamp
     aggregations:
       - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "service.on_time_rate"
     description: "Percentage of passengers served within acceptable time thresholds."
-    metric_type: "aggregate"
+    metric_type: "event"
     unit: "ratio"
     required_context:
       - on_time_count
       - late_count
     aggregations:
       - computed
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
 
   - name: "service.capacity_utilization"
     description: "Ratio of current occupancy to maximum capacity for vehicles."
-    metric_type: "snapshot"
+    metric_type: "event"
     unit: "ratio"
     required_context:
       - vehicle_id
@@ -347,13 +429,7 @@ metrics:
       - mean
       - min
       - max
-
-  - name: "demand.generated"
-    description: "Total number of generated demand events."
-    metric_type: "aggregate"
-    unit: "count"
-    required_context:
-      - timestamp
-      - demand_source
-    aggregations:
-      - count
+    visualizations:
+      time_series: true
+      distribution: false
+      summary: true

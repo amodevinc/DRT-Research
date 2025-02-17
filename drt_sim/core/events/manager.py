@@ -5,9 +5,8 @@ import traceback
 import asyncio
 from copy import deepcopy
 from drt_sim.models.event import Event, EventType, EventPriority, EventStatus
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 HandlerType = Union[Callable[[Event], None], Callable[[Event], Coroutine[Any, Any, None]]]
 
 class EventManager:

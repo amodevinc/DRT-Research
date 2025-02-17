@@ -4,6 +4,11 @@ from typing import List, Optional, Dict, Any, Union, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
 from drt_sim.models.matching.enums import AssignmentMethod, OptimizationMethod
+from copy import deepcopy
+import yaml
+import logging
+logger = logging.getLogger(__name__)
+
 class DataclassYAMLMixin:
     """Mixin class to make dataclasses YAML serializable"""
     def to_dict(self) -> Dict[str, Any]:
@@ -68,12 +73,6 @@ class StudyType(Enum):
     SENSITIVITY_ANALYSIS = "sensitivity_analysis"
     VALIDATION = "validation"
 
-class MetricType(Enum):
-    TEMPORAL = "temporal"
-    AGGREGATE = "aggregate"
-    EVENT = "event"
-    CUSTOM = "custom"
-
 @dataclass
 class StudyMetadata(DataclassYAMLMixin):
     """Metadata about the study"""
@@ -94,107 +93,12 @@ class StudyPaths(DataclassYAMLMixin):
     artifacts_dir: str = "artifacts"
 
 @dataclass
-class MetricDefinition(DataclassYAMLMixin):
-    """Definition of a single metric"""
-    name: str
-    type: MetricType
-    unit: str
-    description: str
-    aggregation: str = "mean"
-    dependencies: List[str] = field(default_factory=list)
-    custom_function: Optional[str] = None
-    threshold: Optional[float] = None
-    tags: List[str] = field(default_factory=list)
-
-@dataclass
-class MetricsConfig(DataclassYAMLMixin):
-    """Configuration for metrics collection and analysis"""
-    collect_interval: int = 300
-    save_interval: int = 1800
-    batch_size: int = 1000
-    storage_format: str = "csv"
-    compression: Optional[str] = None
-    default_metrics: List[str] = field(default_factory=lambda: [
-        "waiting_time",
-        "in_vehicle_time",
-        "total_distance",
-        "occupancy_rate",
-        "service_rate",
-        "rejection_rate"
-    ])
-    additional_metrics: List[str] = field(default_factory=list)
-    definitions: Dict[str, MetricDefinition] = field(default_factory=lambda: {
-        "waiting_time": MetricDefinition(
-            name="waiting_time",
-            type=MetricType.TEMPORAL,
-            unit="seconds",
-            description="Time between request and pickup"
-        ),
-        "service_rate": MetricDefinition(
-            name="service_rate",
-            type=MetricType.AGGREGATE,
-            unit="percentage",
-            description="Percentage of requests served"
-        ),
-        "vehicle_utilization": MetricDefinition(
-            name="vehicle_utilization",
-            type=MetricType.TEMPORAL,
-            unit="percentage",
-            description="Percentage of time vehicles are occupied"
-        ),
-        "total_distance": MetricDefinition(
-            name="total_distance",
-            type=MetricType.AGGREGATE,
-            unit="meters",
-            description="Total distance traveled by all vehicles"
-        ),
-        "occupancy_rate": MetricDefinition(
-            name="occupancy_rate",
-            type=MetricType.TEMPORAL,
-            unit="percentage",
-            description="Average vehicle occupancy rate"
-        ),
-        "rejection_rate": MetricDefinition(
-            name="rejection_rate",
-            type=MetricType.AGGREGATE,
-            unit="percentage",
-            description="Percentage of requests rejected"
-        ),
-        "in_vehicle_time": MetricDefinition(
-            name="in_vehicle_time",
-            type=MetricType.TEMPORAL,
-            unit="seconds",
-            description="Time spent by passengers in vehicles"
-        )
-    })
-    analysis: Dict[str, Any] = field(default_factory=lambda: {
-        "confidence_level": 0.95,
-        "statistical_tests": ["t-test", "mann_whitney"],
-        "visualization_types": ["boxplot", "timeseries", "histogram"]
-    })
-
-    def get_active_metrics(self) -> List[str]:
-        return list(set(self.default_metrics + self.additional_metrics))
-
-    def validate_metrics(self) -> bool:
-        active_metrics = self.get_active_metrics()
-        return all(metric in self.definitions for metric in active_metrics)
-    
-    def __post_init__(self):
-        """Initialize nested configurations"""
-        # Convert definition dictionaries to MetricDefinition instances
-        self.definitions = {
-            k: (v if isinstance(v, MetricDefinition) else MetricDefinition(**v))
-            for k, v in self.definitions.items()
-        }
-
-@dataclass
 class MLflowConfig(DataclassYAMLMixin):
-    tracking_uri: str = "sqlite:///experiments/mlflow.db"
+    """MLflow configuration"""
+    tracking_uri: str = "sqlite:///mlflow.db"
     experiment_name: str = ""
+    artifact_location: Optional[str] = None
     tags: Dict[str, str] = field(default_factory=dict)
-    log_artifacts: bool = True
-    log_params: bool = True
 
 @dataclass
 class RayConfig(DataclassYAMLMixin):
@@ -207,12 +111,11 @@ class RayConfig(DataclassYAMLMixin):
 
 @dataclass
 class ExecutionConfig(DataclassYAMLMixin):
+    """Execution configuration"""
     distributed: bool = False
     max_parallel: int = 4
-    chunk_size: int = 1
-    timeout: int = 3600
-    retry_attempts: int = 3
-
+    continue_on_error: bool = False
+    save_intermediate: bool = True
 
 @dataclass
 class NetworkInfo:
@@ -329,8 +232,7 @@ class MatchingAssignmentConfig(DataclassYAMLMixin):
         "waiting_time": 0.35,
         "detour_time": 0.25,
         "delay": 0.20,
-        "distance": 0.15,
-        "capacity_utilization": 0.05
+        "distance": 0.20,
     })
 
     default_weight: float = 0.1
@@ -368,7 +270,7 @@ class MatchingOptimizationConfig(DataclassYAMLMixin):
     convergence_threshold: float = 0.01
 
 @dataclass
-class MatchingConfig:
+class MatchingConfig(DataclassYAMLMixin):
     """Configuration for matching strategy"""
     assignment_method: AssignmentMethod = AssignmentMethod.INSERTION
     optimization_method: OptimizationMethod = OptimizationMethod.NONE
@@ -388,6 +290,38 @@ class MatchingConfig:
             self.optimization_config = MatchingOptimizationConfig(**self.optimization_config)
 
 @dataclass
+class StopAssignerConfig(DataclassYAMLMixin):
+    """Configuration for stop assignment"""
+    strategy: str = "nearest"
+    max_alternatives: int = 3
+    thresholds: Dict[str, float] = field(default_factory=lambda: {
+        "max_walking_distance": 400.0,
+        "max_driving_time": 900.0,
+    })
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        "vehicle_access_time": 0.3,
+        "passenger_access_time": 0.7,
+    })
+    custom_params: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class StopSelectorConfig(DataclassYAMLMixin):
+    """Configuration for stop selection"""
+    strategy: str = "coverage_based"
+    min_demand_threshold: float = 0.1
+    max_walking_distance: float = 400.0
+    min_stop_spacing: float = 100.0
+    max_stops: int = 10
+    coverage_radius: float = 1000.0
+    accessibility_weights: Dict[str, float] = field(default_factory=lambda: {
+        "walk": 0.4,
+        "demand": 0.3,
+        "vehicle": 0.2,
+        "coverage": 0.1
+    })
+    custom_params: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
 class AlgorithmConfig(DataclassYAMLMixin):
     """Configuration for system algorithms"""
     routing_algorithm: str = "dijkstra"
@@ -404,83 +338,22 @@ class AlgorithmConfig(DataclassYAMLMixin):
     stop_assigner_params: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
-        """Initialize parameter objects based on selected strategies"""
-        if not self.routing_params:
-            self.routing_params = self._get_default_params(self.routing_algorithm)
-        if not self.cost_function_params:
-            self.cost_function_params = self._get_default_params(self.cost_function)
-        if not self.user_acceptance_params:
-            self.user_acceptance_params = self._get_default_params(self.user_acceptance_model)
-        if not self.stop_selector_params:
-            self.stop_selector_params = self._get_default_params(self.stop_selector)
-        if not self.stop_assigner_params:
-            self.stop_assigner_params = self._get_default_params(self.stop_assigner)
-
-
-
-    def _get_default_params(self, strategy: str) -> Dict[str, Any]:
-        """Get default parameters for a given strategy"""
-        defaults = {
-            # Routing defaults
-            "dijkstra": {},
-            "time_dependent": {
-                "update_interval": 300,
-                "max_alternatives": 3
-            },
-            # User acceptance defaults
-            "logit": {
-                "coefficients": {
-                    "waiting_time": -0.01,
-                    "travel_time": -0.005,
-                    "fare": -0.1
-                }
-            },
-            # Stop selector defaults
-            "coverage_based": {
-                "strategy": "coverage_based",
-                "max_walking_distance": 400.0,
-                "min_stop_spacing": 100.0,
-                "max_stops": 10,
-                "coverage_radius": 1000.0,
-                "min_demand_threshold": 0.1,
-                "accessibility_weights": {"distance": 0.5, "time": 0.5}
-            },
-            "demand_based": {
-                "strategy": "demand_based",
-                "min_demand_threshold": 0.1,
-                "max_walking_distance": 400.0,
-                "min_stop_spacing": 100.0,
-                "max_stops": 10,
-                "coverage_radius": 1000.0,
-                "accessibility_weights": {"distance": 0.5, "time": 0.5}
-            },
-            # Stop assigner defaults
-            "nearest": {
-                "strategy": "nearest",
-                "max_walking_distance": 400.0,
-                "walking_speed": 1.4,
-                "max_wait_time": 600,
-                "max_alternatives": 3,
-                "weights": {"distance": 0.5, "congestion": 0.3, "accessibility": 0.2}
-            },
-            "multi_objective": {
-                "strategy": "multi_objective",
-                "max_walking_distance": 400.0,
-                "walking_speed": 1.4,
-                "max_wait_time": 600,
-                "max_alternatives": 3,
-                "weights": {"distance": 0.5, "congestion": 0.3, "accessibility": 0.2}
-            },
-            "accessibility": {
-                "strategy": "accessibility",
-                "max_walking_distance": 400.0,
-                "walking_speed": 1.4,
-                "max_wait_time": 600,
-                "max_alternatives": 3,
-                "weights": {"distance": 0.5, "congestion": 0.3, "accessibility": 0.2}
-            }
-        }
-        return defaults.get(strategy, {})
+        """Initialize nested configurations"""
+        logger.info("Initializing AlgorithmConfig")
+        logger.info(f"Initial stop_selector_params: {self.stop_selector_params}")
+        logger.info(f"Initial stop_assigner_params: {self.stop_assigner_params}")
+        
+        # Convert dictionary parameters if they're provided
+        if isinstance(self.stop_selector_params, dict):
+            logger.info("Converting stop_selector_params from dict")
+            self.stop_selector_params = deepcopy(self.stop_selector_params)
+            
+        if isinstance(self.stop_assigner_params, dict):
+            logger.info("Converting stop_assigner_params from dict")
+            self.stop_assigner_params = deepcopy(self.stop_assigner_params)
+            
+        logger.info(f"Final stop_selector_params: {self.stop_selector_params}")
+        logger.info(f"Final stop_assigner_params: {self.stop_assigner_params}")
 
 @dataclass
 class SimulationConfig(DataclassYAMLMixin):
@@ -528,22 +401,21 @@ class StopConfig(DataclassYAMLMixin):
     max_passenger_queue: int = 10
     min_service_interval: int = 60
     max_dwell_time: int = 120
-
 @dataclass
-class ScenarioConfig(DataclassYAMLMixin):
-    """Configuration for a specific simulation scenario"""
+class ParameterSet(DataclassYAMLMixin):
+    """A set of parameters to run a simulation with"""
     name: str
     description: str = ""
+    service: ServiceConfig = field(default_factory=ServiceConfig)
+    route: RouteConfig = field(default_factory=RouteConfig)
+    stop: StopConfig = field(default_factory=StopConfig)
+    demand: DemandConfig = field(default_factory=DemandConfig)
+    vehicle: VehicleConfig = field(default_factory=VehicleConfig)
+    algorithm: AlgorithmConfig = field(default_factory=AlgorithmConfig)
+    matching: MatchingConfig = field(default_factory=MatchingConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     replications: int = 1
-    service: Union[ServiceConfig, Dict[str, Any]] = field(default_factory=ServiceConfig)
-    route: Union[RouteConfig, Dict[str, Any]] = field(default_factory=RouteConfig)
-    stop: Union[StopConfig, Dict[str, Any]] = field(default_factory=StopConfig)
-    demand: Union[DemandConfig, Dict[str, Any]] = field(default_factory=DemandConfig)
-    vehicle: Union[VehicleConfig, Dict[str, Any]] = field(default_factory=VehicleConfig)
-    algorithm: Union[AlgorithmConfig, Dict[str, Any]] = field(default_factory=AlgorithmConfig)
-    matching: Union[MatchingConfig, Dict[str, Any]] = field(default_factory=MatchingConfig)
-    network: Union[NetworkConfig, Dict[str, Any]] = field(default_factory=NetworkConfig)
-    metrics: Optional[Union[MetricsConfig, Dict[str, Any]]] = None
+    tags: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         """Initialize nested configurations"""
@@ -563,265 +435,114 @@ class ScenarioConfig(DataclassYAMLMixin):
             self.matching = MatchingConfig(**self.matching)
         if isinstance(self.network, dict):
             self.network = NetworkConfig(**self.network)
-        if isinstance(self.metrics, dict):
-            self.metrics = MetricsConfig(**self.metrics)
-
-@dataclass
-class ExperimentConfig(DataclassYAMLMixin):
-    """Configuration for a specific experiment that may contain multiple scenarios"""
-    name: str
-    description: str
-    scenarios: Dict[str, ScenarioConfig]
-    metrics: Optional[MetricsConfig] = None
-    variant: str = "default"
-    tags: List[str] = field(default_factory=list)
-    def __post_init__(self):
-        """Initialize nested configurations"""
-        # Convert scenario dictionaries to ScenarioConfig instances
-        self.scenarios = {
-            k: (v if isinstance(v, ScenarioConfig) else ScenarioConfig(**v))
-            for k, v in self.scenarios.items()
-        }
-        # Convert metrics dictionary to MetricsConfig instance if needed
-        if isinstance(self.metrics, dict):
-            self.metrics = MetricsConfig(**self.metrics)
 
 @dataclass
 class StudyConfig(DataclassYAMLMixin):
-    """Top-level configuration for a simulation study"""
-    metadata: StudyMetadata
-    type: StudyType
-    paths: StudyPaths = field(default_factory=StudyPaths)
-    base_config: Dict[str, Any] = field(default_factory=dict)
-    experiments: Dict[str, ExperimentConfig] = field(default_factory=dict)
-    metrics: MetricsConfig = field(default_factory=MetricsConfig)
-    parameter_sweep: Optional[ParameterSweepConfig] = None
+    name: str = ""
+    description: str = ""
+    version: str = ""
+    authors: List[str] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
     mlflow: MLflowConfig = field(default_factory=MLflowConfig)
-    ray: RayConfig = field(default_factory=RayConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
-    settings: Dict[str, Any] = field(default_factory=lambda: {
-        "parallel_experiments": False,
-        "max_parallel": 1,
-        "continue_on_error": False,
-        "save_intermediate": True,
-        "backup_existing": True
-    })
-
-    def __post_init__(self):
-        """Initialize all nested configurations"""
-        # Convert metadata dictionary to StudyMetadata instance if needed
-        if isinstance(self.metadata, dict):
-            self.metadata = StudyMetadata(**self.metadata)
-
-        # Convert type string to StudyType enum if needed
-        if isinstance(self.type, str):
-            self.type = StudyType(self.type)
-
-        # Convert paths dictionary to StudyPaths instance if needed
-        if isinstance(self.paths, dict):
-            self.paths = StudyPaths(**self.paths)
-
-        # Convert experiments dictionaries to ExperimentConfig instances
-        self.experiments = {
-            k: (v if isinstance(v, ExperimentConfig) else ExperimentConfig(**v))
-            for k, v in self.experiments.items()
-        }
-
-        # Convert metrics dictionary to MetricsConfig instance if needed
-        if isinstance(self.metrics, dict):
-            self.metrics = MetricsConfig(**self.metrics)
-
-        # Convert parameter_sweep dictionary to ParameterSweepConfig instance if needed
-        if isinstance(self.parameter_sweep, dict):
-            self.parameter_sweep = ParameterSweepConfig(**self.parameter_sweep)
-
-        # Convert other configurations
-        if isinstance(self.mlflow, dict):
-            self.mlflow = MLflowConfig(**self.mlflow)
-        if isinstance(self.ray, dict):
-            self.ray = RayConfig(**self.ray)
-        if isinstance(self.execution, dict):
-            self.execution = ExecutionConfig(**self.execution)
-        if isinstance(self.simulation, dict):
-            self.simulation = SimulationConfig(**self.simulation)
-
-        # Set default name if not provided
-        if not self.metadata.name:
-            self.metadata.name = f"study_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-    def get_scenario_metrics(self, experiment_name: str, scenario_name: str) -> MetricsConfig:
-        """Get metrics configuration for a specific scenario with inheritance"""
-        if experiment_name not in self.experiments:
-            raise KeyError(f"Experiment '{experiment_name}' not found")
-        
-        experiment = self.experiments[experiment_name]
-        if scenario_name not in experiment.scenarios:
-            raise KeyError(f"Scenario '{scenario_name}' not found in experiment '{experiment_name}'")
-        
-        # Start with study-wide metrics
-        metrics = MetricsConfig(**self.metrics.__dict__)
-        
-        # Apply experiment-level metrics
-        if experiment.metrics:
-            metrics.additional_metrics.extend(experiment.metrics.additional_metrics)
-        
-        # Apply scenario-level metrics
-        scenario = experiment.scenarios[scenario_name]
-        if scenario.metrics:
-            metrics.additional_metrics.extend(scenario.metrics.additional_metrics)
-        
-        return metrics
-
-    def get_scenario_config(self, experiment_name: str, scenario_name: str) -> ScenarioConfig:
-        """Get complete configuration for a specific scenario"""
-        if experiment_name not in self.experiments:
-            raise KeyError(f"Experiment '{experiment_name}' not found")
-            
-        experiment = self.experiments[experiment_name]
-        if scenario_name not in experiment.scenarios:
-            raise KeyError(f"Scenario '{scenario_name}' not found in experiment '{experiment_name}'")
-            
-        scenario = experiment.scenarios[scenario_name]
-        return scenario.merge_with_base(self.base_config)
-
-    def save(self, path: Optional[Path] = None) -> Path:
-        """Save study configuration to file"""
-        import yaml
-        
-        def _convert_to_dict(obj: Any) -> Any:
-            """Recursively convert dataclass instances to dictionaries"""
-            if isinstance(obj, Enum):
-                return obj.value
-            
-            if hasattr(obj, '__dataclass_fields__'):
-                return {k: _convert_to_dict(v) for k, v in obj.__dict__.items()}
-            
-            if isinstance(obj, (list, tuple)):
-                return [_convert_to_dict(item) for item in obj]
-            
-            if isinstance(obj, dict):
-                return {k: _convert_to_dict(v) for k, v in obj.items()}
-            
-            return obj
-        
-        if path is None:
-            path = self.paths.get_study_dir(self.metadata.name) / "study_config.yaml"
-        
-        # Convert the StudyConfig instance to a dictionary
-        config_dict = _convert_to_dict(self)
-        
-        with open(path, 'w') as f:
-            yaml.dump(config_dict, f, default_flow_style=False)
-        
-        return path
+    # The base_config contains keys such as network, demand, service, algorithm.
+    base_config: Dict[str, Any] = field(default_factory=dict)
+    # parameter_sets is a dict mapping names (e.g., "small_fleet") to dicts with overrides.
+    parameter_sets: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: Path) -> 'StudyConfig':
-        """Load study configuration from file with proper dataclass instantiation"""
-        import yaml
-        from typing import get_type_hints, get_args, get_origin
-        from copy import deepcopy
-        
-        def _convert_to_dataclass(data: Dict, target_class: Any) -> Any:
-            """Recursively convert dictionaries to dataclass instances"""
-            if data is None:
-                return None
-                
-            if not isinstance(data, dict):
-                return data
-                
-            hints = get_type_hints(target_class)
-            kwargs = {}
-            
-            for key, value in data.items():
-                if key not in hints:
-                    # For fields not in type hints (like base_config contents),
-                    # we want to preserve the complete dictionary structure
-                    kwargs[key] = deepcopy(value)
-                    continue
-                    
-                target_type = hints[key]
-                
-                # Handle Optional types
-                if get_origin(target_type) is Union and type(None) in get_args(target_type):
-                    target_type = get_args(target_type)[0]
-                
-                # Handle Enums
-                if isinstance(value, str) and isinstance(target_type, type) and issubclass(target_type, Enum):
-                    kwargs[key] = target_type(value)
-                    continue
-                
-                # Special handling for base_config field
-                if key == 'base_config':
-                    kwargs[key] = deepcopy(value)
-                    continue
-                
-                # Handle Lists
-                if get_origin(target_type) is list:
-                    element_type = get_args(target_type)[0]
-                    if hasattr(element_type, '__dataclass_fields__'):
-                        kwargs[key] = [_convert_to_dataclass(item, element_type) for item in value]
-                    else:
-                        kwargs[key] = value
-                    continue
-                
-                # Handle Dicts
-                if get_origin(target_type) is dict:
-                    value_type = get_args(target_type)[1]
-                    if hasattr(value_type, '__dataclass_fields__'):
-                        kwargs[key] = {k: _convert_to_dataclass(v, value_type) for k, v in value.items()}
-                    else:
-                        kwargs[key] = value
-                    continue
-                
-                # Handle nested dataclasses
-                if hasattr(target_type, '__dataclass_fields__'):
-                    kwargs[key] = _convert_to_dataclass(value, target_type)
-                else:
-                    kwargs[key] = value
-            
-            return target_class(**kwargs)
+    def load(cls, path: str) -> "StudyConfig":
+        """
+        Load a StudyConfig from a YAML file.
+        """
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
 
-        try:
-            with open(path) as f:
-                data = yaml.safe_load(f)
-                
-            # Ensure base_config exists and is properly copied
-            if 'base_config' in data:
-                data['base_config'] = deepcopy(data['base_config'])
-                
-            # Convert the loaded data into a StudyConfig instance
-            return _convert_to_dataclass(data, cls)
-        except Exception as e:
-            raise ValueError(f"Failed to load study configuration: {str(e)}") from e
+        # Load nested configurations for mlflow, execution, and simulation.
+        mlflow_config = MLflowConfig(**data.get("mlflow", {}))
+        execution_config = ExecutionConfig(**data.get("execution", {}))
+        simulation_config = SimulationConfig(**data.get("simulation", {}))
 
-@dataclass
-class GlobalOptimizationConfig(DataclassYAMLMixin):
-    """Configuration for global system optimization"""
-    optimization_interval: int = 300  # How often to run optimization (seconds)
-    max_optimization_time: int = 60   # Maximum time allowed for optimization (seconds)
-    improvement_threshold: float = 0.05  # Minimum improvement required to apply changes (5%)
-    max_iterations: int = 100  # Maximum number of iterations for optimization
-    convergence_threshold: float = 0.01  # Threshold for convergence (1%)
+        instance = cls(
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            version=data.get("version", ""),
+            authors=data.get("authors", []),
+            tags=data.get("tags", []),
+            mlflow=mlflow_config,
+            execution=execution_config,
+            simulation=simulation_config,
+            base_config=data.get("base_config", {}),
+            parameter_sets=data.get("parameter_sets", {})
+        )
+        return instance
+
+    def dump(self, path: str):
+        """
+        Dump the current StudyConfig to a YAML file.
+        """
+        data = {
+            "name": self.name,
+            "description": self.description,
+            "version": self.version,
+            "authors": self.authors,
+            "tags": self.tags,
+            "mlflow": self.mlflow.__dict__,
+            "execution": self.execution.__dict__,
+            "simulation": self.simulation.__dict__,
+            "base_config": self.base_config,
+            "parameter_sets": self.parameter_sets,
+        }
+        with open(path, 'w') as f:
+            yaml.dump(data, f)
+
+    def get_parameter_set(self, name: str) -> ParameterSet:
+        """
+        Retrieve a ParameterSet by name, merging the base_config with any
+        overrides specified in the given parameter set. The merging is done
+        recursively so that nested dictionaries are properly updated.
+        """
+        if name not in self.parameter_sets:
+            raise ValueError(f"Parameter set '{name}' not found.")
+
+        # Create a deep copy of the base configuration.
+        base = deepcopy(self.base_config)
+        overrides = self.parameter_sets[name]
+
+        # Merge the overrides into the base configuration recursively.
+        merged_config = self.deep_update(base, overrides)
+
+        # Prepare a dictionary for the ParameterSet.
+        # Notice that base_config in the YAML provided keys for service, demand,
+        # algorithm, and network, while the parameter set (e.g., "small_fleet")
+        # provides additional keys such as vehicle and matching.
+        params = {
+            "name": merged_config.get("name", name),
+            "description": merged_config.get("description", ""),
+            "service": merged_config.get("service", {}),
+            "route": merged_config.get("route", {}),  # default empty if not provided
+            "stop": merged_config.get("stop", {}),      # default empty if not provided
+            "demand": merged_config.get("demand", {}),
+            "vehicle": merged_config.get("vehicle", {}),
+            "algorithm": merged_config.get("algorithm", {}),
+            "matching": merged_config.get("matching", {}),
+            "network": merged_config.get("network", {}),
+            "replications": merged_config.get("replications", 1),
+            "tags": merged_config.get("tags", []),
+        }
+        return ParameterSet(**params)
     
-    # Weights for different optimization objectives
-    weights: Dict[str, float] = field(default_factory=lambda: {
-        "waiting_time": 0.3,
-        "vehicle_utilization": 0.3,
-        "total_distance": 0.2,
-        "load_balancing": 0.2
-    })
-    
-    # Constraints for optimization
-    constraints: Dict[str, Any] = field(default_factory=lambda: {
-        "max_reassignments": 5,  # Maximum number of requests to reassign per vehicle
-        "max_route_changes": 3,  # Maximum number of route changes per vehicle
-        "min_improvement_per_change": 0.02  # Minimum improvement required per change (2%)
-    })
-    
-    # Time windows for looking ahead/behind
-    time_windows: Dict[str, int] = field(default_factory=lambda: {
-        "look_ahead": 1800,  # Look ahead window (30 minutes)
-        "look_behind": 900   # Look behind window (15 minutes)
-    })
+    @staticmethod
+    def deep_update(source: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively update a dictionary with another dictionary. If a key exists in both
+        and the corresponding values are dictionaries, then update them recursively.
+        Otherwise, the override value will replace the source value.
+        """
+        for key, value in overrides.items():
+            if key in source and isinstance(source[key], dict) and isinstance(value, dict):
+                source[key] = StudyConfig.deep_update(source[key], value)
+            else:
+                source[key] = value
+        return source

@@ -82,3 +82,9 @@ site/
 # Configuration backups
 *.yaml.bak
 *.yml.bak
+
+# Artifacts
+studies/artifacts/*
+
+# Results
+studies/results/*

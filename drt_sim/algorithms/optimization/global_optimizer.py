@@ -7,9 +7,9 @@ from drt_sim.models.matching import Assignment
 from drt_sim.core.state.manager import StateManager
 from drt_sim.network.manager import NetworkManager
 from drt_sim.core.simulation.context import SimulationContext
-from drt_sim.core.logging_config import setup_logger
 from drt_sim.config.config import MatchingOptimizationConfig
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class GlobalSystemOptimizer:
     """

@@ -1,0 +1,186 @@
+name: stop_assigner_weights_study
+description: "Study to optimize stop assigner weights for DRT service"
+version: "1.0.0"
+authors:
+ - "Research Team"
+tags:
+ - "stop_assigner"
+ - "optimization"
+ - "weights"
+
+# MLflow configuration
+mlflow:
+  tracking_uri: "sqlite:///studies/mlflow.db"
+  experiment_name: "DRT Stop Assigner Weights Optimization"
+  artifact_location: "studies/artifacts"
+  tags:
+    study_type: "parameter_sweep"
+    domain: "stop_assignment"
+    study_name: "stop_assigner_weights_study"
+    version: "1.0.0"
+
+# Execution settings
+execution:
+  distributed: false
+  max_parallel: 4
+  continue_on_error: true
+  save_intermediate: true
+
+# Simulation settings
+simulation:
+  start_time: "2024-10-24 07:00:00"
+  end_time: "2024-10-24 23:00:00"
+  warm_up_duration: 1800
+  time_step: 600
+  time_scale_factor: 1.0
+  random_seed: 42
+
+# Base configuration (keeping your original network and demand settings)
+base_config:
+  network:
+    network_file: "data/networks/hwaseong_drive.graphml"
+    walk_network_file: "data/networks/hwaseong_walk.graphml"
+    coordinate_system: "EPSG:4326"
+    walking_speed: 1.4
+    driving_speed: 8.33
+    service_area_polygon:
+      - [126.827032, 37.198957]
+      - [126.822082, 37.203549]
+      - [126.818869, 37.206509]
+      - [126.817734, 37.209793]
+      - [126.832442, 37.216226]
+      - [126.833297, 37.209711]
+      - [126.836499, 37.210003]
+      - [126.838809, 37.206861]
+      - [126.844007, 37.201823]
+      - [126.828538, 37.198760]
+  
+  demand:
+    generator_type: "csv"
+    num_requests: 10
+    csv_config:
+      files:
+        - file_path: "data/demands/base_real_time.csv"
+          weight: 1.0
+      columns:
+        request_time: "time"
+        pickup_lat: "o_y"
+        pickup_lon: "o_x"
+        dropoff_lat: "d_y"
+        dropoff_lon: "d_x"
+
+  service:
+    max_wait_time: 600
+    max_ride_time: 1200
+    max_walking_distance: 400.0
+    max_journey_time: 1800
+
+  algorithm:
+    routing_algorithm: "time_dependent"
+    cost_function: "multi_objective"
+    user_acceptance_model: "logit"
+    rebalancing_interval: 300
+    stop_selector: "coverage_based"
+    stop_selector_params:
+      strategy: "coverage_based"
+      min_demand_threshold: 0.1
+      max_walking_distance: 400.0
+      min_stop_spacing: 100.0
+      max_stops: 10
+      coverage_radius: 1000.0
+      accessibility_weights:
+        walk: 0.4
+        demand: 0.3
+        vehicle: 0.2
+        coverage: 0.1
+      candidate_stops_file: "data/candidate_stops/hwaseong.csv"
+
+# Parameter sets with varying stop assigner weights
+parameter_sets:
+  vehicle_priority:
+    name: "vehicle_priority"
+    description: "Higher weight on vehicle access time"
+    replications: 1
+    tags:
+      - "vehicle_priority"
+    vehicle:
+      fleet_size: 10
+      capacity: 4
+      boarding_time: 5
+      alighting_time: 5
+      depot_locations:
+        - [126.81736515, 37.209416]
+        - [126.82221158, 37.20090886]
+        - [126.83461236, 37.20602126]
+        - [126.8188245, 37.1972135]
+        - [126.8299617, 37.20062122]
+        - [126.83069764999999, 37.21154885]
+    matching:
+      assignment_method: "insertion"
+      optimization_method: "none"
+    algorithm:
+      stop_assigner: "multi_objective"
+      stop_assigner_params:
+        strategy: "multi_objective"
+        max_alternatives: 3
+        thresholds: {"max_walking_distance": 400.0, "max_walking_time": 300.0, "max_driving_time": 900.0}
+        weights: {"vehicle_access_time": 0.5, "passenger_access_time": 0.5}
+
+
+  balanced_weights:
+    name: "balanced_weights"
+    description: "Equal weights for vehicle and passenger access time"
+    replications: 1
+    tags:
+      - "balanced_weights"
+    vehicle:
+      fleet_size: 10
+      capacity: 4
+      boarding_time: 5
+      alighting_time: 5
+      depot_locations:
+        - [126.81736515, 37.209416]
+        - [126.82221158, 37.20090886]
+        - [126.83461236, 37.20602126]
+        - [126.8188245, 37.1972135]
+        - [126.8299617, 37.20062122]
+        - [126.83069764999999, 37.21154885]
+    matching:
+      assignment_method: "insertion"
+      optimization_method: "none"
+    algorithm:
+      stop_assigner: "multi_objective"
+      stop_assigner_params:
+        strategy: "multi_objective"
+        max_alternatives: 3
+        thresholds: {"max_walking_distance": 400.0, "max_walking_time": 300.0, "max_driving_time": 900.0}
+        weights: {"vehicle_access_time": 0.5, "passenger_access_time": 0.5}
+
+  passenger_priority:
+    name: "passenger_priority"
+    description: "Higher weight on passenger access time"
+    replications: 1
+    tags:
+      - "passenger_priority"
+    vehicle:
+      fleet_size: 10
+      capacity: 4
+      boarding_time: 5
+      alighting_time: 5
+      depot_locations:
+        - [126.81736515, 37.209416]
+        - [126.82221158, 37.20090886]
+        - [126.83461236, 37.20602126]
+        - [126.8188245, 37.1972135]
+        - [126.8299617, 37.20062122]
+        - [126.83069764999999, 37.21154885]
+    matching:
+      assignment_method: "insertion"
+      optimization_method: "none"
+    algorithm:
+      stop_assigner: "multi_objective"
+      stop_assigner_params:
+        strategy: "multi_objective"
+        max_alternatives: 3
+        thresholds: {"max_walking_distance": 400.0, "max_walking_time": 300.0, "max_driving_time": 900.0}
+        weights: {"vehicle_access_time": 0.5, "passenger_access_time": 0.5}

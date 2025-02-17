@@ -9,7 +9,7 @@ from drt_sim.models.stop import Stop, StopStatus
 from drt_sim.models.location import Location
 from drt_sim.models.request import Request
 from drt_sim.network.manager import NetworkManager
-from drt_sim.models.simulation import SimulationState
+from drt_sim.models.state import SimulationState
 from drt_sim.core.simulation.context import SimulationContext
 class StopSelectorStrategy(Enum):
     """Enumeration of different stop selection strategies."""
@@ -32,6 +32,7 @@ class StopSelectorConfig:
     accessibility_weights: Optional[Dict[str, float]] = None
     optimization_constraints: Optional[Dict[str, Any]] = None
     custom_params: Optional[Dict[str, Any]] = None
+    candidate_stops_file: Optional[str] = None  # Path to CSV file containing candidate stop locations
 
 class StopSelector(ABC):
     """Abstract base class for stop selection algorithms."""
@@ -48,49 +49,47 @@ class StopSelector(ABC):
         self.network_manager = network_manager
         self.selected_stops: Set[str] = set()  # Track selected stop IDs
         self._validate_config()
-    @abstractmethod
-    def select_stops(self, 
-                    candidate_locations: List[Location],
-                    demand_points: Optional[List[Location]] = None,
-                    existing_stops: Optional[List[Stop]] = None,
-                    constraints: Optional[Dict[str, Any]] = None) -> List[Stop]:
-        """
-        Select optimal stop locations based on the implementation strategy.
+    # @abstractmethod
+    # def select_stops(self, 
+    #                 candidate_locations: List[Location],
+    #                 demand_points: Optional[List[Location]] = None,
+    #                 existing_stops: Optional[List[Stop]] = None,
+    #                 constraints: Optional[Dict[str, Any]] = None) -> List[Stop]:
+    #     """
+    #     Select optimal stop locations based on the implementation strategy.
         
-        Args:
-            candidate_locations: List of possible stop locations
-            demand_points: Optional list of demand point locations
-            existing_stops: Optional list of existing stops to consider
-            constraints: Optional additional constraints for selection
+    #     Args:
+    #         candidate_locations: List of possible stop locations
+    #         demand_points: Optional list of demand point locations
+    #         existing_stops: Optional list of existing stops to consider
+    #         constraints: Optional additional constraints for selection
             
-        Returns:
-            List of selected Stop objects
-        """
-        pass
+    #     Returns:
+    #         List of selected Stop objects
+    #     """
+    #     pass
 
-    @abstractmethod
-    def update_stops(self,
-                    current_stops: List[Stop],
-                    demand_changes: Dict[str, float],
-                    system_state: SimulationState) -> Tuple[List[Stop], List[str]]:
-        """
-        Update stop selection based on changes in demand or system state.
+    # @abstractmethod
+    # def update_stops(self,
+    #                 current_stops: List[Stop],
+    #                 demand_changes: Dict[str, float],
+    #                 system_state: SimulationState) -> Tuple[List[Stop], List[str]]:
+    #     """
+    #     Update stop selection based on changes in demand or system state.
         
-        Args:
-            current_stops: List of currently active stops
-            demand_changes: Dictionary mapping areas to demand change factors
-            system_state: Optional current state of the system
+    #     Args:
+    #         current_stops: List of currently active stops
+    #         demand_changes: Dictionary mapping areas to demand change factors
+    #         system_state: Optional current state of the system
             
-        Returns:
-            Tuple of (updated stop list, list of modified stop IDs)
-        """
-        pass
+    #     Returns:
+    #         Tuple of (updated stop list, list of modified stop IDs)
+    #     """
+    #     pass
 
     @abstractmethod
     async def create_virtual_stops_for_request(self,
-                                       request: Request,
-                                       existing_stops: List[Stop],
-                                       system_state: SimulationState) -> Tuple[Stop, Stop]:
+                                       request: Request) -> Tuple[Stop, Stop]:
         """
         Create optimally placed virtual stops for a specific request when no existing stops are viable.
         """

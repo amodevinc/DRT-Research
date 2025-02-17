@@ -5,13 +5,12 @@ from drt_sim.core.state.manager import StateManager
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.route import Route, RouteStatus, RouteSegment, RouteStop
-from drt_sim.config.config import ScenarioConfig
+from drt_sim.config.config import ParameterSet
 from drt_sim.models.vehicle import VehicleStatus, Vehicle
 from drt_sim.models.matching import Assignment
-from drt_sim.core.logging_config import setup_logger
 from drt_sim.network.manager import NetworkManager
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class RouteHandler:
     """
@@ -21,7 +20,7 @@ class RouteHandler:
     
     def __init__(
         self,
-        config: ScenarioConfig,
+        config: ParameterSet,
         context: SimulationContext,
         state_manager: StateManager,
         network_manager: NetworkManager
@@ -53,11 +52,11 @@ class RouteHandler:
             # Check vehicle's current status to determine appropriate dispatch
             if vehicle.current_state.status == VehicleStatus.IDLE:
                 # Initial dispatch - vehicle hasn't started yet
-                self._create_update_vehicle_active_route_event(assignment.vehicle_id, assignment.route.id)
-                self._create_initial_dispatch_event(assignment.vehicle_id)
+                # self._create_update_vehicle_active_route_event(assignment.vehicle_id, assignment.route.id)
+                self._create_initial_dispatch_event(assignment.vehicle_id, assignment.route.id)
             else:
                 # Vehicle is already in service - needs rerouting
-                self._create_reroute_dispatch_event(assignment.vehicle_id)
+                self._create_reroute_dispatch_event(assignment.vehicle_id, assignment.route.id)
                 
             self.state_manager.commit_transaction()
             
@@ -144,7 +143,7 @@ class RouteHandler:
         )
         self.context.event_manager.publish_event(error_event)
     
-    def _create_initial_dispatch_event(self, vehicle_id: str) -> None:
+    def _create_initial_dispatch_event(self, vehicle_id: str, route_id: str) -> None:
         """Create dispatch event for initial vehicle start"""
         event = Event(
             event_type=EventType.VEHICLE_DISPATCH_REQUEST,
@@ -153,7 +152,8 @@ class RouteHandler:
             vehicle_id=vehicle_id,
             data={
                 'dispatch_type': 'initial',
-                'timestamp': self.context.current_time
+                'timestamp': self.context.current_time,
+                'route_id': route_id
             }
         )
         self.context.event_manager.publish_event(event)
@@ -169,7 +169,7 @@ class RouteHandler:
         )
         self.context.event_manager.publish_event(event)
 
-    def _create_reroute_dispatch_event(self, vehicle_id: str) -> None:
+    def _create_reroute_dispatch_event(self, vehicle_id: str, route_id: str) -> None:
         """Create dispatch event for rerouting an active vehicle"""
         event = Event(
             event_type=EventType.VEHICLE_REROUTE_REQUEST,
@@ -178,7 +178,8 @@ class RouteHandler:
             vehicle_id=vehicle_id,
             data={
                 'dispatch_type': 'reroute',
-                'timestamp': self.context.current_time
+                'timestamp': self.context.current_time,
+                'route_id': route_id
             }
         )
         self.context.event_manager.publish_event(event)

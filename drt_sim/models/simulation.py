@@ -9,6 +9,14 @@ from .passenger import PassengerState, PassengerStatus
 from .route import Route, RouteStatus
 from .stop import Stop, StopStatus, StopAssignment
 from .matching import Assignment
+from .state.status import SimulationStatus
+from .state.vehicle_system_state import VehicleSystemState
+from .state.request_system_state import RequestSystemState
+from .state.passenger_system_state import PassengerSystemState
+from .state.route_system_state import RouteSystemState
+from .state.stop_system_state import StopSystemState, StopAssignmentSystemState
+from .state.assignment_system_state import AssignmentSystemState
+
 class SimulationStatus(Enum):
     """Possible states of the simulation"""
     INITIALIZED = "initialized"
@@ -253,7 +261,7 @@ class SimulationState(ModelBase):
             "routes": self.routes.to_dict(),
             "stops": self.stops.to_dict(),
             "stop_assignments": self.stop_assignments.to_dict(),
-            "assignments": self.assignments.to_dict(),  # Add this line
+            "assignments": self.assignments.to_dict(),
             "events": self.events
         }
 

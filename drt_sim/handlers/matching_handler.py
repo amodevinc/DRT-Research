@@ -4,7 +4,7 @@ from datetime import datetime
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.request import Request, RequestStatus
 from drt_sim.models.vehicle import Vehicle
-from drt_sim.config.config import ScenarioConfig
+from drt_sim.config.config import ParameterSet
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.core.state.manager import StateManager
 from drt_sim.network.manager import NetworkManager
@@ -12,17 +12,17 @@ from drt_sim.algorithms.base_interfaces.matching_base import (
     MatchingStrategy, Assignment
 )
 from drt_sim.algorithms.optimization.global_optimizer import GlobalSystemOptimizer
-from drt_sim.core.logging_config import setup_logger
 from drt_sim.core.user.manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class MatchingHandler:
     """Handles request-vehicle matching in the DRT system."""
     
     def __init__(
         self,
-        config: ScenarioConfig,
+        config: ParameterSet,
         context: SimulationContext,
         state_manager: StateManager,
         network_manager: NetworkManager,

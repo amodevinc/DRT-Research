@@ -1,15 +1,15 @@
 from datetime import timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from drt_sim.core.state.manager import StateManager
 from drt_sim.core.simulation.context import SimulationContext
+from drt_sim.core.monitoring.visualization.manager import VisualizationManager
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.location import Location
-from drt_sim.config.config import ScenarioConfig
+from drt_sim.config.config import ParameterSet
 from drt_sim.models.request import Request
 from drt_sim.models.stop import StopStatus
 from drt_sim.models.metrics import StopMetrics
-from drt_sim.core.monitoring.types.metrics import MetricName
 from drt_sim.algorithms.base_interfaces.stop_selector_base import StopSelector, StopSelectorConfig
 from drt_sim.algorithms.base_interfaces.stop_assigner_base import StopAssigner, StopAssignerConfig, StopAssignment
 from drt_sim.algorithms.stop.selector.coverage_based import CoverageBasedStopSelector
@@ -18,9 +18,8 @@ from drt_sim.algorithms.stop.assigner.nearest import NearestStopAssigner
 from drt_sim.algorithms.stop.assigner.multi_objective import MultiObjectiveStopAssigner
 from drt_sim.algorithms.stop.assigner.accessibility import AccessibilityFocusedAssigner
 from drt_sim.network.manager import NetworkManager
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class StopHandler:
     """
@@ -31,15 +30,17 @@ class StopHandler:
     
     def __init__(
         self,
-        config: ScenarioConfig,
+        config: ParameterSet,
         context: SimulationContext,
         state_manager: StateManager,
-        network_manager: NetworkManager
+        network_manager: NetworkManager,
+        visualization_manager: Optional[VisualizationManager] = None
     ):
         self.config = config
         self.context = context
         self.state_manager = state_manager
         self.network_manager = network_manager
+        self.visualization_manager = visualization_manager
         
         # Initialize core components
         self.stop_thresholds = self._setup_stop_thresholds()
@@ -50,6 +51,20 @@ class StopHandler:
         self.selection_interval = timedelta(
             seconds=self.config.stop.selection_interval
         ) if hasattr(self.config.stop, 'selection_interval') else timedelta(seconds=300)
+        
+        # Register with visualization manager if available
+        if self.visualization_manager:
+            self.visualization_manager.register_component(
+                component_id='stop_handler',
+                component_type='handler',
+                modules=['stop_selector', 'stop_assigner'],
+                metadata={
+                    'selection_interval': self.selection_interval.total_seconds(),
+                    'stop_thresholds': self.stop_thresholds,
+                    'selector_type': self.config.algorithm.stop_selector,
+                    'assigner_type': self.config.algorithm.stop_assigner
+                }
+            )
         
         # Schedule initial selection
         self._schedule_background_selection()
@@ -67,27 +82,78 @@ class StopHandler:
 
     def _init_stop_selector(self) -> StopSelector:
         """Initialize stop selector based on algorithm configuration"""
+        logger.info("Initializing stop selector")
+        logger.info(f"Algorithm config: {self.config.algorithm}")
+        
         selector_params = self.config.algorithm.stop_selector_params
+        logger.info(f"Stop selector params: {selector_params}")
+        
+        if selector_params is None:
+            raise ValueError("Stop selector parameters are missing")
+            
+        logger.info("Creating StopSelectorConfig")
         selector_config = StopSelectorConfig(**selector_params)
+        logger.info(f"Created selector config: {selector_config}")
 
         if self.config.algorithm.stop_selector == "coverage_based":
-            return CoverageBasedStopSelector(sim_context=self.context, config=selector_config, network_manager=self.network_manager)
+            logger.info("Initializing CoverageBasedStopSelector")
+            return CoverageBasedStopSelector(
+                sim_context=self.context,
+                config=selector_config,
+                network_manager=self.network_manager,
+                state_manager=self.state_manager,
+                visualization_manager=self.visualization_manager
+            )
         elif self.config.algorithm.stop_selector == "demand_based":
-            return DemandBasedStopSelector(sim_context=self.context, config=selector_config, network_manager=self.network_manager)
+            logger.info("Initializing DemandBasedStopSelector")
+            return DemandBasedStopSelector(
+                sim_context=self.context,
+                config=selector_config,
+                network_manager=self.network_manager,
+                visualization_manager=self.visualization_manager
+            )
         else:
             raise ValueError(f"Invalid stop selector: {self.config.algorithm.stop_selector}")
 
     def _init_stop_assigner(self) -> StopAssigner:
         """Initialize stop assigner based on algorithm configuration"""
+        logger.info("Initializing stop assigner")
+        logger.info(f"Algorithm config: {self.config.algorithm}")
+        
         assigner_params = self.config.algorithm.stop_assigner_params
+        logger.info(f"Stop assigner params: {assigner_params}")
+        
+        if assigner_params is None:
+            raise ValueError("Stop assigner parameters are missing")
+            
+        logger.info("Creating StopAssignerConfig")
         assigner_config = StopAssignerConfig(**assigner_params)
+        logger.info(f"Created assigner config: {assigner_config}")
 
         if self.config.algorithm.stop_assigner == "nearest":
-            return NearestStopAssigner(sim_context=self.context, config=assigner_config, network_manager=self.network_manager, state_manager=self.state_manager)
+            logger.info("Initializing NearestStopAssigner")
+            return NearestStopAssigner(
+                sim_context=self.context,
+                config=assigner_config,
+                network_manager=self.network_manager,
+                state_manager=self.state_manager,
+            )
         elif self.config.algorithm.stop_assigner == "multi_objective":
-            return MultiObjectiveStopAssigner(sim_context=self.context, config=assigner_config, network_manager=self.network_manager, state_manager=self.state_manager)
+            logger.info("Initializing MultiObjectiveStopAssigner")
+            return MultiObjectiveStopAssigner(
+                sim_context=self.context,
+                config=assigner_config,
+                network_manager=self.network_manager,
+                state_manager=self.state_manager,
+            )
         elif self.config.algorithm.stop_assigner == "accessibility":
-            return AccessibilityFocusedAssigner(sim_context=self.context, config=assigner_config, network_manager=self.network_manager, state_manager=self.state_manager)
+            logger.info("Initializing AccessibilityFocusedAssigner")
+            return AccessibilityFocusedAssigner(
+                sim_context=self.context,
+                config=assigner_config,
+                network_manager=self.network_manager,
+                state_manager=self.state_manager,
+            )
         else:
             raise ValueError(f"Invalid stop assigner: {self.config.algorithm.stop_assigner}")
 
@@ -105,38 +171,7 @@ class StopHandler:
         """Handle periodic stop selection check"""
         try:
             self.state_manager.begin_transaction()
-            
-            # Get current system state and stops
-            system_state = self.state_manager.get_state()
-            current_stops = self.state_manager.stop_worker.get_all_stops()
-            active_stops = [s for s in current_stops if s.status == StopStatus.ACTIVE]
-        
-            # Analyze demand patterns
-            demand_changes = self._analyze_demand_patterns()
-            
-            # Run stop selection update
-            updated_stops, modified_ids = self.stop_selector.update_stops(
-                current_stops=current_stops,
-                demand_changes=demand_changes,
-                system_state=system_state
-            )
-            
-            if modified_ids:
-                # Apply updates
-                self.state_manager.stop_worker.update_stops_bulk(
-                    updated_stops,
-                    metadata={
-                        'update_time': self.context.current_time,
-                        'update_type': 'background_selection',
-                        'demand_data': demand_changes
-                    }
-                )
-                
-                self._create_stops_updated_event(modified_ids)
-            
-            # Schedule next selection
-            # self._schedule_background_selection()
-            
+            #TODO: Implement stop selection for background selection
             self.state_manager.commit_transaction()
             
         except Exception as e:
@@ -233,17 +268,19 @@ class StopHandler:
                 # Add normal assignment to state
                 self.state_manager.stop_assignment_worker.add_assignment(assignment)
                 
-            except ValueError:
+            except ValueError as e:
                 # If no viable stops found, create virtual stops using the selector
                 origin_stop, dest_stop = await self.stop_selector.create_virtual_stops_for_request(
-                    request=request,
-                    existing_stops=available_stops,
-                    system_state=self.state_manager.get_state()
+                    request=request
                 )
                 
                 # Add virtual stops to state
-                self.state_manager.stop_worker.create_new_stop(origin_stop)
-                self.state_manager.stop_worker.create_new_stop(dest_stop)
+                # Verify stops don't already exist
+                if not self.state_manager.stop_worker.get_stop(origin_stop.id):
+                    self.state_manager.stop_worker.create_new_stop(origin_stop)
+                if not self.state_manager.stop_worker.get_stop(dest_stop.id):
+                    self.state_manager.stop_worker.create_new_stop(dest_stop)
+
 
                 # Calculate walking distances and times
                 distance_to_origin_stop = await self.network_manager.calculate_distance(
@@ -296,118 +333,6 @@ class StopHandler:
             self.state_manager.rollback_transaction()
             logger.error(f"Error determining virtual stops: {str(e)}")
             logger.error(f"Traceback: {traceback.format_exc()}")
-            self._handle_stop_error(event, str(e))
-
-    def handle_vehicle_arrival(self, event: Event) -> None:
-        """Handle vehicle arrival at stop"""
-        try:
-            self.state_manager.begin_transaction()
-            
-            stop_id = event.stop_id
-            stop = self.state_manager.stop_worker.get_stop(stop_id)
-            if not stop:
-                raise ValueError(f"Stop {stop_id} not found")
-            
-            # Update metrics and check thresholds
-            metrics = self.state_manager.stop_worker.get_stop_metrics(stop_id)
-            metrics.record_vehicle_visit()
-            
-            if metrics.vehicles_queued >= self.stop_thresholds['congestion_threshold']:
-                self._handle_stop_congestion(stop_id, metrics)
-            
-            # Create dwell time tracking event
-            self._create_dwell_time_start_event(
-                stop_id,
-                event.vehicle_id,
-                event.data.get('planned_dwell_time', 0)
-            )
-            
-            self.state_manager.commit_transaction()
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling vehicle arrival: {str(e)}")
-            self._handle_stop_error(event, str(e))
-
-    def handle_vehicle_departure(self, event: Event) -> None:
-        """Handle vehicle departure from stop"""
-        try:
-            self.state_manager.begin_transaction()
-            
-            stop_id = event.stop_id
-            stop = self.state_manager.stop_worker.get_stop(stop_id)
-            if not stop:
-                raise ValueError(f"Stop {stop_id} not found")
-            
-            # Update metrics
-            metrics = self.state_manager.stop_worker.get_stop_metrics(stop_id)
-            metrics.record_vehicle_departure()
-            
-            # Update dwell time if available
-            arrival_time = event.data.get('arrival_time')
-            if arrival_time:
-                dwell_time = (self.context.current_time - arrival_time).total_seconds()
-                metrics.update_dwell_time(dwell_time)
-            
-            # Check if stop is no longer congested
-            if (stop.status == StopStatus.CONGESTED and 
-                metrics.vehicles_queued < self.stop_thresholds['congestion_threshold']):
-                self._handle_stop_congestion_cleared(stop_id)
-            
-            self.state_manager.commit_transaction()
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling vehicle departure: {str(e)}")
-            self._handle_stop_error(event, str(e))
-
-    def handle_passenger_arrival(self, event: Event) -> None:
-        """Handle passenger arrival at stop"""
-        try:
-            self.state_manager.begin_transaction()
-            
-            stop_id = event.stop_id
-            stop = self.state_manager.stop_worker.get_stop(stop_id)
-            if not stop:
-                raise ValueError(f"Stop {stop_id} not found")
-            
-            # Update metrics
-            metrics = self.state_manager.stop_worker.get_stop_metrics(stop_id)
-            metrics.update_occupancy(waiting=True)
-            
-            # Check capacity thresholds
-            if metrics.current_occupancy > self.stop_thresholds['max_occupancy']:
-                self._create_stop_capacity_exceeded_event(stop_id, metrics.current_occupancy)
-            
-            self.state_manager.commit_transaction()
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling passenger arrival: {str(e)}")
-            self._handle_stop_error(event, str(e))
-
-    def handle_passenger_departure(self, event: Event) -> None:
-        """Handle passenger departure from stop"""
-        try:
-            self.state_manager.begin_transaction()
-            
-            stop_id = event.stop_id
-            stop = self.state_manager.stop_worker.get_stop(stop_id)
-            if not stop:
-                raise ValueError(f"Stop {stop_id} not found")
-            
-            # Update metrics
-            metrics = self.state_manager.stop_worker.get_stop_metrics(stop_id)
-            metrics.update_occupancy(
-                boarding=event.data.get('boarding', False),
-                alighting=event.data.get('alighting', False)
-            )
-            
-            self.state_manager.commit_transaction()
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling passenger departure: {str(e)}")
             self._handle_stop_error(event, str(e))
     
     def _handle_stop_congestion(self, stop_id: str, metrics: StopMetrics) -> None:
@@ -647,3 +572,8 @@ class StopHandler:
             }
         )
         self.context.event_manager.publish_event(error_event)
+
+    def cleanup(self) -> None:
+        """Clean up handler resources"""
+        if self.visualization_manager:
+            self.visualization_manager.flush_component('stop_handler')

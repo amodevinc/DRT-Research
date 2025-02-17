@@ -8,39 +8,30 @@ Implementing a Demand Responsive Transportation (DRT) research simulation platfo
 ### Study Management
 The platform implements a hierarchical execution structure:
 
-1. **Study Runner (`StudyRunner`)**
+1. **Study Runner (`run_simulation.py`)**
    - Top-level coordinator for simulation studies
-   - Manages multiple experiments within a study
-   - Supports two study types:
-     - Standard studies with predefined experiments
-     - Parameter sweep studies that generate experiments from parameter combinations
+   - Manages MLflow experiment tracking and configuration
    - Features:
      - MLflow integration for experiment tracking
-     - Parallel execution support using Ray
-     - Comprehensive logging and result collection
+     - Parameter set management
      - Study-level configuration management
+     - Parallel or sequential execution support
+     - Comprehensive logging and result collection
+     - Study-wide artifact management
 
-2. **Experiment Runner (`ExperimentRunner`)**
-   - Manages multiple scenarios within an experiment
-   - Handles scenario replication and execution
+2. **Simulation Runner (`SimulationRunner`)**
+   - Manages individual simulation runs and replications
+   - Handles MLflow run tracking and metrics collection
    - Features:
-     - Distributed execution support
+     - Nested MLflow run management
+     - Replication execution control
      - Result aggregation and analysis
      - Metric collection and persistence
-     - Scenario coordination and monitoring
+     - Artifact management and logging
+     - Component initialization and cleanup
 
-3. **Scenario Runner (`ScenarioRunner`)**
-   - Executes individual simulation scenarios
-   - Manages simulation replications
-   - Interfaces with the simulation orchestrator
-   - Features:
-     - State tracking and persistence
-     - Metrics collection
-     - Event history recording
-     - Error handling and recovery
-
-4. **Simulation Orchestrator (`SimulationOrchestrator`)**
-   - Core simulation coordinator
+3. **Simulation Orchestrator (`SimulationOrchestrator`)**
+   - Core simulation coordinator 
    - Manages simulation components and flow
    - Handles event processing and state management
    - Features:
@@ -52,28 +43,31 @@ The platform implements a hierarchical execution structure:
 ### Execution Flow
 1. **Study Initialization**
    - Load study configuration
-   - Set up directory structure
-   - Initialize MLflow tracking
-   - Create experiment runners
-   - Configure logging
+   - Set up MLflow experiment
+   - Configure logging and output directories
+   - Initialize parameter sets
+   - Set up artifact locations
 
-2. **Experiment Execution**
-   - Parameter sweep generation (if applicable)
-   - Scenario initialization
-   - Parallel or sequential execution
-   - Result collection and aggregation
+2. **Parameter Set Execution**
+   - Create simulation runners for each parameter set
+   - Set up nested MLflow runs
+   - Configure replication parameters
+   - Manage parallel or sequential execution
+   - Collect and aggregate results
 
-3. **Scenario Processing**
-   - Replication management
-   - State initialization
-   - Simulation execution
-   - Metrics collection
+3. **Replication Processing**
+   - Initialize simulation components
+   - Set up metrics collection
+   - Execute simulation steps
+   - Track and log metrics
+   - Manage state and cleanup
 
 4. **Simulation Execution**
    - Component initialization
    - Event processing
    - State management
    - Result collection
+   - Resource cleanup
 
 ## Core Architecture
 

@@ -4,11 +4,10 @@ from collections import defaultdict
 
 from drt_sim.core.state.base import StateContainer, StateWorker
 from drt_sim.models.passenger import PassengerStatus, PassengerState
-from drt_sim.models.simulation import PassengerSystemState
+from drt_sim.models.state import PassengerSystemState
 from drt_sim.models.stop import StopPurpose
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class PassengerStateWorker(StateWorker):
     """
@@ -17,14 +16,13 @@ class PassengerStateWorker(StateWorker):
     """
     
     def __init__(self):
-        self.logger = setup_logger(__name__)
         self.passengers_container: StateContainer[PassengerState] = StateContainer()
         self.initialized = False
 
     def initialize(self, config: Optional[Any] = None) -> None:
         """Initialize worker with configuration"""
         self.initialized = True
-        self.logger.info("PassengerStateWorker initialized successfully")
+        logger.info("PassengerStateWorker initialized successfully")
 
     def create_passenger_state(self, passenger_state: PassengerState) -> None:
         """Create initial passenger state"""
@@ -33,10 +31,10 @@ class PassengerStateWorker(StateWorker):
             
         try:
             self.passengers_container.add(passenger_state.id, passenger_state)
-            self.logger.info(f"Created passenger state for passenger {passenger_state.id}")
+            logger.info(f"Created passenger state for passenger {passenger_state.id}")
             
         except Exception as e:
-            self.logger.error(f"Failed to create passenger state: {str(e)}")
+            logger.error(f"Failed to create passenger state: {str(e)}")
             raise
 
     def get_passenger(self, passenger_id: str) -> Optional[PassengerState]:
@@ -116,13 +114,13 @@ class PassengerStateWorker(StateWorker):
             if additional_data and 'current_location' in additional_data:
                 passenger_state.current_location = additional_data['current_location']
             
-            self.logger.info(
+            logger.info(
                 f"Updated passenger {passenger_id} status from {old_status} to {new_status}"
             )
             return passenger_state
             
         except Exception as e:
-            self.logger.error(f"Failed to update passenger status: {str(e)}")
+            logger.error(f"Failed to update passenger status: {str(e)}")
             raise
 
     def record_service_violation(
@@ -148,10 +146,10 @@ class PassengerStateWorker(StateWorker):
                     passenger_state.service_violations = []
                 passenger_state.service_violations.append(violation_data)
                 
-            self.logger.info(f"Recorded service violation for passenger {passenger_id}: {violation_data}")
+            logger.info(f"Recorded service violation for passenger {passenger_id}: {violation_data}")
                 
         except Exception as e:
-            self.logger.error(f"Failed to record service violation: {str(e)}")
+            logger.error(f"Failed to record service violation: {str(e)}")
             raise
 
     def _update_passenger_state_times(
@@ -164,19 +162,19 @@ class PassengerStateWorker(StateWorker):
         if new_status == PassengerStatus.ARRIVED_AT_PICKUP:
             passenger_state.walking_to_pickup_end_time = current_time
             passenger_state.waiting_start_time = current_time
-            passenger_state.walk_time_to_origin_stop = passenger_state.walking_to_pickup_end_time - passenger_state.walking_to_pickup_start_time
+            passenger_state.walk_time_to_origin_stop = (passenger_state.walking_to_pickup_end_time - passenger_state.walking_to_pickup_start_time).total_seconds()
             
         elif new_status == PassengerStatus.IN_VEHICLE:
             passenger_state.waiting_end_time = current_time
             passenger_state.in_vehicle_start_time = current_time
-            passenger_state.wait_time = passenger_state.waiting_end_time - passenger_state.waiting_start_time
+            passenger_state.wait_time = (passenger_state.waiting_end_time - passenger_state.waiting_start_time).total_seconds()
         elif new_status == PassengerStatus.WALKING_TO_DESTINATION:
             passenger_state.in_vehicle_end_time = current_time
             passenger_state.walking_to_destination_start_time = current_time
-            passenger_state.in_vehicle_time = passenger_state.in_vehicle_end_time - passenger_state.in_vehicle_start_time
+            passenger_state.in_vehicle_time = (passenger_state.in_vehicle_end_time - passenger_state.in_vehicle_start_time).total_seconds()
         elif new_status == PassengerStatus.ARRIVED_AT_DESTINATION:
             passenger_state.walking_to_destination_end_time = current_time
-            passenger_state.walk_time_from_destination_stop = passenger_state.walking_to_destination_end_time - passenger_state.walking_to_destination_start_time
+            passenger_state.walk_time_from_destination_stop = (passenger_state.walking_to_destination_end_time - passenger_state.walking_to_destination_start_time).total_seconds()
             passenger_state.total_journey_time = passenger_state.in_vehicle_time + passenger_state.wait_time + passenger_state.walk_time_to_origin_stop + passenger_state.walk_time_from_destination_stop
 
 
@@ -233,7 +231,7 @@ class PassengerStateWorker(StateWorker):
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to get passenger system state: {str(e)}")
+            logger.error(f"Failed to get passenger system state: {str(e)}")
             raise
 
     def update_state(self, state: PassengerSystemState) -> None:
@@ -245,10 +243,10 @@ class PassengerStateWorker(StateWorker):
             # Update passenger states
             self.passengers_container.items = state.active_passengers
             
-            self.logger.info("Passenger system state updated successfully")
+            logger.info("Passenger system state updated successfully")
             
         except Exception as e:
-            self.logger.error(f"Failed to update passenger system state: {str(e)}")
+            logger.error(f"Failed to update passenger system state: {str(e)}")
             raise
 
     def restore_state(self, saved_state: Dict[str, Any]) -> None:
@@ -262,10 +260,10 @@ class PassengerStateWorker(StateWorker):
             # Restore using update_state
             self.update_state(saved_state)
             
-            self.logger.debug("Restored passenger system state")
+            logger.debug("Restored passenger system state")
             
         except Exception as e:
-            self.logger.error(f"Failed to restore state: {str(e)}")
+            logger.error(f"Failed to restore state: {str(e)}")
             raise
 
     def begin_transaction(self) -> None:
@@ -293,4 +291,4 @@ class PassengerStateWorker(StateWorker):
             
         self.passengers_container.clear_history()
         self.initialized = False
-        self.logger.info("Cleaned up passenger state worker")
+        logger.info("Cleaned up passenger state worker")

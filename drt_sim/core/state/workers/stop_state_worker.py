@@ -4,17 +4,17 @@ import uuid
 
 from drt_sim.core.state.base import StateWorker, StateContainer
 from drt_sim.models.stop import Stop, StopStatus, StopType
-from drt_sim.core.logging_config import setup_logger
 from collections import defaultdict
-from drt_sim.models.simulation import StopSystemState
+from drt_sim.models.state import StopSystemState
 from drt_sim.models.location import Location
+import logging
+logger = logging.getLogger(__name__)
 class StopStateWorker(StateWorker):
     """Manages state for system stops"""
     
     def __init__(self):
         self.stops = StateContainer[Stop]()
         self.initialized = False
-        self.logger = setup_logger(__name__)
         self.stop_usage_history: Dict[str, List[datetime]] = {}
         
     def initialize(self, config: Optional[Any] = None) -> None:
@@ -23,14 +23,13 @@ class StopStateWorker(StateWorker):
         depot_locations = config.get("depot_locations", [])
         for depot_location in depot_locations:
             stop = Stop(
-                id=str(uuid.uuid4()),
                 location=Location(lat=depot_location[1], lon=depot_location[0]),
                 status=StopStatus.ACTIVE,
                 type=StopType.DEPOT
             )
             self.stops.add(stop.id, stop)
 
-        self.logger.info("Stop state worker initialized")
+        logger.info("Stop state worker initialized")
 
     def update_stops_bulk(self, 
                          updated_stops: List[Stop], 
@@ -60,10 +59,10 @@ class StopStateWorker(StateWorker):
                 else:
                     self._add_stop(stop, metadata)
                     
-            self.logger.info(f"Bulk updated {len(updated_stops)} stops")
+            logger.info(f"Bulk updated {len(updated_stops)} stops")
             
         except Exception as e:
-            self.logger.error(f"Failed to perform bulk stop update: {str(e)}")
+            logger.error(f"Failed to perform bulk stop update: {str(e)}")
             raise
 
     def get_recent_requests(self, time_window: timedelta) -> Dict[str, int]:
@@ -99,7 +98,7 @@ class StopStateWorker(StateWorker):
                 stop.metadata.update(metadata)
             self._update_stop(stop_id, stop)
         except Exception as e:
-            self.logger.error(f"Failed to update stop status: {str(e)}")
+            logger.error(f"Failed to update stop status: {str(e)}")
             raise
     
     def create_new_stop(self, stop: Stop) -> None:
@@ -207,7 +206,7 @@ class StopStateWorker(StateWorker):
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to get stop system state: {str(e)}")
+            logger.error(f"Failed to get stop system state: {str(e)}")
             raise
 
     def update_state(self, state: StopSystemState) -> None:
@@ -223,10 +222,10 @@ class StopStateWorker(StateWorker):
                 else:
                     self.stops.add(stop_id, stop)
             
-            self.logger.info("Stop system state updated successfully")
+            logger.info("Stop system state updated successfully")
             
         except Exception as e:
-            self.logger.error(f"Failed to update stop system state: {str(e)}")
+            logger.error(f"Failed to update stop system state: {str(e)}")
             raise
 
     def restore_state(self, saved_state: Dict[str, Any]) -> None:
@@ -239,10 +238,10 @@ class StopStateWorker(StateWorker):
             # Restore using update_state
             self.update_state(saved_state)
             
-            self.logger.debug("Restored stop system state")
+            logger.debug("Restored stop system state")
 
         except Exception as e:
-            self.logger.error(f"Error restoring stop system state: {str(e)}")
+            logger.error(f"Error restoring stop system state: {str(e)}")
             raise
             
     def begin_transaction(self) -> None:
@@ -262,4 +261,4 @@ class StopStateWorker(StateWorker):
         self.stops.clear_history()
         self.stop_usage_history.clear()
         self.initialized = False
-        self.logger.info("Stop state worker cleaned up")
+        logger.info("Stop state worker cleaned up")

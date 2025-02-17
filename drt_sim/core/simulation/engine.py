@@ -4,23 +4,53 @@ from dataclasses import dataclass
 
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.core.events.manager import EventManager
-from drt_sim.models.simulation import SimulationStatus
+from drt_sim.models.state import SimulationStatus, SimulationState
 from drt_sim.core.state.manager import StateManager
 from drt_sim.models.event import Event
 from drt_sim.config.config import DataclassYAMLMixin
-from drt_sim.core.logging_config import setup_logger
 
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 @dataclass
 class SimulationStep(DataclassYAMLMixin):
     """Represents the result of a single simulation step"""
     timestamp: datetime
-    events_processed: int
-    state_snapshot: Dict[str, Any]
+    events_processed: int 
+    state_snapshot: SimulationState
     metrics: Dict[str, float]
     status: SimulationStatus
     execution_time: float  # in seconds
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert step data to dictionary format"""
+        return {
+            'timestamp': self.timestamp.isoformat(),
+            'events_processed': self.events_processed,
+            'state_snapshot': self.state_snapshot.to_dict(),
+            'metrics': self.metrics,
+            'status': self.status.value,
+            'execution_time': self.execution_time
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'SimulationStep':
+        """Create SimulationStep instance from dictionary data"""
+        return cls(
+            timestamp=datetime.fromisoformat(data['timestamp']),
+            events_processed=data['events_processed'],
+            state_snapshot=SimulationState.from_dict(data['state_snapshot']),
+            metrics=data['metrics'],
+            status=SimulationStatus(data['status']),
+            execution_time=data['execution_time']
+        )
+
+    def __str__(self) -> str:
+        """String representation of simulation step"""
+        return (f"SimulationStep(time={self.timestamp}, "
+                f"events={self.events_processed}, "
+                f"status={self.status.name}, "
+                f"exec_time={self.execution_time:.3f}s)")
 
 class SimulationEngine:
     """

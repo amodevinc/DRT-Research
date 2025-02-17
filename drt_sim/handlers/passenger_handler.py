@@ -9,12 +9,11 @@ from drt_sim.core.monitoring.types.metrics import MetricName
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.passenger import PassengerStatus, PassengerState
 from drt_sim.models.request import Request
-from drt_sim.config.config import ScenarioConfig
-from drt_sim.core.logging_config import setup_logger
+from drt_sim.config.config import ParameterSet
 from drt_sim.models.matching import Assignment
 from drt_sim.models.stop import StopAssignment
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 class PassengerHandler:
     """
@@ -24,7 +23,7 @@ class PassengerHandler:
     
     def __init__(
         self,
-        config: ScenarioConfig,
+        config: ParameterSet,
         context: SimulationContext,
         state_manager: StateManager
     ):
@@ -127,15 +126,20 @@ class PassengerHandler:
             request_id = passenger_state.request_id
             request = self.state_manager.request_worker.get_request(request_id)
 
+            # Log walking time metric with MLflow
             self.context.metrics_collector.log(
-                    MetricName.PASSENGER_WALK_TIME_TO_ORIGIN_STOP,
-                    event.data.get('walking_time'),
-                    {
-                        'passenger_id': event.passenger_id,
-                        'origin': request.origin.to_dict(),
-                        'origin_stop': passenger_state.assigned_origin_stop.location.to_dict(),
-                    }
-                )
+                MetricName.PASSENGER_WALK_TIME_TO_ORIGIN_STOP,
+                event.data.get('walking_time'),
+                self.context.current_time,
+                {
+                    'passenger_id': event.passenger_id,
+                    'origin': request.origin.to_dict(),
+                    'origin_stop': passenger_state.assigned_origin_stop.location.to_dict(),
+                    'current_time': self.context.current_time.isoformat(),
+                    'request_id': request_id,
+                    'walking_distance': event.data.get('walking_distance', 0)
+                }
+            )
             
             # Get vehicle route to check if vehicle has arrived
             vehicle_id = passenger_state.assigned_vehicle_id
@@ -152,7 +156,7 @@ class PassengerHandler:
             if vehicle_at_pickup:
                 self._create_boarding_event(event.passenger_id, event.request_id)
             else:
-                # Start waiting period
+                # Start waiting period and log the start of waiting
                 passenger_state = self.state_manager.passenger_worker.update_passenger_status(
                     event.passenger_id,
                     PassengerStatus.WAITING_FOR_VEHICLE,
@@ -191,6 +195,7 @@ class PassengerHandler:
                 self.context.metrics_collector.log(
                     MetricName.PASSENGER_WAIT_TIME,
                     wait_time,
+                    self.context.current_time,
                     {
                         'passenger_id': passenger_id,
                         'vehicle_id': vehicle_id,
@@ -256,6 +261,7 @@ class PassengerHandler:
                 self.context.metrics_collector.log(
                     MetricName.PASSENGER_RIDE_TIME,
                     ride_time,
+                    self.context.current_time,
                     {
                         'passenger_id': passenger_id,
                         'vehicle_id': vehicle_id,
@@ -298,7 +304,8 @@ class PassengerHandler:
             self._create_passenger_arrived_destination_event(
                 event.passenger_id,
                 event.request_id,
-                arrival_time
+                arrival_time,
+                walking_time
             )
             
             self.state_manager.commit_transaction()
@@ -329,21 +336,11 @@ class PassengerHandler:
             self.context.metrics_collector.log(
                     MetricName.PASSENGER_WALK_TIME_FROM_DESTINATION_STOP,
                     event.data.get('walking_time'),
+                    self.context.current_time,
                     {
                         'passenger_id': event.passenger_id,
                         'destination': request.destination.to_dict(),
                         'destination_stop': passenger_state.assigned_destination_stop.location.to_dict(),
-                    }
-                )
-            self.context.metrics_collector.log(
-                    MetricName.PASSENGER_TOTAL_JOURNEY_TIME,
-                    passenger_state.total_journey_time,
-                    {
-                        'passenger_id': event.passenger_id,
-                        'wait_time': passenger_state.wait_time,
-                        'ride_time': passenger_state.in_vehicle_time,
-                        'walk_time_to_origin_stop': passenger_state.walk_time_to_origin_stop,
-                        'walk_time_from_destination_stop': passenger_state.walk_time_from_destination_stop,
                     }
                 )
             
@@ -369,9 +366,14 @@ class PassengerHandler:
                     'cancellation_time': self.context.current_time
                 }
             )
-            
-            # Notify vehicle
-            self._create_vehicle_passenger_no_show_event(event)
+            self.context.metrics_collector.log(
+                MetricName.PASSENGER_NO_SHOW,
+                1,
+                self.context.current_time,
+                {
+                    'passenger_id': event.passenger_id,
+                }
+            )
             
             self.state_manager.commit_transaction()
             
@@ -399,13 +401,14 @@ class PassengerHandler:
             self.context.metrics_collector.log(
                 MetricName.SERVICE_VIOLATIONS,
                 1,
+                self.context.current_time,
                 {
                     'passenger_id': event.passenger_id,
                     'vehicle_id': event.vehicle_id,
                     'violation_type': violation_type,
                     'measured_value': actual_value,
                     'threshold': self.service_thresholds[f'max_{violation_type}'],
-                    'timestamp': violation_time
+                    'timestamp': violation_time.isoformat()
                 }
             )
             self.state_manager.commit_transaction()
@@ -478,22 +481,6 @@ class PassengerHandler:
         )
         self.context.event_manager.publish_event(event)
 
-    def _create_vehicle_passenger_no_show_event(self, event: Event) -> None:
-        """Create event to notify vehicle of passenger no-show"""
-        no_show_event = Event(
-            event_type=EventType.PASSENGER_NO_SHOW,
-            priority=EventPriority.HIGH,
-            timestamp=self.context.current_time,
-            passenger_id=event.passenger_id,
-            request_id=event.request_id,
-            vehicle_id=event.data.get('assigned_vehicle_id'),
-            data={
-                'no_show_time': self.context.current_time,
-                'waiting_duration': event.data.get('waiting_duration', 0)
-            }
-        )
-        self.context.event_manager.publish_event(no_show_event)
-
     def _handle_passenger_error(self, event: Event, error_msg: str) -> None:
         """Handle errors in passenger event processing"""
         logger.error(f"Error processing passenger event {event.id}: {error_msg}")
@@ -539,7 +526,8 @@ class PassengerHandler:
         self,
         passenger_id: str,
         request_id: str,
-        arrival_time: datetime
+        arrival_time: datetime,
+        walking_time: float
     ) -> None:
         """Create event for passenger arrival at final destination"""
         request = self.state_manager.request_worker.get_request(request_id)
@@ -552,7 +540,7 @@ class PassengerHandler:
             request_id=request_id,
             data={
                 'location': request.destination,
-                'arrival_time': arrival_time
+                'walking_time': walking_time
             }
         )
         self.context.event_manager.publish_event(event)

@@ -4,9 +4,10 @@ from drt_sim.core.state.base import StateWorker, StateContainer
 from drt_sim.models.vehicle import Vehicle, VehicleStatus, VehicleType, VehicleState
 from drt_sim.config.config import VehicleConfig
 from drt_sim.models.location import Location
-from drt_sim.core.logging_config import setup_logger
 from collections import defaultdict
-from drt_sim.models.simulation import VehicleSystemState
+from drt_sim.models.state import VehicleSystemState
+import logging
+logger = logging.getLogger(__name__)
 
 class VehicleStateWorker(StateWorker):
     """Manages state for vehicle fleet"""
@@ -14,7 +15,6 @@ class VehicleStateWorker(StateWorker):
     def __init__(self):
         self.vehicles = StateContainer[Vehicle]()
         self.initialized = False
-        self.logger = setup_logger(__name__)
         
     def initialize(self, config: Optional[VehicleConfig] = None) -> None:
         """Initialize vehicle state worker with configuration"""
@@ -24,7 +24,7 @@ class VehicleStateWorker(StateWorker):
         self.initialized = True
         # Initialize fleet when worker is initialized
         self.initialize_fleet()
-        self.logger.info("Vehicle state worker initialized")
+        logger.info("Vehicle state worker initialized")
         
     def initialize_fleet(self) -> None:
         """Initialize the vehicle fleet based on configuration and distribute across depot locations"""
@@ -66,10 +66,10 @@ class VehicleStateWorker(StateWorker):
                     )
                     self.vehicles.add(vehicle.id, vehicle)
                     vehicle_id += 1
-            self.logger.info(f"Initialized fleet with {self.config.fleet_size} vehicles across {num_depots} depots")
+            logger.info(f"Initialized fleet with {self.config.fleet_size} vehicles across {num_depots} depots")
             
         except Exception as e:
-            self.logger.error(f"Failed to initialize fleet: {str(e)}")
+            logger.error(f"Failed to initialize fleet: {str(e)}")
             raise
             
     def add_vehicle(self, vehicle: Vehicle) -> None:
@@ -79,9 +79,9 @@ class VehicleStateWorker(StateWorker):
             
         try:
             self.vehicles.add(vehicle.id, vehicle)
-            self.logger.debug(f"Added vehicle {vehicle.id} to fleet")
+            logger.debug(f"Added vehicle {vehicle.id} to fleet")
         except Exception as e:
-            self.logger.error(f"Failed to add vehicle {vehicle.id}: {str(e)}")
+            logger.error(f"Failed to add vehicle {vehicle.id}: {str(e)}")
             raise
             
     def remove_vehicle(self, vehicle_id: str) -> None:
@@ -93,11 +93,11 @@ class VehicleStateWorker(StateWorker):
             vehicle = self.get_vehicle(vehicle_id)
             if vehicle:
                 self.vehicles.remove(vehicle_id)
-            self.logger.debug(f"Removed vehicle {vehicle_id} from fleet")
+            logger.debug(f"Removed vehicle {vehicle_id} from fleet")
             self.vehicles.remove(vehicle_id)
-            self.logger.debug(f"Removed vehicle {vehicle_id} from fleet")
+            logger.debug(f"Removed vehicle {vehicle_id} from fleet")
         except Exception as e:
-            self.logger.error(f"Failed to remove vehicle {vehicle_id}: {str(e)}")
+            logger.error(f"Failed to remove vehicle {vehicle_id}: {str(e)}")
             raise
             
     def get_vehicle(self, vehicle_id: str) -> Optional[Vehicle]:
@@ -111,19 +111,35 @@ class VehicleStateWorker(StateWorker):
             if vehicle.current_state.status == VehicleStatus.IDLE
         ]
         
-    def update_vehicle_status(self, vehicle_id: str, status: VehicleStatus) -> None:
-        """Update vehicle status"""
+    def update_vehicle_status(self, vehicle_id: str, status: VehicleStatus, current_time: datetime) -> None:
+        """Update vehicle status and track in-service time for utilization metric"""
         vehicle = self.get_vehicle(vehicle_id)
         if not vehicle:
             raise ValueError(f"Vehicle {vehicle_id} not found")
-            
+
         try:
             old_status = vehicle.current_state.status
+
+            # Initialize tracking attributes if not already present
+            if not hasattr(vehicle.current_state, 'cumulative_occupied_time'):
+                vehicle.current_state.cumulative_occupied_time = 0.0
+            if not hasattr(vehicle.current_state, 'in_service_start_time'):
+                vehicle.current_state.in_service_start_time = None
+
+            # If transitioning into IN_SERVICE, record the start time
+            if status == VehicleStatus.IN_SERVICE and old_status != VehicleStatus.IN_SERVICE:
+                vehicle.current_state.in_service_start_time = current_time
+            # If transitioning out of IN_SERVICE, update cumulative occupied time
+            elif old_status == VehicleStatus.IN_SERVICE and status != VehicleStatus.IN_SERVICE:
+                if vehicle.current_state.in_service_start_time is not None:
+                    time_delta = (current_time - vehicle.current_state.in_service_start_time).total_seconds()
+                    vehicle.current_state.cumulative_occupied_time += time_delta
+                    vehicle.current_state.in_service_start_time = None
+
             vehicle.current_state.status = status
-            
-            self.logger.debug(f"Updated vehicle {vehicle_id} status to {status}")
+            logger.debug(f"Updated vehicle {vehicle_id} status to {status}")
         except Exception as e:
-            self.logger.error(f"Failed to update vehicle {vehicle_id} status: {str(e)}")
+            logger.error(f"Failed to update vehicle {vehicle_id} status: {str(e)}")
             raise
 
     def update_vehicle_active_route_id(self, vehicle_id: str, route_id: str) -> None:
@@ -142,22 +158,35 @@ class VehicleStateWorker(StateWorker):
         try:
             vehicle.current_state.current_location = location
                 
-            self.logger.debug(f"Updated vehicle {vehicle_id} location")
+            logger.debug(f"Updated vehicle {vehicle_id} location")
         except Exception as e:
-            self.logger.error(f"Failed to update vehicle {vehicle_id} location: {str(e)}")
+            logger.error(f"Failed to update vehicle {vehicle_id} location: {str(e)}")
             raise
 
-    def update_vehicle_occupancy(self, vehicle_id: str, passenger_count: int) -> None:
-        """Update vehicle occupancy and related metrics"""
+    def increment_vehicle_occupancy(self, vehicle_id: str) -> None:
+        """Increment vehicle occupancy"""
         vehicle = self.get_vehicle(vehicle_id)
         if not vehicle:
             raise ValueError(f"Vehicle {vehicle_id} not found")
             
         try:
-            vehicle.current_state.current_occupancy = passenger_count
-            self.logger.debug(f"Updated vehicle {vehicle_id} occupancy to {passenger_count}")
+            vehicle.current_state.current_occupancy += 1
+            logger.debug(f"Updated vehicle {vehicle_id} occupancy to {vehicle.current_state.current_occupancy}")
         except Exception as e:
-            self.logger.error(f"Failed to update vehicle {vehicle_id} occupancy: {str(e)}")
+            logger.error(f"Failed to update vehicle {vehicle_id} occupancy: {str(e)}")
+            raise
+    
+    def decrement_vehicle_occupancy(self, vehicle_id: str) -> None:
+        """Decrement vehicle occupancy"""
+        vehicle = self.get_vehicle(vehicle_id)
+        if not vehicle:
+            raise ValueError(f"Vehicle {vehicle_id} not found")
+            
+        try:
+            vehicle.current_state.current_occupancy -= 1
+            logger.debug(f"Updated vehicle {vehicle_id} occupancy to {vehicle.current_state.current_occupancy}")
+        except Exception as e:
+            logger.error(f"Failed to update vehicle {vehicle_id} occupancy: {str(e)}")
             raise
     
     def take_snapshot(self, timestamp: datetime) -> None:
@@ -184,7 +213,7 @@ class VehicleStateWorker(StateWorker):
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to get vehicle system state: {str(e)}")
+            logger.error(f"Failed to get vehicle system state: {str(e)}")
             raise
 
     def update_state(self, state: VehicleSystemState) -> None:
@@ -199,11 +228,11 @@ class VehicleStateWorker(StateWorker):
                 if vehicle:
                     vehicle.current_state = vehicle_state
                 else:
-                    self.logger.warning(f"Vehicle {vehicle_id} not found during state update")
-            self.logger.info("Vehicle system state updated successfully")
+                    logger.warning(f"Vehicle {vehicle_id} not found during state update")
+            logger.info("Vehicle system state updated successfully")
             
         except Exception as e:
-            self.logger.error(f"Failed to update vehicle system state: {str(e)}")
+            logger.error(f"Failed to update vehicle system state: {str(e)}")
             raise
 
     def restore_state(self, saved_state: Dict[str, Any]) -> None:
@@ -218,10 +247,10 @@ class VehicleStateWorker(StateWorker):
             # Restore vehicles using update_state
             self.update_state(vehicle_system_state)
             
-            self.logger.debug("Restored vehicle system state")
+            logger.debug("Restored vehicle system state")
 
         except Exception as e:
-            self.logger.error(f"Error restoring vehicle system state: {str(e)}")
+            logger.error(f"Error restoring vehicle system state: {str(e)}")
             raise
     
     def begin_transaction(self) -> None:
@@ -235,9 +264,9 @@ class VehicleStateWorker(StateWorker):
     def rollback_transaction(self) -> None:
         """Rollback current transaction"""
         self.vehicles.rollback_transaction()
-    
+
     def cleanup(self) -> None:
         """Clean up resources"""
         self.vehicles.clear_history()
         self.initialized = False
-        self.logger.info("Vehicle state worker cleaned up")
+        logger.info("Vehicle state worker cleaned up")

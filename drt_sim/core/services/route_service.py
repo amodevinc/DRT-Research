@@ -7,10 +7,9 @@ from drt_sim.models.vehicle import Vehicle
 from drt_sim.models.stop import Stop, StopAssignment
 from drt_sim.network.manager import NetworkManager
 from drt_sim.core.simulation.context import SimulationContext
-from drt_sim.config.config import ScenarioConfig, MatchingAssignmentConfig, VehicleConfig
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+from drt_sim.config.config import ParameterSet, MatchingAssignmentConfig, VehicleConfig
+import logging
+logger = logging.getLogger(__name__)
 
 class RouteService:
     """Service layer for route operations and business logic"""
@@ -19,7 +18,7 @@ class RouteService:
         self,
         network_manager: NetworkManager,
         sim_context: SimulationContext,
-        config: ScenarioConfig
+        config: ParameterSet
     ):
         self.network_manager = network_manager
         self.sim_context = sim_context
@@ -250,7 +249,7 @@ class RouteService:
             return new_route
             
         except Exception as e:
-            logger.error(f"Error modifying route: {str(e)}")
+            logger.warning(f"Could not modify route: {traceback.format_exc()}")
             return None
 
     def validate_route_constraints(
@@ -350,8 +349,10 @@ class RouteService:
                     original_route,
                     new_route
                 ),
-                "distance_added": new_route.total_distance - original_route.total_distance,
-                "duration_added": new_route.total_duration - original_route.total_duration
+                "distance": new_route.total_distance,
+                "duration": new_route.total_duration,
+                "distance_added": max(0, new_route.total_distance - original_route.total_distance),
+                "duration_added": max(0, new_route.total_duration - original_route.total_duration)
             }
             
         except Exception as e:
@@ -504,7 +505,7 @@ class RouteService:
                 current_location = stop.stop.location
 
         except Exception as e:
-            logger.error(f"Error updating stop timings: {str(e)}")
+            logger.error(f"Error updating stop timings: {traceback.format_exc()}")
             raise
 
     def _update_occupancies(self, stops: List[RouteStop]) -> None:

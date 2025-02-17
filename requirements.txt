@@ -12,3 +12,6 @@ hydra-core
 omegaconf
 mlflow
 ray
+statsmodels
+kaleido
+contextily

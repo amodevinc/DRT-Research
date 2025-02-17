@@ -4,7 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from drt_sim.models.request import Request
 from drt_sim.models.vehicle import Vehicle, VehicleStatus
-from drt_sim.models.simulation import SimulationState
+from drt_sim.models.state import SimulationState
 from drt_sim.algorithms.base_interfaces.matching_base import Assignment
 from drt_sim.network.manager import NetworkManager
 from drt_sim.core.state.manager import StateManager

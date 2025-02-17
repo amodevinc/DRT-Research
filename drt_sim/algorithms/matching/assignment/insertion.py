@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import traceback
 import math
 from drt_sim.models.vehicle import Vehicle, VehicleStatus
-from drt_sim.models.route import Route, RouteSegment, RouteStop
+from drt_sim.models.route import Route, RouteSegment
 from drt_sim.models.matching import Assignment
 from drt_sim.models.stop import StopAssignment
 from drt_sim.network.manager import NetworkManager
@@ -15,9 +15,8 @@ from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.core.user.manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.config.config import MatchingAssignmentConfig
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 @dataclass
 class InsertionCost:
@@ -186,12 +185,11 @@ class InsertionAssigner:
             # Calculate costs using route data
             costs = {
                 "waiting_time": (
-                    math.floor((new_route.stops[0].planned_arrival_time - stop_assignment.expected_passenger_origin_stop_arrival_time).total_seconds()) / 60
+                    min(0, (new_route.stops[0].planned_arrival_time - stop_assignment.expected_passenger_origin_stop_arrival_time).total_seconds()) / 60
                 ),
-                "ride_time": new_route.total_duration,
+                "ride_time": new_route.total_duration / 60, # convert to minutes
                 "delay": 0.0,  # No existing passengers
                 "distance": new_route.total_distance,
-                "capacity_utilization": 1 / vehicle.capacity
             }
             
             total_cost = self._calculate_weighted_cost(
@@ -231,7 +229,6 @@ class InsertionAssigner:
                 "ride_time": min(1.0, costs["ride_time"] / self.config.max_in_vehicle_time_mins),
                 "delay": min(1.0, costs["delay"] / self.config.max_delay_mins),
                 "distance": min(1.0, costs["distance"] / self.config.max_distance),
-                "capacity_utilization": costs["capacity_utilization"]
             }
             
             # Calculate weighted sum
@@ -243,7 +240,7 @@ class InsertionAssigner:
             return total_cost
             
         except Exception as e:
-            logger.error(f"Error calculating weighted cost: {str(e)}")
+            logger.error(f"Error calculating weighted cost: {traceback.format_exc()}")
             return float('inf')
 
     async def ensure_segments(self, route: Route) -> None:

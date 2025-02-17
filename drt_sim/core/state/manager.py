@@ -15,27 +15,18 @@ from drt_sim.core.state.workers import (
     StopAssignmentStateWorker,
     AssignmentStateWorker
 )
-from drt_sim.models.simulation import (
+from drt_sim.models.state import (
     SimulationState, 
-    SimulationStatus, 
-    VehicleSystemState, 
-    RequestSystemState, 
-    PassengerSystemState, 
-    RouteSystemState, 
-    StopSystemState,
-    StopAssignmentSystemState,
-    AssignmentSystemState
+    SimulationStatus
 )
-from drt_sim.config.config import ScenarioConfig, SimulationConfig
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+from drt_sim.config.config import ParameterSet, SimulationConfig
+import logging
+logger = logging.getLogger(__name__)
 class StateManager:
     """Coordinates multiple state workers and manages system-wide state"""
     
-    def __init__(self, config: ScenarioConfig, sim_cfg: SimulationConfig):
+    def __init__(self, config: ParameterSet, sim_cfg: SimulationConfig):
         self.config = config
-        self.logger = setup_logger(__name__)
         
         # Initialize state workers
         self.stop_worker = StopStateWorker()
@@ -87,9 +78,9 @@ class StateManager:
             self.passenger_worker.initialize()
             self.stop_assignment_worker.initialize()
             self.assignment_worker.initialize()
-            self.logger.info("State manager initialized successfully")
+            logger.info("State manager initialized successfully")
         except Exception as e:
-            self.logger.error(f"State initialization failed: {str(e)}")
+            logger.error(f"State initialization failed: {str(e)}")
             raise
             
     def take_snapshot(self, timestamp: datetime) -> None:
@@ -98,7 +89,7 @@ class StateManager:
             for worker in self.workers:
                 worker.take_snapshot(timestamp)
         except Exception as e:
-            self.logger.error(f"Failed to take snapshot: {str(e)}")
+            logger.error(f"Failed to take snapshot: {str(e)}")
             raise
         
     def set_state(self, state: SimulationState) -> None:
@@ -115,9 +106,9 @@ class StateManager:
             self.stop_worker.update_state(state.stops)
             self.stop_assignment_worker.update_state(state.stop_assignments)
             self.assignment_worker.update_state(state.assignments)
-            self.logger.debug(f"State updated successfully: {state.status}")
+            logger.debug(f"State updated successfully: {state.status}")
         except Exception as e:
-            self.logger.error(f"Failed to set state: {str(e)}")
+            logger.error(f"Failed to set state: {str(e)}")
             raise
             
     def get_state(self) -> SimulationState:
@@ -126,7 +117,7 @@ class StateManager:
             current_state = self.get_current_state()
             return current_state
         except Exception as e:
-            self.logger.error(f"Failed to get state: {str(e)}")
+            logger.error(f"Failed to get state: {str(e)}")
             raise
             
     def get_current_state(self) -> SimulationState:
@@ -176,9 +167,9 @@ class StateManager:
             filepath.parent.mkdir(parents=True, exist_ok=True)
             with open(filepath, 'w') as f:
                 json.dump(state.to_dict(), f, indent=2)
-            self.logger.info(f"State saved to {filepath}")
+            logger.info(f"State saved to {filepath}")
         except Exception as e:
-            self.logger.error(f"Failed to save state: {str(e)}")
+            logger.error(f"Failed to save state: {str(e)}")
             raise
             
     def load_state(self, filepath: Path) -> None:
@@ -196,9 +187,9 @@ class StateManager:
             # Create new state and restore workers
             state = SimulationState.from_dict(state_data)
             self.set_state(state)
-            self.logger.info(f"State loaded from {filepath}")
+            logger.info(f"State loaded from {filepath}")
         except Exception as e:
-            self.logger.error(f"Failed to load state: {str(e)}")
+            logger.error(f"Failed to load state: {str(e)}")
             raise
             
     def cleanup(self) -> None:
@@ -207,4 +198,4 @@ class StateManager:
             try:
                 worker.cleanup()
             except Exception as e:
-                self.logger.error(f"Error cleaning up worker: {str(e)}")
+                logger.error(f"Error cleaning up worker: {str(e)}")

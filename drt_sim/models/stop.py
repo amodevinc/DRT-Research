@@ -48,7 +48,6 @@ class StopOperation:
     dwell_time: int = 0
 @dataclass
 class Stop(ModelBase):
-    id: str
     location: Location
     type: StopType = StopType.VIRTUAL
     status: StopStatus = StopStatus.INACTIVE
@@ -57,13 +56,12 @@ class Stop(ModelBase):
     capacity: int = 10  # Example capacity
     capacity_exceeded: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     def __post_init__(self):
         """Initialize ModelBase attributes after dataclass initialization"""
-        super().__init__()
-        # Override id if it was provided in initialization
-        if not isinstance(self.id, str):
-            self.id = str(uuid.uuid4())
+        self.created_at: datetime = datetime.now()
+        self.updated_at: datetime = datetime.now()
 
     def to_dict(self) -> Dict[str, Any]:
         return {

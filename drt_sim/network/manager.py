@@ -13,17 +13,16 @@ import asyncio
 import math
 from drt_sim.config.config import NetworkConfig, NetworkInfo
 from drt_sim.models.location import Location
-from drt_sim.core.logging_config import setup_logger
-
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 class NetworkManager:
     """Enhanced network manager with optimized path finding and caching"""
     
     def __init__(self, config: NetworkConfig):
         """Initialize NetworkManager with configuration"""
         self.config = config
-        self._drive_network: Optional[nx.Graph] = None
-        self._walk_network: Optional[nx.Graph] = None
+        self.drive_network: Optional[nx.Graph] = None
+        self.walk_network: Optional[nx.Graph] = None
         self._transformer: Optional[Transformer] = None
         self._info: Dict[str, NetworkInfo] = {}
         self.spatial_indexes: Dict[str, cKDTree] = {}
@@ -82,25 +81,25 @@ class NetworkManager:
         logger.info("Initializing networks...")
         
         if self.config.network_file:
-            self._drive_network = self._load_network(
+            self.drive_network = self._load_network(
                 self.config.network_file,
                 "drive"
             )
-            logger.info(f"Drive network loaded with {self._drive_network.number_of_nodes()} nodes")
+            logger.info(f"Drive network loaded with {self.drive_network.number_of_nodes()} nodes")
             
         if self.config.walk_network_file:
-            self._walk_network = self._load_network(
+            self.walk_network = self._load_network(
                 self.config.walk_network_file,
                 "walk"
             )
-            logger.info(f"Walk network loaded with {self._walk_network.number_of_nodes()} nodes")
+            logger.info(f"Walk network loaded with {self.walk_network.number_of_nodes()} nodes")
     
     def _init_spatial_indexes(self):
         """Initialize spatial indexes for fast coordinate lookups"""
         logger.info("Initializing spatial indexes...")
         
         for network_type in ['drive', 'walk']:
-            network = getattr(self, f'_{network_type}_network')
+            network = getattr(self, f'{network_type}_network')
             if network is not None:
                 # Create coordinate arrays
                 coords = np.array([
@@ -150,6 +149,7 @@ class NetworkManager:
     def _load_network(self, file_path: Union[str, Path], network_type: str) -> nx.Graph:
         """Load network from file and process it"""
         file_path = Path(file_path)
+        print(f"Loading {network_type} network from {file_path}")
         if not file_path.exists():
             raise FileNotFoundError(f"Network file not found: {file_path}")
             
@@ -482,7 +482,7 @@ class NetworkManager:
             if best_distance == float('inf'):
                 logger.error("No valid path found between any node pairs")
                 # Debug network connectivity
-                network = getattr(self, f'_{network_type}_network')
+                network = getattr(self, f'{network_type}_network')
                 if network:
                     for start_node in start_nodes:
                         for end_node in end_nodes:
@@ -509,7 +509,7 @@ class NetworkManager:
                     network_type: str,
                     weight: str = 'distance') -> Tuple[List[int], float]:
         """Enhanced path calculation with debugging"""
-        network = getattr(self, f'_{network_type}_network')
+        network = getattr(self, f'{network_type}_network')
         
         try:
             # Verify nodes exist in network

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from enum import Enum
 from drt_sim.models.stop import Stop, StopAssignment
 from drt_sim.models.request import Request

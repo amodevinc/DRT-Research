@@ -1,101 +1,14 @@
-metadata:
-  name: "matching_strategy_comparison"
-  description: "Compare different matching strategies under varying demand conditions"
-  version: "1.0.0"
-  tags: ["algorithms", "matching", "optimization"]
-  authors: ["Research Team"]
-  created_at: "2025-01-05T16:00:00"
+name: "matching_strategy_comparison"
+description: "Compare different matching strategies under varying demand conditions"
+version: "1.0.0"
+authors:
+  - "Research Team"
+tags:
+  - "algorithms"
+  - "matching"
+  - "optimization"
 
 type: "scenario_comparison"
-
-experiments:
-  base_demand_comparison:
-    name: "base_demand_matching_comparison"
-    description: "Compare matching strategies under normal demand"
-    scenarios:
-      fcfs_baseline:
-        name: "fcfs_baseline"
-        description: "First-come-first-served baseline"
-        replications: 1
-        algorithm:
-          stop_selector: "coverage_based"
-          stop_selector_params:
-            strategy: "coverage_based"
-            min_demand_threshold: 0.1
-            max_walking_distance: 400.0
-            min_stop_spacing: 100.0
-            max_stops: 10
-            coverage_radius: 1000.0
-            accessibility_weights: {"distance": 0.5, "time": 0.5}
-          stop_assigner: "multi_objective"
-          stop_assigner_params:
-            strategy: "multi_objective"
-            max_alternatives: 3
-            thresholds: {"max_walking_distance": 400.0, "max_walking_time": 300.0, "max_driving_time": 900.0}
-            weights: {"vehicle_access_time": 0.3, "passenger_access_time": 0.7}
-        matching:
-          assignment_method: "insertion"
-          optimization_method: "none"
-        demand:
-          generator_type: "csv"
-          num_requests: 10
-          csv_config:
-            files:
-              - file_path: "data/demands/base_real_time.csv"
-                weight: 1.0
-            columns:
-              request_time: "time"
-              pickup_lat: "o_y"
-              pickup_lon: "o_x"
-              dropoff_lat: "d_y"
-              dropoff_lon: "d_x"
-        network:
-          network_file: "data/networks/hwaseong_drive.graphml"
-          walk_network_file: "data/networks/hwaseong_walk.graphml"
-          coordinate_system: "EPSG:4326"
-          walking_speed: 1.4
-          driving_speed: 8.33
-          service_area_polygon:
-            - [126.827032, 37.198957]
-            - [126.822082, 37.203549]
-            - [126.818869, 37.206509]
-            - [126.817734, 37.209793]
-            - [126.832442, 37.216226]
-            - [126.833297, 37.209711]
-            - [126.836499, 37.210003]
-            - [126.838809, 37.206861]
-            - [126.844007, 37.201823]
-            - [126.828538, 37.198760]
-        vehicle:
-          fleet_size: 11
-          capacity: 4
-          boarding_time: 5
-          alighting_time: 5
-          depot_locations:
-            - [126.81736515, 37.209416]
-            - [126.82221158, 37.20090886]
-            - [126.83461236, 37.20602126]
-            - [126.8188245, 37.1972135]
-            - [126.8299617, 37.20062122]
-            - [126.83069764999999, 37.21154885]
-        stop:
-          max_occupancy: 5
-          congestion_threshold: 2
-          max_vehicle_queue: 10
-          max_passenger_queue: 10
-          min_service_interval: 60
-          max_dwell_time: 120
-
-metrics:
-  collect_interval: 300
-  save_interval: 1800
-  default_metrics:
-    - waiting_time
-    - in_vehicle_time
-    - total_distance
-    - occupancy_rate
-    - service_rate
-    - rejection_rate
 
 simulation:
   start_time: "2024-10-24 07:00:00"
@@ -104,3 +17,91 @@ simulation:
   warm_up_duration: 1800
   time_step: 60
   time_scale_factor: 1.0
+
+base_config:
+  network:
+    network_file: "data/networks/hwaseong_drive.graphml"
+    walk_network_file: "data/networks/hwaseong_walk.graphml"
+    coordinate_system: "EPSG:4326"
+    walking_speed: 1.4
+    driving_speed: 8.33
+    service_area_polygon:
+      - [126.827032, 37.198957]
+      - [126.822082, 37.203549]
+      - [126.818869, 37.206509]
+      - [126.817734, 37.209793]
+      - [126.832442, 37.216226]
+      - [126.833297, 37.209711]
+      - [126.836499, 37.210003]
+      - [126.838809, 37.206861]
+      - [126.844007, 37.201823]
+      - [126.828538, 37.198760]
+  
+  demand:
+    generator_type: "csv"
+    num_requests: 10
+    csv_config:
+      files:
+        - file_path: "data/demands/base_real_time.csv"
+          weight: 1.0
+      columns:
+        request_time: "time"
+        pickup_lat: "o_y"
+        pickup_lon: "o_x"
+        dropoff_lat: "d_y"
+        dropoff_lon: "d_x"
+
+parameter_sets:
+  base_demand_comparison_fcfs_baseline:
+    name: "fcfs_baseline"
+    experiment: "base_demand_comparison"
+    description: "First-come-first-served baseline"
+    replications: 1
+    algorithm:
+      stop_selector: "coverage_based"
+      stop_selector_params:
+        strategy: "coverage_based"
+        min_demand_threshold: 0.1
+        max_walking_distance: 400.0
+        min_stop_spacing: 100.0
+        max_stops: 10
+        coverage_radius: 1000.0
+        accessibility_weights:
+          walk: 0.4
+          demand: 0.3
+          vehicle: 0.2
+          coverage: 0.1
+        candidate_stops_file: "data/candidate_stops/hwaseong.csv"
+      stop_assigner: "multi_objective"
+      stop_assigner_params:
+        strategy: "multi_objective"
+        max_alternatives: 3
+        thresholds:
+          max_walking_distance: 400.0
+          max_walking_time: 300.0
+          max_driving_time: 900.0
+        weights:
+          vehicle_access_time: 0.3
+          passenger_access_time: 0.7
+    matching:
+      assignment_method: "insertion"
+      optimization_method: "none"
+    vehicle:
+      fleet_size: 11
+      capacity: 4
+      boarding_time: 5
+      alighting_time: 5
+      depot_locations:
+        - [126.81736515, 37.209416]
+        - [126.82221158, 37.20090886]
+        - [126.83461236, 37.20602126]
+        - [126.8188245, 37.1972135]
+        - [126.8299617, 37.20062122]
+        - [126.83069764999999, 37.21154885]
+    stop:
+      max_occupancy: 5
+      congestion_threshold: 2
+      max_vehicle_queue: 10
+      max_passenger_queue: 10
+      min_service_interval: 60
+      max_dwell_time: 120

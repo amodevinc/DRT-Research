@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 import logging
 from typing import Optional
 
-from drt_sim.models.simulation import SimulationStatus
+from drt_sim.models.state import SimulationStatus
 from drt_sim.core.events.manager import EventManager
-from drt_sim.core.monitoring.metrics_collector import MetricsCollector
-
+from drt_sim.core.monitoring.metrics.collector import MetricsCollector
+import logging
 logger = logging.getLogger(__name__)
 
 class SimulationContext:

@@ -4,10 +4,9 @@ from collections import defaultdict
 import traceback
 from drt_sim.core.state.base import StateWorker, StateContainer
 from drt_sim.models.route import Route, RouteStatus, RouteSegment, DeviationType
-from drt_sim.core.logging_config import setup_logger
-from drt_sim.models.simulation import RouteSystemState
-
-logger = setup_logger(__name__)
+from drt_sim.models.state import RouteSystemState
+import logging
+logger = logging.getLogger(__name__)
 
 class RouteStateWorker(StateWorker):
     """Manages state for vehicle routes"""
@@ -15,7 +14,6 @@ class RouteStateWorker(StateWorker):
     def __init__(self):
         self.routes = StateContainer[Route]()
         self.initialized = False
-        self.logger = setup_logger(__name__)
         
         # Indexes for quick lookups
         self.vehicle_to_route: Dict[str, str] = {}
@@ -27,7 +25,7 @@ class RouteStateWorker(StateWorker):
     def initialize(self, config: Optional[Any] = None) -> None:
         """Initialize route state worker"""
         self.initialized = True
-        self.logger.info("Route state worker initialized")
+        logger.info("Route state worker initialized")
     
     def add_route(self, route: Route) -> None:
         """Add a new route to state management."""
@@ -46,10 +44,10 @@ class RouteStateWorker(StateWorker):
             if route.status == RouteStatus.ACTIVE:
                 self.active_routes.add(route.id)
             
-            self.logger.debug(f"Added route {route.id} for vehicle {route.vehicle_id}")
+            logger.debug(f"Added route {route.id} for vehicle {route.vehicle_id}")
             
         except Exception as e:
-            self.logger.error(f"Failed to add route: {str(e)}")
+            logger.error(f"Failed to add route: {str(e)}")
             raise
 
     def update_segment(self, route_id: str, segment: RouteSegment) -> None:
@@ -82,7 +80,7 @@ class RouteStateWorker(StateWorker):
             self.routes.update(route.id, route)
             
         except Exception as e:
-            self.logger.error(f"Failed to update route: {traceback.format_exc()}")
+            logger.error(f"Failed to update route: {traceback.format_exc()}")
             raise
     
     def update_route_status(
@@ -109,19 +107,19 @@ class RouteStateWorker(StateWorker):
                 self.active_routes.remove(route_id)
 
             if status == RouteStatus.COMPLETED:
-                self.logger.info(f"Route {route_id} completed")
+                logger.info(f"Route {route_id} completed")
             # Update additional data if provided
             if additional_data:
                 for key, value in additional_data.items():
                     if hasattr(route, key):
                         setattr(route, key, value)
             
-            self.logger.debug(
+            logger.debug(
                 f"Updated route {route_id} status from {old_status} to {status}"
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to update route status: {str(e)}")
+            logger.error(f"Failed to update route status: {str(e)}")
             raise
 
     def record_route_deviation(
@@ -151,10 +149,10 @@ class RouteStateWorker(StateWorker):
                 description=description
             )
             
-            self.logger.debug(f"Recorded {deviation_type.value} deviation for route {route_id}")
+            logger.debug(f"Recorded {deviation_type.value} deviation for route {route_id}")
             
         except Exception as e:
-            self.logger.error(f"Failed to record route deviation: {str(e)}")
+            logger.error(f"Failed to record route deviation: {str(e)}")
             raise
 
     def get_routes_by_status(self, status: RouteStatus) -> List[Route]:
@@ -222,7 +220,7 @@ class RouteStateWorker(StateWorker):
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to get route system state: {str(e)}")
+            logger.error(f"Failed to get route system state: {str(e)}")
             raise
 
     def update_state(self, state: RouteSystemState) -> None:
@@ -246,10 +244,10 @@ class RouteStateWorker(StateWorker):
             # Update active routes set
             self.active_routes = set(state.active_routes.keys())
             
-            self.logger.info("Route system state updated successfully")
+            logger.info("Route system state updated successfully")
             
         except Exception as e:
-            self.logger.error(f"Failed to update route system state: {str(e)}")
+            logger.error(f"Failed to update route system state: {str(e)}")
             raise
 
     def restore_state(self, saved_state: Dict[str, Any]) -> None:
@@ -271,14 +269,14 @@ class RouteStateWorker(StateWorker):
                 self.update_state(saved_state)
                 
                 self.commit_transaction()
-                self.logger.debug("Restored route system state")
+                logger.debug("Restored route system state")
                 
             except Exception as e:
                 self.rollback_transaction()
                 raise
                 
         except Exception as e:
-            self.logger.error(f"Error restoring route system state: {str(e)}")
+            logger.error(f"Error restoring route system state: {str(e)}")
             raise
 
     def begin_transaction(self) -> None:
@@ -299,4 +297,4 @@ class RouteStateWorker(StateWorker):
         self.vehicle_to_route.clear()
         self.active_routes.clear()
         self.initialized = False
-        self.logger.info("Route state worker cleaned up")
+        logger.info("Route state worker cleaned up")

@@ -8,11 +8,11 @@ from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.request import Request, RequestStatus
 from drt_sim.models.location import Location
-from drt_sim.config.config import ScenarioConfig
-from drt_sim.core.logging_config import setup_logger
+from drt_sim.config.config import ParameterSet
 from drt_sim.network.manager import NetworkManager
 from drt_sim.models.matching import Assignment
-logger = setup_logger(__name__)
+import logging
+logger = logging.getLogger(__name__)
 
 @dataclass
 class RequestValidationResult:
@@ -28,7 +28,7 @@ class RequestHandler:
     
     def __init__(
         self,
-        config: ScenarioConfig,
+        config: ParameterSet,
         context: SimulationContext,
         state_manager: StateManager,
         network_manager: NetworkManager
@@ -57,6 +57,14 @@ class RequestHandler:
             # Extract request data and create request object
             request: Request = event.data['request']
             
+            self.context.metrics_collector.log(
+                MetricName.REQUEST_RECEIVED,
+                1,
+                self.context.current_time,
+                {
+                    'request': request.to_dict(),
+                }
+            )
             # Add request to state management
             self.state_manager.request_worker.add_request(request)
             
@@ -117,6 +125,7 @@ class RequestHandler:
                 self.context.metrics_collector.log(
                     MetricName.REQUEST_REJECTED,
                     1,
+                    self.context.current_time,
                     {
                         'request_id': request.id,
                         'rejection_reason': rejection_metadata['rejection_reason'],
@@ -179,10 +188,13 @@ class RequestHandler:
                 self.context.metrics_collector.log(
                     MetricName.REQUEST_ASSIGNED,
                     1,
+                    self.context.current_time,
                     {
                         'request_id': assignment.request_id,
                         'vehicle_id': assignment.vehicle_id,
                         'assignment_time': self.context.current_time.isoformat(),
+                        'request_origin': request.origin.to_dict(),
+                        'request_destination': request.destination.to_dict(),
                         'origin_stop': stop_assignment.origin_stop.location.to_dict(),
                         'destination_stop': stop_assignment.destination_stop.location.to_dict()
                     }
@@ -456,7 +468,7 @@ class RequestHandler:
         """Create event to update vehicle route after request assignment."""
         event = Event(
             event_type=EventType.ROUTE_UPDATE_REQUEST,
-            priority=EventPriority.NORMAL,
+            priority=EventPriority.HIGH,
             timestamp=self.context.current_time,
             request_id=assignment.request_id,
             data={

@@ -3,10 +3,10 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from collections import defaultdict
 from drt_sim.core.state.base import StateWorker, StateContainer
-from drt_sim.core.logging_config import setup_logger
 from drt_sim.models.matching.types import Assignment
-from drt_sim.models.simulation import AssignmentSystemState
-
+from drt_sim.models.state import AssignmentSystemState
+import logging
+logger = logging.getLogger(__name__)
 @dataclass
 class AssignmentMetrics:
     """Metrics for request-vehicle assignments"""
@@ -29,7 +29,6 @@ class AssignmentStateWorker(StateWorker):
         self.assignments = StateContainer[Assignment]()
         self.metrics = AssignmentMetrics()
         self.initialized = False
-        self.logger = setup_logger(__name__)
         # Indexes for quick lookups
         self.request_to_assignment: Dict[str, str] = {}
         self.vehicle_to_assignments: Dict[str, List[str]] = defaultdict(list)
@@ -37,7 +36,7 @@ class AssignmentStateWorker(StateWorker):
     def initialize(self, config: Optional[Any] = None) -> None:
         """Initialize assignment state worker"""
         self.initialized = True
-        self.logger.info("Assignment state worker initialized")
+        logger.info("Assignment state worker initialized")
     
     def add_assignment(self, assignment: Assignment) -> None:
         """
@@ -69,12 +68,12 @@ class AssignmentStateWorker(StateWorker):
             # Update metrics
             self._update_metrics_for_new_assignment(assignment)
             
-            self.logger.debug(
+            logger.debug(
                 f"Added assignment for request {assignment.request_id} to vehicle {assignment.vehicle_id}"
             )
             
         except Exception as e:
-            self.logger.error(f"Failed to add assignment: {str(e)}")
+            logger.error(f"Failed to add assignment: {str(e)}")
             raise
     
     def get_assignment(self, assignment_id: str) -> Optional[Assignment]:
@@ -220,7 +219,7 @@ class AssignmentStateWorker(StateWorker):
             )
             
         except Exception as e:
-            self.logger.error(f"Error getting assignment system state: {str(e)}")
+            logger.error(f"Error getting assignment system state: {str(e)}")
             raise
     
     def update_state(self, state: AssignmentSystemState) -> None:
@@ -264,14 +263,14 @@ class AssignmentStateWorker(StateWorker):
                 # Commit transaction
                 self.commit_transaction()
                 
-                self.logger.debug("Updated assignment system state")
+                logger.debug("Updated assignment system state")
                 
             except Exception as e:
                 self.rollback_transaction()
                 raise
                 
         except Exception as e:
-            self.logger.error(f"Error updating assignment system state: {str(e)}")
+            logger.error(f"Error updating assignment system state: {str(e)}")
             raise
     
     def restore_state(self, saved_state: AssignmentSystemState) -> None:
@@ -294,10 +293,10 @@ class AssignmentStateWorker(StateWorker):
             # Restore using update_state
             self.update_state(saved_state)
             
-            self.logger.debug("Restored assignment system state")
+            logger.debug("Restored assignment system state")
             
         except Exception as e:
-            self.logger.error(f"Error restoring assignment system state: {str(e)}")
+            logger.error(f"Error restoring assignment system state: {str(e)}")
             raise
     
     def cleanup(self) -> None:
@@ -307,7 +306,7 @@ class AssignmentStateWorker(StateWorker):
         self.vehicle_to_assignments.clear()
         self.metrics = AssignmentMetrics()
         self.initialized = False
-        self.logger.info("Assignment state worker cleaned up")
+        logger.info("Assignment state worker cleaned up")
     
     def begin_transaction(self) -> None:
         """Begin state transaction"""

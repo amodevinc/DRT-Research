@@ -127,15 +127,18 @@ class ReplicationPaths:
         self.states = self.root / "states"
         self.logs = self.root / "logs"
         self.results = self.root / "results"
+        self.artifacts = self.root / "artifacts"
         
     def ensure_replication_structure(self) -> None:
         """Create replication directory structure"""
-        for path in [self.events, self.metrics, self.states, self.logs, self.results]:
+        for path in [self.events, self.metrics, self.states, self.logs, self.results, self.artifacts]:
             path.mkdir(parents=True, exist_ok=True)
 
 # Example usage
 def create_simulation_environment(base_dir: str = "drt_sim_output") -> SimulationPaths:
     """Create the complete simulation environment"""
-    sim_paths = SimulationPaths(Path(base_dir))
+    base_path = Path(base_dir)
+    base_path.mkdir(exist_ok=True)  # Ensure base directory exists
+    sim_paths = SimulationPaths(base_path)
     sim_paths.ensure_base_structure()
     return sim_paths
