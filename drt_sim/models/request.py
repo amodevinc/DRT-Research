@@ -36,6 +36,12 @@ class RequestConstraints(ModelBase):
     minimum_capacity: int
     maximum_price: Optional[float]
 
+    def __str__(self) -> str:
+        """Provides a concise string representation of request constraints"""
+        vtype = f"|vtype={self.required_vehicle_type.value}" if self.required_vehicle_type else ""
+        price = f"|max_price={self.maximum_price}" if self.maximum_price else ""
+        return f"Constr[cap>={self.minimum_capacity}{vtype}{price}]"
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'latest_pickup_time': self.latest_pickup_time.isoformat() if self.latest_pickup_time else None,
@@ -69,6 +75,12 @@ class Request(ModelBase):
     _version: ClassVar[str] = "1.0"
     assignment_id: Optional[str] = None
     estimated_price: Optional[float] = None
+
+    def __str__(self) -> str:
+        """Provides a concise string representation of the request"""
+        assigned = f"|asgn={self.assignment_id[:8]}" if self.assignment_id else ""
+        price = f"|price={self.estimated_price:.2f}" if self.estimated_price else ""
+        return f"Req[{self.id[:8]}|{self.type.value}|{self.status.value}|pass={self.passenger_id[:8]}{assigned}{price}]"
 
     def to_dict(self) -> Dict[str, Any]:
         return {

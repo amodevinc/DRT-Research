@@ -71,6 +71,14 @@ class PassengerState:
     # Service Level Violations
     service_violations: List[Dict[str, Any]] = field(default_factory=list)
 
+    def __str__(self) -> str:
+        """Provides a concise string representation of the passenger state"""
+        vehicle = f"|veh={self.assigned_vehicle_id[:8]}" if self.assigned_vehicle_id else ""
+        wait = f"|wait={self.wait_time:.1f}m" if self.wait_time else ""
+        ivt = f"|ivt={self.in_vehicle_time:.1f}m" if self.in_vehicle_time else ""
+        violations = f"|viol={len(self.service_violations)}" if self.service_violations else ""
+        return f"Pass[{self.id[:8]}|{self.status.value}{vehicle}{wait}{ivt}{violations}]"
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert PassengerState to dictionary"""
         return {

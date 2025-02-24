@@ -237,17 +237,13 @@ class MetricsStorage:
             # Generate archive filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             archive_path = self.archive_dir / f"metrics_{self.replication_id}_{timestamp}.parquet"
-            json_path = self.archive_dir / f"metrics_{self.replication_id}_{timestamp}.json"
             
             # Save as parquet
             df.to_parquet(archive_path, index=False)
+        
             
-            # Save as JSON for human readability
-            with open(json_path, 'w') as f:
-                json.dump(all_metrics, f, cls=SimulationEncoder, indent=2)
-            
-            logger.info(f"Saved consolidated metrics to {archive_path} and {json_path}")
-            return archive_path, json_path
+            logger.info(f"Saved consolidated metrics to {archive_path}")
+            return archive_path
             
         except Exception as e:
             logger.error(f"Error saving consolidated data: {e}")

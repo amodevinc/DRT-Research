@@ -10,6 +10,7 @@ import traceback
 from drt_sim.core.monitoring.metrics.collector import MetricsCollector
 from drt_sim.analysis.visualizations.metric_plotter import MetricPlotter
 from drt_sim.core.monitoring.metrics.registry import metric_registry
+from drt_sim.models.rejection import RejectionReason
 
 logger = logging.getLogger(__name__)
 
@@ -71,26 +72,26 @@ class MetricsManager:
                 logger.error("No active MLflow run found when trying to save figure")
                 return
                 
-            logger.info(f"Current MLflow run ID: {active_run.info.run_id}")
-            logger.info(f"Saving figure to local path: {filepath}")
+            logger.debug(f"Current MLflow run ID: {active_run.info.run_id}")
+            logger.debug(f"Saving figure to local path: {filepath}")
             
             # Use the same directory structure for MLflow artifacts
             artifact_path = "analysis"
             if subdir:
                 artifact_path = str(Path("analysis") / subdir)
                 
-            logger.info(f"Using MLflow artifact path: {artifact_path}")
+            logger.debug(f"Using MLflow artifact path: {artifact_path}")
             
             # Log the artifact
             mlflow.log_artifact(str(filepath), artifact_path=artifact_path)
-            logger.info(f"Successfully logged figure to MLflow: {filename}")
+            logger.debug(f"Successfully logged figure to MLflow: {filename}")
             
         except Exception as e:
             logger.error(f"Failed to log figure to MLflow: {str(e)}\nTraceback: {traceback.format_exc()}")
 
     def generate_all_analysis(self) -> None:
         """Generate all analysis plots and metrics."""
-        logger.info("Starting comprehensive metrics analysis")
+        logger.debug("Starting comprehensive metrics analysis")
         
         # Get the complete metrics dataset
         metrics_df = self.metrics_collector.get_metrics_df()
@@ -105,7 +106,7 @@ class MetricsManager:
         # Generate all analyses
         self.analyze_vehicle_performance(metrics_df)
         self.analyze_passenger_experience(metrics_df)
-        # self.analyze_service_efficiency(metrics_df)
+        self.analyze_service_efficiency(metrics_df)
         # self.analyze_system_performance(metrics_df)
         
         logger.info("Completed comprehensive metrics analysis")
@@ -356,7 +357,7 @@ class MetricsManager:
 
     def analyze_vehicle_performance(self, metrics_df: pd.DataFrame) -> None:
         """Analyze vehicle performance metrics."""
-        logger.info("Analyzing vehicle performance")
+        logger.debug("Analyzing vehicle performance")
         
         # Filter vehicle-related metrics
         vehicle_metrics = metrics_df[metrics_df['metric_name'].str.startswith('vehicle.')]
@@ -388,6 +389,9 @@ class MetricsManager:
 
     def _analyze_derived_vehicle_metrics(self, vehicle_metrics: pd.DataFrame) -> None:
         """Create specialized visualizations for derived vehicle metrics."""
+
+        
+    
         # 1. Vehicle Occupancy Ratio Analysis
         occupancy_data = vehicle_metrics[
             vehicle_metrics['metric_name'] == 'vehicle.occupancy_ratio'
@@ -457,6 +461,10 @@ class MetricsManager:
             values='value',
             aggfunc='sum'
         ).reset_index()
+
+        print("Distance metrics shape:", distance_metrics.shape)
+        print("Vehicle IDs:", distance_metrics['vehicle_id'].unique())
+        print("Distance metrics contents:\n", distance_metrics)
         
         if not distance_metrics.empty:
             fig = px.bar(distance_metrics,
@@ -589,7 +597,7 @@ class MetricsManager:
                                    title='Journey Time Components Breakdown',
                                    barmode='stack',
                                    labels={
-                                       'value': 'Time (minutes)',
+                                       'value': 'Time (seconds)',
                                        'passenger_id': 'Passenger ID',
                                        'variable': 'Component'
                                    })
@@ -625,6 +633,8 @@ class MetricsManager:
     def analyze_service_efficiency(self, metrics_df: pd.DataFrame) -> None:
         """Analyze service efficiency metrics."""
         logger.info("Analyzing service efficiency")
+
+        self._analyze_request_rejections(metrics_df)
         
         service_metrics = metrics_df[metrics_df['metric_name'].str.startswith('service.')]
         
@@ -647,6 +657,8 @@ class MetricsManager:
             
         # Handle derived metrics separately
         self._analyze_derived_service_metrics(service_metrics)
+        
+        # Analyze request rejections
 
     def _analyze_derived_service_metrics(self, service_metrics: pd.DataFrame) -> None:
         """Create specialized visualizations for derived service metrics."""
@@ -721,7 +733,7 @@ class MetricsManager:
 
     def analyze_system_performance(self, metrics_df: pd.DataFrame) -> None:
         """Analyze system-wide performance metrics."""
-        logger.info("Analyzing system performance")
+        logger.debug("Analyzing system performance")
         
         system_metrics = metrics_df[metrics_df['metric_name'].str.startswith('system.')]
         
@@ -801,22 +813,221 @@ class MetricsManager:
                              })
                 self.save_figure(fig, "request_vehicle_ratio", "system_analysis")
 
+    def _analyze_request_rejections(self, metrics_df: pd.DataFrame) -> None:
+        """Create detailed analysis of request rejections."""
+        try:
+            logger.info("Analyzing request rejections")
+            # Filter rejection metrics
+            rejections = metrics_df[
+                metrics_df['metric_name'] == 'request.rejected'
+            ]
+            
+            if rejections.empty:
+                logger.warning("No rejection data available for analysis")
+                return
+            
+            # Extract rejection reasons and details
+            rejections['rejection_reason'] = rejections.apply(
+                lambda x: x.get('rejection_reason', 'unknown')
+                if isinstance(x.get('rejection_reason'), str)
+                else 'unknown',
+                axis=1
+            )
+            
+            # Group rejection reasons by category
+            timing_constraints = [
+                'time_window_constraint',
+                'vehicle_access_time_constraint',
+                'passenger_wait_time_constraint',
+                'ride_time_constraint'
+            ]
+            vehicle_constraints = [
+                'capacity_constraint',
+                'detour_constraint'
+            ]
+            availability_issues = [
+                'no_vehicles_available',
+                'no_compatible_vehicles'
+            ]
+            validation_issues = [
+                'outside_service_hours',
+                'outside_service_area',
+                'excessive_walking_distance',
+                'invalid_booking_time',
+                'insufficient_notice'
+            ]
+            
+            # 1. Overall Rejection Analysis with Categories
+            rejection_counts = rejections['rejection_reason'].value_counts()
+            
+            # Create category mapping
+            reason_to_category = {}
+            for reason in rejection_counts.index:
+                if reason in timing_constraints:
+                    reason_to_category[reason] = 'Timing Constraints'
+                elif reason in vehicle_constraints:
+                    reason_to_category[reason] = 'Vehicle Constraints'
+                elif reason in availability_issues:
+                    reason_to_category[reason] = 'Vehicle Availability'
+                elif reason in validation_issues:
+                    reason_to_category[reason] = 'Validation Issues'
+                else:
+                    reason_to_category[reason] = 'Other'
+            
+            # Create sunburst chart for hierarchical view
+            category_data = []
+            for reason, count in rejection_counts.items():
+                category_data.append({
+                    'category': reason_to_category[reason],
+                    'reason': reason,
+                    'count': count
+                })
+            
+            category_df = pd.DataFrame(category_data)
+            fig = px.sunburst(
+                category_df,
+                path=['category', 'reason'],
+                values='count',
+                title='Hierarchical View of Rejection Reasons'
+            )
+            self.save_figure(fig, "rejection_reasons_hierarchy", "service_analysis")
+            
+            # 2. Detailed Constraint Violation Analysis
+            constraint_details = []
+            for _, row in rejections.iterrows():
+                if isinstance(row.get('details'), dict):
+                    violations = row['details'].get('violations', {})
+                    for violation_type, violation_list in violations.items():
+                        if isinstance(violation_list, list):
+                            for violation in violation_list:
+                                violation_data = {
+                                    'timestamp': row['timestamp'],
+                                    'violation_type': violation_type,
+                                    'vehicle_id': row['details'].get('vehicle_id', 'unknown')
+                                }
+                                violation_data.update(violation)
+                                constraint_details.append(violation_data)
+            
+            if constraint_details:
+                violations_df = pd.DataFrame(constraint_details)
+                violations_df['timestamp'] = pd.to_datetime(violations_df['timestamp'])
+                
+                # Violation magnitude analysis
+                for violation_type in violations_df['violation_type'].unique():
+                    type_data = violations_df[violations_df['violation_type'] == violation_type]
+                    
+                    if 'max_allowed' in type_data.columns and any(col in type_data.columns for col in ['wait_time', 'ride_time', 'detour_time', 'access_time']):
+                        # Get the actual value column
+                        value_col = next(col for col in ['wait_time', 'ride_time', 'detour_time', 'access_time'] 
+                                       if col in type_data.columns)
+                        
+                        fig = px.histogram(
+                            type_data,
+                            x=value_col,
+                            title=f'Distribution of {violation_type.replace("_violations", "")} Values',
+                            labels={value_col: 'Time (minutes)'},
+                            marginal='box'
+                        )
+                        # Add vertical line for max allowed value
+                        fig.add_vline(x=type_data['max_allowed'].iloc[0], 
+                                    line_dash="dash", 
+                                    line_color="red",
+                                    annotation_text="Max Allowed")
+                        
+                        self.save_figure(fig, f"{violation_type}_distribution", "service_analysis")
+                
+                # Violation patterns over time
+                violation_timeline = violations_df.pivot_table(
+                    index='timestamp',
+                    columns='violation_type',
+                    values='vehicle_id',
+                    aggfunc='count',
+                    fill_value=0
+                ).reset_index()
+                
+                fig = px.line(
+                    violation_timeline,
+                    x='timestamp',
+                    y=violation_timeline.columns[1:],
+                    title='Constraint Violations Over Time',
+                    labels={
+                        'timestamp': 'Time',
+                        'value': 'Number of Violations'
+                    }
+                )
+                self.save_figure(fig, "detailed_violations_timeline", "service_analysis")
+                
+                # Vehicle-specific violation patterns
+                vehicle_violations = violations_df.pivot_table(
+                    index='vehicle_id',
+                    columns='violation_type',
+                    values='timestamp',
+                    aggfunc='count',
+                    fill_value=0
+                ).reset_index()
+                
+                fig = px.imshow(
+                    vehicle_violations.set_index('vehicle_id'),
+                    title='Vehicle Violation Patterns',
+                    labels={
+                        'vehicle_id': 'Vehicle ID',
+                        'violation_type': 'Violation Type',
+                        'value': 'Number of Violations'
+                    },
+                    aspect='auto'
+                )
+                self.save_figure(fig, "vehicle_violation_patterns", "service_analysis")
+            
+            # 3. Log detailed metrics
+            # Overall rejection statistics
+            for category in set(reason_to_category.values()):
+                category_count = sum(count for reason, count in rejection_counts.items() 
+                                   if reason_to_category[reason] == category)
+                mlflow.log_metric(f"rejections.category.{category.lower().replace(' ', '_')}", category_count)
+            
+            # Individual reason counts
+            for reason, count in rejection_counts.items():
+                mlflow.log_metric(f"rejections.reason.{reason}", int(count))
+            
+            # Violation statistics if available
+            if constraint_details:
+                violations_df = pd.DataFrame(constraint_details)
+                for violation_type in violations_df['violation_type'].unique():
+                    type_data = violations_df[violations_df['violation_type'] == violation_type]
+                    
+                    # Count of violations
+                    mlflow.log_metric(f"violations.{violation_type}.count", len(type_data))
+                    
+                    # Average violation magnitude where applicable
+                    for metric in ['wait_time', 'ride_time', 'detour_time', 'access_time']:
+                        if metric in type_data.columns:
+                            avg_value = float(type_data[metric].mean())
+                            mlflow.log_metric(f"violations.{violation_type}.avg_{metric}", avg_value)
+            
+            # Log summary tags
+            mlflow.set_tag("rejections.primary_category", 
+                          max(reason_to_category.values(), 
+                              key=lambda x: sum(count for reason, count in rejection_counts.items() 
+                                              if reason_to_category[reason] == x)))
+            
+        except Exception as e:
+            logger.error(f"Error analyzing request rejections: {str(e)}\n{traceback.format_exc()}")
+
     def cleanup(self) -> None:
         """Clean up all metrics resources and ensure proper MLflow logging."""
         try:
             # Ensure all MLflow operations are complete
             active_run = mlflow.active_run()
             if active_run:
-                logger.info(f"Ensuring all artifacts are logged to MLflow run: {active_run.info.run_id}")
+                logger.debug(f"Ensuring all artifacts are logged to MLflow run: {active_run.info.run_id}")
                 
                 # First, save consolidated metrics data through the collector's storage
                 archive_paths = self.metrics_collector.storage.save_consolidated_data()
                 if archive_paths:
-                    parquet_path, json_path = archive_paths
+                    parquet_path = archive_paths
                     # Log the consolidated metrics data to MLflow
-                    logger.info(f"Logging consolidated metrics data to MLflow from {parquet_path} and {json_path}")
+                    logger.debug(f"Logging consolidated metrics data to MLflow from {parquet_path}")
                     mlflow.log_artifact(str(parquet_path), "archive")
-                    mlflow.log_artifact(str(json_path), "archive")
             
             # Clean up the metrics collector (which will clean up storage)
             self.metrics_collector.cleanup()
@@ -825,6 +1036,6 @@ class MetricsManager:
             import shutil
             shutil.rmtree(self.analysis_dir, ignore_errors=True)
             
-            logger.info("Metrics cleanup completed successfully")
+            logger.debug("Metrics cleanup completed successfully")
         except Exception as e:
             logger.error(f"Error during metrics cleanup: {str(e)}\nTraceback: {traceback.format_exc()}") 

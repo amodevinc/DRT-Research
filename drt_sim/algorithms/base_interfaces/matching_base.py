@@ -66,7 +66,6 @@ class MatchingStrategy(ABC):
     async def match_stop_assignment_to_vehicle(
         self,
         stop_assignment: StopAssignment,
-        available_vehicles: List[Vehicle],
     ) -> List[Assignment]:
         """
         Quick matching of requests to vehicles using configured methods.
@@ -77,8 +76,7 @@ class MatchingStrategy(ABC):
             logger.debug("Performing quick assignment")
             # Call the async assign_requests method
             assignment = await self.assigner.assign_request(
-                stop_assignment,
-                available_vehicles
+                stop_assignment
             )
 
             return assignment

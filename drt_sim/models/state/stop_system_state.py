@@ -61,3 +61,5 @@ class StopAssignmentSystemState(ModelBase):
             assignments_by_request=data["assignments_by_request"],
             assignments_by_stop=data["assignments_by_stop"],
         ) 
+    
+    

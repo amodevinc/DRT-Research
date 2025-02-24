@@ -33,7 +33,7 @@ class RouteHandler:
     async def handle_route_update_request(self, event: Event) -> None:
         """Handle route update request"""
         try:
-            logger.info(f"Handling route update request: {event}")
+            logger.info(f"Handling route update request for event: {event.id}")
             self.state_manager.begin_transaction()
             
             assignment = event.data['assignment']
@@ -41,77 +41,51 @@ class RouteHandler:
                 raise ValueError(f"Assignment not found")
                 
             vehicle: Vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
+            if not vehicle:
+                raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
+
+            logger.info(f"Processing route update for vehicle {vehicle.id}: status={vehicle.current_state.status}, "
+                     f"location={vehicle.current_state.current_location}")
                 
             # Update or create route
             route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
+            logger.info(f"Route {assignment.route.id} exists: {route_exists}")
+            
             if not route_exists:
+                logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
+                          f"segments={len(assignment.route.segments)}, "
+                          f"total_distance={assignment.route.total_distance:.2f}m, "
+                          f"total_duration={assignment.route.total_duration:.2f}s")
+                logger.debug(f"Route stops sequence: {[str(stop) for stop in assignment.route.stops]}")
+                assignment.route.status = RouteStatus.CREATED
                 self.state_manager.route_worker.add_route(assignment.route)
+                logger.info(f"Created new route {assignment.route.id} for vehicle {vehicle.id}")
             else:
+                existing_route = self.state_manager.route_worker.get_route(assignment.route.id)
+                logger.debug(f"Updating existing route {existing_route.id}:")
+                logger.debug(f"Old route: {str(existing_route)}. Segments: {[str(segment) for segment in existing_route.segments]}")
+                logger.debug(f"New route: {str(assignment.route)}. Segments: {[str(segment) for segment in assignment.route.segments]}")
+                logger.debug(f"New route stops sequence: {[str(stop) for stop in assignment.route.stops]}")
+                
+                # Keep existing status if route exists
+                assignment.route.status = existing_route.status
                 self.state_manager.route_worker.update_route(assignment.route)
+                logger.info(f"Updated existing route {assignment.route.id} for vehicle {vehicle.id}")
             
             # Check vehicle's current status to determine appropriate dispatch
             if vehicle.current_state.status == VehicleStatus.IDLE:
-                # Initial dispatch - vehicle hasn't started yet
-                # self._create_update_vehicle_active_route_event(assignment.vehicle_id, assignment.route.id)
+                logger.debug(f"Vehicle {vehicle.id} is idle, creating initial dispatch")
                 self._create_initial_dispatch_event(assignment.vehicle_id, assignment.route.id)
             else:
-                # Vehicle is already in service - needs rerouting
+                logger.debug(f"Vehicle {vehicle.id} is in service, creating reroute dispatch")
                 self._create_reroute_dispatch_event(assignment.vehicle_id, assignment.route.id)
                 
             self.state_manager.commit_transaction()
+            logger.info(f"Successfully created/updated route for vehicle {vehicle.id}")
             
         except Exception as e:
             self.state_manager.rollback_transaction()
             logger.error(f"Error handling route update request: {str(e)}")
-            await self._handle_route_error(event, str(e))
-
-    async def handle_stop_service_completed(self, event: Event) -> None:
-        """Handle completion of service at a stop."""
-        try:
-            self.state_manager.begin_transaction()
-            
-            route = self.state_manager.route_worker.get_route(event.data['route_id'])
-            if not route:
-                raise ValueError(f"Route {event.data['route_id']} not found")
-            
-            segment_index = event.data['segment_index']
-            current_segment: RouteSegment = route.segments[segment_index]
-            
-            # Mark current segment as completed
-            current_segment.completed = True
-            
-            # Check if this was the last segment
-            if segment_index == len(route.segments) - 1:
-                route.status = RouteStatus.COMPLETED
-                self._create_route_completed_event(route)
-            else:
-                # Move to next segment
-                route.current_segment_index += 1
-                next_segment: RouteSegment = route.segments[route.current_segment_index]
-                
-                # Create next segment start event
-                next_segment_event = Event(
-                    event_type=EventType.ROUTE_SEGMENT_STARTED,
-                    priority=EventPriority.HIGH,
-                    timestamp=self.context.current_time,
-                    vehicle_id=route.vehicle_id,
-                    data={
-                        'route_id': route.id,
-                        'segment_index': route.current_segment_index,
-                        'origin': next_segment.origin,
-                        'destination': next_segment.destination,
-                        'estimated_duration': next_segment.estimated_duration,
-                        'estimated_distance': next_segment.estimated_distance
-                    }
-                )
-                self.context.event_manager.publish_event(next_segment_event)
-            
-            self.state_manager.route_worker.update_route(route)
-            self.state_manager.commit_transaction()
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling stop service completion: {str(e)}")
             await self._handle_route_error(event, str(e))
 
     def _create_route_completed_event(self, route: Route) -> None:
@@ -155,17 +129,6 @@ class RouteHandler:
                 'timestamp': self.context.current_time,
                 'route_id': route_id
             }
-        )
-        self.context.event_manager.publish_event(event)
-    
-    def _create_update_vehicle_active_route_event(self, vehicle_id: str, route_id: str) -> None:
-        """Create event to update vehicle's active route"""
-        event = Event(
-            event_type=EventType.VEHICLE_ACTIVE_ROUTE_UPDATE,
-            priority=EventPriority.HIGH,
-            timestamp=self.context.current_time,
-            vehicle_id=vehicle_id,
-            data={'route_id': route_id}
         )
         self.context.event_manager.publish_event(event)
 

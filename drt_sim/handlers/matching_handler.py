@@ -1,9 +1,12 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime
+import asyncio
 
 from drt_sim.models.event import Event, EventType, EventPriority
 from drt_sim.models.request import Request, RequestStatus
-from drt_sim.models.vehicle import Vehicle
+from drt_sim.models.vehicle import Vehicle, VehicleStatus
+from drt_sim.models.passenger import PassengerState, PassengerStatus
+from drt_sim.models.route import RouteStatus
 from drt_sim.config.config import ParameterSet
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.core.state.manager import StateManager
@@ -14,6 +17,7 @@ from drt_sim.algorithms.base_interfaces.matching_base import (
 from drt_sim.algorithms.optimization.global_optimizer import GlobalSystemOptimizer
 from drt_sim.core.user.manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
+from drt_sim.models.rejection import RejectionReason, RejectionMetadata
 import logging
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,9 @@ class MatchingHandler:
             'average_matching_time': 0.0,
             'average_waiting_time': 0.0
         }
+        
+        # Lock for synchronizing vehicle assignments
+        self._assignment_lock = asyncio.Lock()
         
         # Schedule periodic optimization
         self._schedule_periodic_optimization()
@@ -97,41 +104,43 @@ class MatchingHandler:
                 raise ValueError("Stop assignment not found")
             request_id = stop_assignment.request_id
             
-            logger.info(f"Processing match to vehicle for request: {request_id}, stop assignment: {stop_assignment_id}")
-            self.state_manager.begin_transaction()
+            logger.debug(f"Processing match to vehicle for request: {request_id}, stop assignment: {stop_assignment_id}")
             
-            start_time = datetime.now()
-            
-            # Get request and validate
-            request = self.state_manager.request_worker.get_request(request_id)
-            if not request:
-                raise ValueError(f"Request {request_id} not found")
+            # Acquire lock before starting the matching process
+            async with self._assignment_lock:
+                self.state_manager.begin_transaction()
                 
-            if request.status not in [RequestStatus.VALIDATED, RequestStatus.PENDING]:
-                raise ValueError(f"Invalid request status: {request.status}")
-            
-            # Get available vehicles
-            available_vehicles = self._get_available_vehicles()
-            if not available_vehicles:
-                await self._handle_no_vehicles_available(request)
-                return
-            
-            # Perform quick matching
-            assignment = await self.matching_strategy.match_stop_assignment_to_vehicle(
-                stop_assignment,
-                available_vehicles
-            )
-            
-            if assignment:
-                await self._process_assignment(assignment)
-            else:
-                await self._handle_matching_failed(request)
-            
-            self.state_manager.commit_transaction()
-            
-            # Update metrics
-            computation_time = (datetime.now() - start_time).total_seconds()
-            self._update_metrics(bool(assignment), computation_time)
+                start_time = datetime.now()
+                
+                # Get request and validate
+                request = self.state_manager.request_worker.get_request(request_id)
+                if not request:
+                    raise ValueError(f"Request {request_id} not found")
+                    
+                if request.status not in [RequestStatus.VALIDATED, RequestStatus.PENDING]:
+                    raise ValueError(f"Invalid request status: {request.status}")
+                
+                # Get available vehicles
+                available_vehicles = self._get_available_vehicles()
+                if not available_vehicles or len(available_vehicles) == 0:
+                    await self._handle_no_vehicles_available(request)
+                    return
+                
+                # Perform quick matching
+                assignment, rejection_metadata = await self.matching_strategy.match_stop_assignment_to_vehicle(
+                    stop_assignment,
+                )
+                
+                if assignment:
+                    await self._process_assignment(assignment)
+                else:
+                    await self._handle_matching_failed(request, rejection_metadata)
+                
+                self.state_manager.commit_transaction()
+                
+                # Update metrics
+                computation_time = (datetime.now() - start_time).total_seconds()
+                self._update_metrics(bool(assignment), computation_time)
             
         except Exception as e:
             self.state_manager.rollback_transaction()
@@ -171,13 +180,87 @@ class MatchingHandler:
     
     async def _process_assignment(self, assignment: Assignment) -> None:
         """Process successful assignments."""
-        # Update request status
+        # 1. Update request status
         self.state_manager.request_worker.update_request_status(
             assignment.request_id, 
             RequestStatus.ASSIGNED
         )
         
-        # Create assignment event
+        # 2. Update vehicle state immediately
+        vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
+        if not vehicle:
+            raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
+            
+        # Add and update route with proper status
+        route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
+        if not route_exists:
+            logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
+                      f"segments={len(assignment.route.segments)}, "
+                      f"total_distance={assignment.route.total_distance:.2f}m, "
+                      f"total_duration={assignment.route.total_duration:.2f}s")
+            assignment.route.status = RouteStatus.CREATED
+            self.state_manager.route_worker.add_route(assignment.route)
+        else:
+            existing_route = self.state_manager.route_worker.get_route(assignment.route.id)
+            # Keep existing status if route exists
+            assignment.route.status = existing_route.status
+            self.state_manager.route_worker.update_route(assignment.route)
+            
+        # Update vehicle's active route
+        self.state_manager.vehicle_worker.update_vehicle_active_route_id(
+            vehicle.id,
+            assignment.route.id
+        )
+        
+        if vehicle.current_state.status == VehicleStatus.IDLE:
+            # Create dispatch event for idle vehicle
+            dispatch_event = Event(
+                event_type=EventType.VEHICLE_DISPATCH_REQUEST,
+                priority=EventPriority.HIGH,
+                timestamp=self.context.current_time,
+                vehicle_id=vehicle.id,
+                data={
+                    'dispatch_type': 'initial',
+                    'timestamp': self.context.current_time,
+                    'route_id': assignment.route.id
+                }
+            )
+            self.context.event_manager.publish_event(dispatch_event)
+        else:
+            # Create reroute event for active vehicle
+            reroute_event = Event(
+                event_type=EventType.VEHICLE_REROUTE_REQUEST,
+                priority=EventPriority.HIGH,
+                timestamp=self.context.current_time,
+                vehicle_id=vehicle.id,
+                data={
+                    'dispatch_type': 'reroute',
+                    'timestamp': self.context.current_time,
+                    'route_id': assignment.route.id
+                }
+            )
+            self.context.event_manager.publish_event(reroute_event)
+        
+        # 3. Update stop assignment state
+        stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
+        if not stop_assignment:
+            raise ValueError(f"Stop assignment {assignment.stop_assignment_id} not found")
+        
+        request = self.state_manager.request_worker.get_request(stop_assignment.request_id)
+
+        passenger_journey_event = Event(
+            event_type=EventType.START_PASSENGER_JOURNEY,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            passenger_id=request.passenger_id,
+            request_id=request.id,
+            data={
+                'assignment': assignment
+            }
+        )
+        self.context.event_manager.publish_event(passenger_journey_event)
+        
+        # Now that all critical state is updated, create event for non-critical updates
         assignment_event = Event(
             event_type=EventType.REQUEST_ASSIGNED,
             timestamp=self.context.current_time,
@@ -190,25 +273,41 @@ class MatchingHandler:
     
     async def _handle_no_vehicles_available(self, request: Request) -> None:
         """Handle case when no vehicles are available."""
-        # Create no vehicle event
+        rejection_metadata = RejectionMetadata(
+            reason=RejectionReason.NO_VEHICLES_AVAILABLE,
+            timestamp=self.context.current_time.isoformat(),
+            stage="matching",
+            details={
+                "available_vehicles": 0,
+                "total_vehicles": len(self.state_manager.vehicle_worker.get_all_vehicles())
+            }
+        )
+        
         event = Event(
             event_type=EventType.REQUEST_REJECTED,
             timestamp=self.context.current_time,
             priority=EventPriority.HIGH,
             request_id=request.id,
-            data={'reason': 'No vehicles available'}
+            data=rejection_metadata.to_dict()
         )
         self.context.event_manager.publish_event(event)
     
-    async def _handle_matching_failed(self, request: Request) -> None:
+    async def _handle_matching_failed(self, request: Request, rejection_metadata: Optional[RejectionMetadata] = None) -> None:
         """Handle case when matching fails."""
-        # Create matching failed event
+        if not rejection_metadata:
+            rejection_metadata = RejectionMetadata(
+                reason=RejectionReason.UNKNOWN,
+                timestamp=self.context.current_time.isoformat(),
+                stage="matching",
+                details={}
+            )
+        
         event = Event(
             event_type=EventType.REQUEST_REJECTED,
             timestamp=self.context.current_time,
             priority=EventPriority.HIGH,
             request_id=request.id,
-            data={'reason': 'No feasible match found'}
+            data=rejection_metadata.to_dict()
         )
         self.context.event_manager.publish_event(event)
     

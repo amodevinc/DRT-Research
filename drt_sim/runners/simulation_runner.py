@@ -216,10 +216,14 @@ class SimulationRunner:
                 if metrics:
                     mlflow.log_metrics(metrics)
 
-            results_file = self.output_dir / "results" / "simulation_results.json"
-            with open(results_file, "w") as f:
-                json.dump(results, f, cls=SimulationEncoder, indent=2)
-            mlflow.log_artifact(str(results_file), f"replications/{self.run_name}")
+            # Get event history from the event manager and log it
+            if self.orchestrator and self.orchestrator.event_manager:
+                event_history = self.orchestrator.event_manager.get_serializable_history()
+                event_history_path = self.output_dir / "artifacts" / f"{self.run_name}_events.json"
+                with open(event_history_path, 'w') as f:
+                    json.dump(event_history, f, indent=2, cls=SimulationEncoder)
+                mlflow.log_artifact(str(event_history_path), f"replications/{self.run_name}/events")
+
             mlflow.log_artifacts(str(self.output_dir / "logs"), f"replications/{self.run_name}/logs")
             if "final_state" in results:
                 mlflow.log_dict(results["final_state"], f"replications/{self.run_name}/final_state.json")

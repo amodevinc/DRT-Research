@@ -31,11 +31,18 @@ class PassengerStateWorker(StateWorker):
             
         try:
             self.passengers_container.add(passenger_state.id, passenger_state)
-            logger.info(f"Created passenger state for passenger {passenger_state.id}")
+            logger.debug(f"Created passenger state for passenger {passenger_state.id}")
             
         except Exception as e:
             logger.error(f"Failed to create passenger state: {str(e)}")
             raise
+
+    def get_passenger_by_request_id(self, request_id: str) -> Optional[PassengerState]:
+        """Get passenger state by request ID"""
+        if not self.initialized:
+            raise RuntimeError("Worker not initialized")
+            
+        return next((p for p in self.passengers_container.items.values() if p.request_id == request_id), None)
 
     def get_passenger(self, passenger_id: str) -> Optional[PassengerState]:
         """Get passenger state by ID"""
@@ -114,7 +121,7 @@ class PassengerStateWorker(StateWorker):
             if additional_data and 'current_location' in additional_data:
                 passenger_state.current_location = additional_data['current_location']
             
-            logger.info(
+            logger.debug(
                 f"Updated passenger {passenger_id} status from {old_status} to {new_status}"
             )
             return passenger_state
@@ -146,7 +153,7 @@ class PassengerStateWorker(StateWorker):
                     passenger_state.service_violations = []
                 passenger_state.service_violations.append(violation_data)
                 
-            logger.info(f"Recorded service violation for passenger {passenger_id}: {violation_data}")
+            logger.debug(f"Recorded service violation for passenger {passenger_id}: {violation_data}")
                 
         except Exception as e:
             logger.error(f"Failed to record service violation: {str(e)}")

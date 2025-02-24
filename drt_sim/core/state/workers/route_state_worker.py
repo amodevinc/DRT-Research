@@ -26,6 +26,10 @@ class RouteStateWorker(StateWorker):
         """Initialize route state worker"""
         self.initialized = True
         logger.info("Route state worker initialized")
+
+    def get_active_routes(self) -> List[Route]:
+        """Get all active routes"""
+        return [route for route in self.routes.items.values() if route.status == RouteStatus.ACTIVE]
     
     def add_route(self, route: Route) -> None:
         """Add a new route to state management."""
@@ -73,8 +77,17 @@ class RouteStateWorker(StateWorker):
             if not old_route:
                 raise ValueError(f"Route {route.id} not found")
             
+            # Log route state changes
+            if old_route.current_segment_index != route.current_segment_index:
+                logger.info(f"[Route State] Route {route.id} - Segment index changed: {old_route.current_segment_index} -> {route.current_segment_index}")
+                
+            if old_route.status != route.status:
+                logger.info(f"[Route State] Route {route.id} - Status changed: {old_route.status} -> {route.status}")
+            
             completed_segments = len([s for s in route.segments if s.completed])
-            new_completions = completed_segments - len([s for s in old_route.segments if s.completed])
+            old_completed = len([s for s in old_route.segments if s.completed])
+            if completed_segments != old_completed:
+                logger.info(f"[Route State] Route {route.id} - Completed segments changed: {old_completed} -> {completed_segments}")
             
             # Update route
             self.routes.update(route.id, route)

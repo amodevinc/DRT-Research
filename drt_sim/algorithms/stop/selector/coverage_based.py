@@ -294,25 +294,37 @@ class CoverageBasedStopSelector(StopSelector):
         
         # First try to reuse nearby stops if they're within acceptable walking distance
         origin_stop = None
+        origin_min_distance = float('inf')
         dest_stop = None
+        dest_min_distance = float('inf')
         
-        for stop in nearby_origin_stops:
-            walking_distance = self._calculate_distance(stop.location, request.origin)
-            if walking_distance <= self.max_walking_distance:
+        # Check origin stops
+        origin_distances = await asyncio.gather(*[
+            self._calculate_network_distance(stop.location, request.origin, network_type='walk')
+            for stop in nearby_origin_stops
+        ])
+        for stop, distance in zip(nearby_origin_stops, origin_distances):
+            if distance <= self.max_walking_distance and distance < origin_min_distance:
                 origin_stop = stop
-                break
+                origin_min_distance = distance
                 
-        for stop in nearby_dest_stops:
-            walking_distance = self._calculate_distance(stop.location, request.destination)
-            if walking_distance <= self.max_walking_distance:
+        # Check destination stops  
+        dest_distances = await asyncio.gather(*[
+            self._calculate_network_distance(stop.location, request.destination, network_type='walk')
+            for stop in nearby_dest_stops
+        ])
+        for stop, distance in zip(nearby_dest_stops, dest_distances):
+            if distance <= self.max_walking_distance and distance < dest_min_distance:
                 dest_stop = stop
-                break
+                dest_min_distance = distance
         
         # If no suitable existing stops, find best candidates from predefined locations
         if origin_stop is None:
-            origin_location = await self._select_optimal_virtual_location(
+            origin_location, origin_min_distance = await self._select_optimal_virtual_location(
                 request.origin, origin_candidates, is_pickup=True
             )
+            if origin_min_distance > self.max_walking_distance:
+                return (None, float('inf')), (None, float('inf'))
             origin_stop = Stop(
                 location=origin_location,
                 type=StopType.VIRTUAL,
@@ -336,9 +348,11 @@ class CoverageBasedStopSelector(StopSelector):
             self.virtual_stops_by_area[area_id].append(origin_stop)
             
         if dest_stop is None:
-            dest_location = await self._select_optimal_virtual_location(
+            dest_location, dest_min_distance = await self._select_optimal_virtual_location(
                 request.destination, dest_candidates, is_pickup=False
             )
+            if dest_min_distance > self.max_walking_distance:
+                return (origin_stop, origin_min_distance), (None, float('inf'))
             dest_stop = Stop(
                 location=dest_location,
                 type=StopType.VIRTUAL,
@@ -361,24 +375,7 @@ class CoverageBasedStopSelector(StopSelector):
                 self.virtual_stops_by_area[area_id] = []
             self.virtual_stops_by_area[area_id].append(dest_stop)
 
-        if self.visualization_manager:
-            self.visualization_manager.add_frame(
-                component_id='stop_handler',
-                module_id='stop_selector',
-                frame_type='virtual_stop_selection',
-                data={
-                    'request_origin': [request.origin.lat, request.origin.lon],
-                    'request_destination': [request.destination.lat, request.destination.lon],
-                    'selected_origin': [origin_stop.location.lat, origin_stop.location.lon],
-                    'selected_destination': [dest_stop.location.lat, dest_stop.location.lon],
-                    'reused_origin': origin_stop.id != f"virtual_origin_{request.id}",
-                    'reused_destination': dest_stop.id != f"virtual_dest_{request.id}"
-                },
-                metadata={'request_id': request.id},
-                description=f"Selected virtual stops for request {request.id}"
-            )
-
-        return origin_stop, dest_stop
+        return (origin_stop, origin_min_distance), (dest_stop, dest_min_distance)
 
     def _find_nearby_stops(self, location: Location) -> List[Stop]:
         """Find existing virtual stops near a location"""
@@ -514,19 +511,20 @@ class CoverageBasedStopSelector(StopSelector):
 
     async def _select_optimal_virtual_location(self, request_point: Location,
                                                  candidates: List[Location],
-                                                 is_pickup: bool) -> Location:
+                                                 is_pickup: bool) -> Tuple[Location, float]:
         """
         Given a set of candidate locations, select the one with the highest combined score.
         """
         if not candidates:
-            return request_point  # fallback to original location
+            return request_point, 0.0  # fallback to original location
 
         scores = await asyncio.gather(*[
             self._score_candidate(candidate, request_point, is_pickup)
             for candidate in candidates
         ])
         best_candidate = max(zip(candidates, scores), key=lambda x: x[1])[0]
-        return best_candidate
+        best_candidate_distance = await self._calculate_network_distance(best_candidate, request_point, network_type='walk')
+        return best_candidate, best_candidate_distance
 
     async def _score_candidate(self, candidate: Location, request_point: Location,
                                is_pickup: bool) -> float:

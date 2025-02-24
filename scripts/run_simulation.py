@@ -180,7 +180,7 @@ async def main_async(
         # Set up base logging configuration once at startup
         output_path = Path(output_dir)
         base_log_dir = output_path / study_name / "logs"
-        configure_logging(base_log_dir=base_log_dir)
+        configure_logging(base_log_dir=base_log_dir, log_level=logging.DEBUG)
         logger.info(f"Configured logging to directory: {base_log_dir}")
         
         # Find and load study configuration.
@@ -306,17 +306,6 @@ async def main_async(
                         logger.error(f"Error running parameter set {param_set}: {str(e)}", exc_info=True)
                         if not study_config.execution.continue_on_error:
                             raise
-
-            # Save overall results.
-            results_file = output_path / "study_results.json"
-            with open(results_file, "w") as f:
-                json.dump({
-                    "study_name": study_config.name,
-                    "parameter_sets": results,
-                    "timestamp": datetime.now().isoformat()
-                }, f, indent=2, cls=SimulationEncoder)
-            mlflow.log_artifact(str(results_file), "results")
-
             # Log summary metrics for the study.
             summary_metrics = _compute_study_summary_metrics(results)
             if summary_metrics:

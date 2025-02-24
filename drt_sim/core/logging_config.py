@@ -1,7 +1,7 @@
 import logging
 import logging.handlers
 from pathlib import Path
-from typing import Optional, List
+from typing import List
 
 def configure_logging(
     base_log_dir: Path,
@@ -43,7 +43,7 @@ def configure_logging(
     # Console handler.
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
-    console_handler.setLevel(log_level)
+    console_handler.setLevel(logging.INFO)
     root_logger.addHandler(console_handler)
 
     # Module-specific handler.
@@ -69,13 +69,13 @@ def configure_logging(
         encoding='utf-8'
     )
     module_handler.setFormatter(formatter)
-    module_handler.setLevel(log_level)
+    module_handler.setLevel(logging.DEBUG)
     root_logger.addHandler(module_handler)
 
 def add_replication_file_handler(
     base_log_dir: Path,
     replication_id: str,
-    log_level: int = logging.INFO
+    log_level: int = logging.DEBUG
 ) -> List[logging.Handler]:
     """
     Add file handlers that write logs to a replication-specific directory.

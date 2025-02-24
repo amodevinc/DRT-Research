@@ -21,8 +21,8 @@ class RouteStop(ModelBase):
     stop: Stop
     sequence: int
     current_load: int = 0
-    pickup_passengers: List[str] = field(default_factory=list)
-    dropoff_passengers: List[str] = field(default_factory=list)
+    pickup_passengers: List[str] = field(default_factory=list)  # List of request IDs to pick up
+    dropoff_passengers: List[str] = field(default_factory=list)  # List of request IDs to drop off
     service_time: Optional[float] = 0
     earliest_passenger_arrival_time: Optional[datetime] = None
     latest_passenger_arrival_time: Optional[datetime] = None
@@ -31,9 +31,28 @@ class RouteStop(ModelBase):
     planned_departure_time: Optional[datetime] = None
     actual_departure_time: Optional[datetime] = None
     completed: bool = False
+    # Fields for boarding state tracking
+    boarded_request_ids: List[str] = field(default_factory=list)  # List of request IDs that have boarded
+    wait_start_time: Optional[datetime] = None
+    wait_timeout_event_id: Optional[str] = None
 
     def __post_init__(self):
         super().__init__()
+
+    def __str__(self) -> str:
+        """Provides a concise string representation of the route stop"""
+        status = "✓" if self.completed else "⌛"
+        pickup_ids = [pid[:8] for pid in self.pickup_passengers]
+        dropoff_ids = [pid[:8] for pid in self.dropoff_passengers]
+        pickup_str = f"+[{','.join(pickup_ids)}]" if pickup_ids else ""
+        dropoff_str = f"-[{','.join(dropoff_ids)}]" if dropoff_ids else ""
+        ops_str = f"{pickup_str}{dropoff_str}" if (pickup_str or dropoff_str) else "no-ops"
+        
+        # Format planned times if they exist
+        arr_time = f"|arr={self.planned_arrival_time.strftime('%H:%M:%S')}" if self.planned_arrival_time else ""
+        dep_time = f"|dep={self.planned_departure_time.strftime('%H:%M:%S')}" if self.planned_departure_time else ""
+        
+        return f"Stop[{self.id[:8]}|seq={self.sequence}|load={self.current_load}|{ops_str}{arr_time}{dep_time}|{status}]"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -52,7 +71,10 @@ class RouteStop(ModelBase):
             'actual_arrival_time': self.actual_arrival_time.isoformat() if self.actual_arrival_time else None,
             'planned_departure_time': self.planned_departure_time.isoformat() if self.planned_departure_time else None,
             'actual_departure_time': self.actual_departure_time.isoformat() if self.actual_departure_time else None,
-            'completed': self.completed
+            'completed': self.completed,
+            'boarded_request_ids': self.boarded_request_ids,
+            'wait_start_time': self.wait_start_time.isoformat() if self.wait_start_time else None,
+            'wait_timeout_event_id': self.wait_timeout_event_id
         }
 
     @classmethod
@@ -70,7 +92,10 @@ class RouteStop(ModelBase):
             actual_arrival_time=datetime.fromisoformat(data['actual_arrival_time']) if data['actual_arrival_time'] else None,
             planned_departure_time=datetime.fromisoformat(data['planned_departure_time']) if data['planned_departure_time'] else None,
             actual_departure_time=datetime.fromisoformat(data['actual_departure_time']) if data['actual_departure_time'] else None,
-            completed=data['completed']
+            completed=data['completed'],
+            boarded_request_ids=data['boarded_request_ids'],
+            wait_start_time=datetime.fromisoformat(data['wait_start_time']) if data['wait_start_time'] else None,
+            wait_timeout_event_id=data['wait_timeout_event_id']
         )
         route_stop.id = data['id']
         route_stop.created_at = datetime.fromisoformat(data['created_at'])
@@ -88,6 +113,10 @@ class RouteSegment(ModelBase):
     actual_distance: Optional[float] = None
     origin_location: Optional[Location] = None  # Added to handle non-stop origins
     destination_location: Optional[Location] = None  # Added to handle non-stop destinations
+    waypoints: List[Dict[str, Any]] = field(default_factory=list)  # List of waypoints along the path
+    current_waypoint_index: int = 0  # Index of current waypoint in path
+    last_waypoint_update: Optional[datetime] = None  # Timestamp of last waypoint update
+    movement_start_time: Optional[datetime] = None  # Timestamp of when the segment movement started
 
     def __post_init__(self):
         super().__init__()
@@ -105,7 +134,11 @@ class RouteSegment(ModelBase):
             'actual_duration': self.actual_duration,
             'actual_distance': self.actual_distance,
             'origin_location': self.origin_location.to_dict() if self.origin_location else None,
-            'destination_location': self.destination_location.to_dict() if self.destination_location else None
+            'destination_location': self.destination_location.to_dict() if self.destination_location else None,
+            'waypoints': self.waypoints,
+            'current_waypoint_index': self.current_waypoint_index,
+            'last_waypoint_update': self.last_waypoint_update.isoformat() if self.last_waypoint_update else None,
+            'movement_start_time': self.movement_start_time.isoformat() if self.movement_start_time else None
         }
 
     @classmethod
@@ -119,12 +152,55 @@ class RouteSegment(ModelBase):
             actual_duration=data['actual_duration'],
             actual_distance=data['actual_distance'],
             origin_location=Location.from_dict(data['origin_location']) if data.get('origin_location') else None,
-            destination_location=Location.from_dict(data['destination_location']) if data.get('destination_location') else None
+            destination_location=Location.from_dict(data['destination_location']) if data.get('destination_location') else None,
+            waypoints=data.get('waypoints', []),
+            current_waypoint_index=data.get('current_waypoint_index', 0),
+            last_waypoint_update=datetime.fromisoformat(data['last_waypoint_update']) if data.get('last_waypoint_update') else None,
+            movement_start_time=datetime.fromisoformat(data['movement_start_time']) if data.get('movement_start_time') else None
         )
         segment.id = data['id']
         segment.created_at = datetime.fromisoformat(data['created_at'])
         segment.updated_at = datetime.fromisoformat(data['updated_at'])
         return segment
+
+    def __str__(self) -> str:
+        """Provides a concise string representation of the route segment"""
+        status = "✓" if self.completed else "⌛"
+        origin_id = self.origin.id[:8] if self.origin else (self.origin_location.id[:8] if self.origin_location else "N/A")
+        dest_id = self.destination.id[:8] if self.destination else (self.destination_location.id[:8] if self.destination_location else "N/A")
+        dist = f"{self.actual_distance:.1f}m" if self.actual_distance else f"{self.estimated_distance:.1f}m"
+        dur = f"{self.actual_duration:.1f}s" if self.actual_duration else f"{self.estimated_duration:.1f}s"
+        waypoint_info = f"|wp={self.current_waypoint_index}/{len(self.waypoints)}" if self.waypoints else ""
+        return f"Segment[{self.id[:8]}|{origin_id}→{dest_id}|{dist}|{dur}{waypoint_info}|{status}]"
+
+    def get_current_waypoint(self) -> Optional[Dict[str, Any]]:
+        """Get the current waypoint in the path"""
+        if self.waypoints and 0 <= self.current_waypoint_index < len(self.waypoints):
+            return self.waypoints[self.current_waypoint_index]
+        return None
+
+    def get_next_waypoint(self) -> Optional[Dict[str, Any]]:
+        """Get the next waypoint in the path"""
+        if self.waypoints and self.current_waypoint_index + 1 < len(self.waypoints):
+            return self.waypoints[self.current_waypoint_index + 1]
+        return None
+
+    def advance_waypoint(self) -> bool:
+        """
+        Advance to the next waypoint in the path.
+        Returns True if successfully advanced, False if at end of path.
+        """
+        if self.current_waypoint_index + 1 < len(self.waypoints):
+            self.current_waypoint_index += 1
+            self.last_waypoint_update = datetime.now()
+            return True
+        return False
+
+    def get_progress(self) -> float:
+        """Get progress through the segment as a percentage"""
+        if not self.waypoints:
+            return 100.0 if self.completed else 0.0
+        return (self.current_waypoint_index / (len(self.waypoints) - 1)) * 100 if len(self.waypoints) > 1 else 100.0
 
 class DeviationType(Enum):
     """Types of route deviations"""
@@ -172,6 +248,11 @@ class RouteDeviation(ModelBase):
         deviation.updated_at = datetime.fromisoformat(data['updated_at'])
         return deviation
 
+    def __str__(self) -> str:
+        """Provides a concise string representation of the route deviation"""
+        segment = f"|seg={self.segment_id[:8]}" if self.segment_id else ""
+        return f"Deviation[{self.id[:8]}|{self.type.value}|{self.value:.2f}{segment}|{self.time.strftime('%H:%M:%S')}]"
+
 @dataclass
 class Route(ModelBase):
     """Represents a complete vehicle route"""
@@ -188,6 +269,18 @@ class Route(ModelBase):
     total_distance: Optional[float] = None  # Make optional since it depends on segments
     total_duration: Optional[float] = None  # Make optional since it depends on segments
 
+    def __str__(self) -> str:
+        """Provides a concise string representation of the route"""
+        #map pickup passengers to the stop id
+        pickup_passengers_map = {passenger: stop_id for stop_id, stop in enumerate(self.stops) for passenger in stop.pickup_passengers}
+        #map dropoff passengers to the stop id
+        dropoff_passengers_map = {passenger: stop_id for stop_id, stop in enumerate(self.stops) for passenger in stop.dropoff_passengers}
+        n_completed = sum(1 for stop in self.stops if stop.completed)
+        n_stops = len(self.stops)
+        #prepare the __str__ output
+        str_output = f"Route[{self.id[:8]}|v={self.vehicle_id[:8]}|{self.status.value}|stops={n_completed}/{n_stops}|pickup={pickup_passengers_map}|dropoff={dropoff_passengers_map}]"
+        return str_output
+    
     @property
     def current_passengers(self) -> List[str]:
         """Get the current passengers in the route"""
@@ -201,7 +294,20 @@ class Route(ModelBase):
         if self.segments and 0 <= self.current_segment_index < len(self.segments):
             return self.segments[self.current_segment_index]
         return None
-
+    
+    def recalc_current_segment_index(self) -> int:
+        """
+        Recalculates and updates the current_segment_index based on the first uncompleted segment.
+        Returns the new current_segment_index.
+        """
+        for i, segment in enumerate(self.segments):
+            if not segment.completed:
+                self.current_segment_index = i
+                return i
+        # If all segments are completed, set it to the last segment
+        self.current_segment_index = len(self.segments) - 1
+        return self.current_segment_index
+    
     def get_next_stop(self) -> Optional[RouteStop]:
         """Get the next stop in the route"""
         current_segment = self.get_current_segment()

@@ -37,6 +37,11 @@ class PassengerOperation:
     end_time: Optional[datetime] = None
     status: str = "pending"  # pending, in_progress, completed
 
+    def __str__(self) -> str:
+        """Provides a concise string representation of the passenger operation"""
+        duration = f"|dur={(self.end_time - self.start_time).total_seconds():.1f}s" if (self.start_time and self.end_time) else ""
+        return f"Op[{self.passenger_id[:8]}|{self.operation_type.value}|{self.status}{duration}]"
+
 @dataclass
 class StopOperation:
     """Represents all operations at a stop for a vehicle"""
@@ -46,6 +51,12 @@ class StopOperation:
     passenger_operations: Dict[str, PassengerOperation] = field(default_factory=dict)  # passenger_id -> operation
     status: str = "pending"  # pending, in_progress, completed
     dwell_time: int = 0
+
+    def __str__(self) -> str:
+        """Provides a concise string representation of the stop operation"""
+        ops_count = len(self.passenger_operations)
+        return f"StopOp[{self.stop_id[:8]}|veh={self.vehicle_id[:8]}|ops={ops_count}|{self.status}|dwell={self.dwell_time}s]"
+
 @dataclass
 class Stop(ModelBase):
     location: Location
@@ -91,6 +102,11 @@ class Stop(ModelBase):
             capacity_exceeded=data['capacity_exceeded'],
             metadata=data['metadata']
         )
+
+    def __str__(self) -> str:
+        """Provides a concise string representation of the stop"""
+        load_status = "!" if self.capacity_exceeded else ""
+        return f"Stop[{self.id[:8]}|{self.type.value}|{self.status.value}|load={self.current_load}/{self.capacity}{load_status}]"
 
 @dataclass
 class StopAssignment(ModelBase):
@@ -157,3 +173,9 @@ class StopAssignment(ModelBase):
             expected_passenger_origin_stop_arrival_time=datetime.fromisoformat(data['expected_passenger_origin_stop_arrival_time']) if data['expected_passenger_origin_stop_arrival_time'] else None,
             metadata=data.get('metadata', {})
         )
+
+    def __str__(self) -> str:
+        """Provides a concise string representation of the stop assignment"""
+        walk_o = f"{self.walking_distance_origin:.0f}m/{self.walking_time_origin:.0f}s"
+        walk_d = f"{self.walking_distance_destination:.0f}m/{self.walking_time_destination:.0f}s"
+        return f"Assign[{self.id[:8]}|req={self.request_id[:8]}|walk_o={walk_o}|walk_d={walk_d}|score={self.total_score:.2f}]"

@@ -20,6 +20,7 @@ from drt_sim.handlers.passenger_handler import PassengerHandler
 from drt_sim.handlers.route_handler import RouteHandler
 from drt_sim.handlers.stop_handler import StopHandler
 from drt_sim.handlers.matching_handler import MatchingHandler
+from drt_sim.core.coordination.stop_coordinator import StopCoordinator
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.event import EventType
 from drt_sim.network.manager import NetworkManager
@@ -127,6 +128,13 @@ class SimulationOrchestrator:
                 sim_context=self.context,
                 config=self.cfg,
             )
+
+            self.stop_coordinator = StopCoordinator(
+                config=self.cfg,
+                context=self.context,
+                state_manager=self.state_manager,
+            )
+
             
             # Initialize handlers
             self._initialize_handlers()
@@ -157,13 +165,15 @@ class SimulationOrchestrator:
         self.vehicle_handler = VehicleHandler(
             config=self.cfg,
             context=self.context,
-            state_manager=self.state_manager
+            state_manager=self.state_manager,
+            stop_coordinator=self.stop_coordinator
         )
         
         self.passenger_handler = PassengerHandler(
             config=self.cfg,
             context=self.context,
-            state_manager=self.state_manager
+            state_manager=self.state_manager,
+            stop_coordinator=self.stop_coordinator
         )
         
         self.route_handler = RouteHandler(
@@ -211,11 +221,12 @@ class SimulationOrchestrator:
             # Vehicle Events
             EventType.VEHICLE_ARRIVED_STOP: self.vehicle_handler.handle_vehicle_arrived_stop,
             EventType.VEHICLE_DISPATCH_REQUEST: self.vehicle_handler.handle_vehicle_dispatch_request,
-            EventType.VEHICLE_ACTIVE_ROUTE_UPDATE: self.vehicle_handler.handle_vehicle_active_route_id_update,
             EventType.VEHICLE_REROUTE_REQUEST: self.vehicle_handler.handle_vehicle_reroute_request,
-            EventType.VEHICLE_EN_ROUTE: self.vehicle_handler.handle_vehicle_en_route,
+            EventType.VEHICLE_POSITION_UPDATE: self.vehicle_handler.handle_vehicle_position_update,
             EventType.VEHICLE_REBALANCING_REQUIRED: self.vehicle_handler.handle_vehicle_rebalancing_required,
             EventType.VEHICLE_WAIT_TIMEOUT: self.vehicle_handler.handle_vehicle_wait_timeout,
+            EventType.VEHICLE_STOP_OPERATIONS_COMPLETED: self.vehicle_handler.handle_stop_operations_completed,
+            
             # Passenger Events
             EventType.START_PASSENGER_JOURNEY: self.passenger_handler.handle_start_passenger_journey,
             EventType.PASSENGER_WALKING_TO_PICKUP: self.passenger_handler.handle_passenger_walking_to_pickup,
@@ -245,6 +256,11 @@ class SimulationOrchestrator:
             EventType.VEHICLE_ASSIGNMENT: [
                 lambda e: hasattr(e, 'vehicle_id'),
                 lambda e: hasattr(e, 'request_id'),
+            ],
+            EventType.VEHICLE_STOP_OPERATIONS_COMPLETED: [
+                lambda e: hasattr(e, 'vehicle_id'),
+                lambda e: 'route_id' in e.data,
+                lambda e: 'segment_id' in e.data,
             ],
             # Add other validation rules as needed
         }

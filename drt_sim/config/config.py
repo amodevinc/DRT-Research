@@ -7,6 +7,7 @@ from drt_sim.models.matching.enums import AssignmentMethod, OptimizationMethod
 from copy import deepcopy
 import yaml
 import logging
+import math
 logger = logging.getLogger(__name__)
 
 class DataclassYAMLMixin:
@@ -157,6 +158,7 @@ class CSVDemandGeneratorConfig(DataclassYAMLMixin):
     })
     demand_multiplier: float = 1.0
     combine_method: str = "weighted_sum"
+    service_area_polygon: Optional[List[Tuple[float, float]]] = None
 
     def __post_init__(self):
         """Initialize nested configurations"""
@@ -200,7 +202,7 @@ class VehicleConfig(DataclassYAMLMixin):
     boarding_time: int = 10
     alighting_time: int = 10
     min_dwell_time: int = 10
-    max_dwell_time: int = 60
+    max_dwell_time: int = 300
     max_pickup_delay: int = 10
     max_dropoff_delay: int = 10
     rebalancing_enabled: bool = False
@@ -216,39 +218,89 @@ class CostFactorType(Enum):
     DETOUR_TIME = "detour_time"
     CAPACITY_UTILIZATION = "capacity_utilization"
 
-@dataclass
-class MatchingAssignmentConfig(DataclassYAMLMixin):
-    """Configuration for matching assignment"""
-    # Time constraints (in seconds)
-    max_waiting_time_mins: int = 10  # mins
-    max_detour_time_mins: int = 10  # mins
-    max_in_vehicle_time_mins: int = 10  # mins
-    max_distance: float = 10000.0  # meters
-    max_delay_mins: int = 10  # mins
-    capacity_threshold: float = 0.8
+class MatchingAssignmentConfig:
+    """Configuration for matching assignment."""
 
-    # Base weights for different cost factors
-    weights: Dict[str, float] = field(default_factory=lambda: {
-        "waiting_time": 0.35,
-        "detour_time": 0.25,
-        "delay": 0.20,
-        "distance": 0.20,
-    })
-
-    default_weight: float = 0.1
-
-    def validate_weights(self) -> None:
-        """Validate that weights are properly configured"""
-        # Ensure all weights are valid cost factors
-        valid_factors = {factor.value for factor in CostFactorType}
-        invalid_factors = set(self.weights.keys()) - valid_factors
-        if invalid_factors:
-            raise ValueError(f"Invalid cost factors in weights: {invalid_factors}")
+    def __init__(
+        self,
+        constraints: Dict[str, float],
+        weights: Dict[str, float],
+        reserve_price: Optional[float] = None
+    ):
+        """Initialize matching assignment configuration.
+        
+        Args:
+            constraints: Dictionary of constraint values including:
+                - max_waiting_time_secs: Maximum passenger waiting time in seconds
+                - max_in_vehicle_time_secs: Maximum in-vehicle time in seconds
+                - max_vehicle_access_time_secs: Maximum vehicle access time in seconds
+                - max_detour_time_secs: Maximum detour time in seconds
+                - max_existing_passenger_delay_secs: Maximum delay for existing passengers in seconds
+                - max_distance_meters: Maximum distance in meters
+            weights: Dictionary of weights for optimization including:
+                - passenger_waiting_time: Weight for passenger waiting time
+                - passenger_in_vehicle_time: Weight for passenger in-vehicle time
+                - existing_passenger_delay: Weight for delay to existing passengers
+                - vehicle_detour: Weight for vehicle detour
+                - distance: Weight for distance
+                - passenger_walk_time: Weight for passenger walking time
+                - operational_cost: Weight for operational costs
+            reserve_price: Optional reserve price for auction-based assignment
+        """
+        self.constraints = constraints
+        self.weights = weights
+        self.reserve_price = reserve_price
+        
+        self._validate_constraints()
+        self._validate_weights()
+    
+    def _validate_constraints(self):
+        """Validate that all required constraints are present and have valid values."""
+        required_constraints = {
+            "max_waiting_time_secs",
+            "max_in_vehicle_time_secs", 
+            "max_vehicle_access_time_secs",
+            "max_existing_passenger_delay_secs",
+            "max_distance_meters",
+        }
+        
+        # Check all required constraints are present
+        missing = required_constraints - set(self.constraints.keys())
+        if missing:
+            raise ValueError(f"Missing required constraints: {missing}")
             
-        # Normalize weights to sum to 1.0
-        total_weight = sum(self.weights.values())
-        if total_weight != 0:
-            self.weights = {k: v/total_weight for k, v in self.weights.items()}
+        # Validate constraint values
+        for key, value in self.constraints.items():
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Constraint {key} must be numeric")
+            if value <= 0:
+                raise ValueError(f"Constraint {key} must be positive")
+    
+    def _validate_weights(self):
+        """Validate that all required weights are present and have valid values."""
+        required_weights = {
+            "passenger_waiting_time",
+            "passenger_in_vehicle_time",
+            "existing_passenger_delay",
+            "distance",
+        }
+        
+        # Check all required weights are present
+        missing = required_weights - set(self.weights.keys())
+        if missing:
+            raise ValueError(f"Missing required weights: {missing}")
+            
+        # Validate weight values
+        for key, value in self.weights.items():
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Weight {key} must be numeric")
+            if value < 0:
+                raise ValueError(f"Weight {key} must be non-negative")
+        
+        # Validate weights sum to 1
+        total = sum(self.weights.values())
+        if not math.isclose(total, 1.0, rel_tol=1e-5):
+            raise ValueError(f"Weights must sum to 1.0, got {total}")
 
 @dataclass 
 class MatchingClusteringConfig(DataclassYAMLMixin):

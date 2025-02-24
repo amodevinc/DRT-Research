@@ -177,11 +177,7 @@ class SimulationEngine:
             logger.info("Simulation end time reached")
             self.context.status = SimulationStatus.COMPLETED
             return
-        
-        # Check for no more events
-        if self.event_manager.event_queue.empty() and self.context.status == SimulationStatus.RUNNING:
-            logger.info("No more events to process")
-            self.context.status = SimulationStatus.COMPLETED
+
     
     def _get_step_metrics(self) -> Dict[str, float]:
         """Get metrics for current step"""

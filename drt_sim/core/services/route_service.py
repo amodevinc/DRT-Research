@@ -3,8 +3,9 @@ from copy import deepcopy
 from typing import Dict, Any, Optional, List, Tuple
 import traceback
 from drt_sim.models.route import Route, RouteStop, RouteStatus, RouteSegment
-from drt_sim.models.vehicle import Vehicle
+from drt_sim.models.vehicle import Vehicle, VehicleStatus
 from drt_sim.models.stop import Stop, StopAssignment
+from drt_sim.models.location import Location
 from drt_sim.network.manager import NetworkManager
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.config.config import ParameterSet, MatchingAssignmentConfig, VehicleConfig
@@ -33,31 +34,38 @@ class RouteService:
         Creates a new route for a vehicle with initial pickup and dropoff stops
         """
         try:
-            # Calculate initial travel time to pickup
-            pickup_travel_time = await self.network_manager.calculate_travel_time(
+            logger.info(f"Starting new route creation for vehicle {vehicle.id} with stop assignment {stop_assignment.id}")
+            
+            # Get path info for initial segment (vehicle to pickup)
+            initial_path_info = await self._get_segment_with_waypoints(
                 vehicle.current_state.current_location,
                 stop_assignment.origin_stop.location
             )
             
-            if pickup_travel_time == float('inf'):
+            if not initial_path_info or initial_path_info['distance'] == float('inf'):
+                logger.warning(f"Could not calculate path to pickup for vehicle {vehicle.id}")
                 return None
 
             # Calculate arrival times
             pickup_arrival_time = self.sim_context.current_time + timedelta(
-                seconds=pickup_travel_time
+                seconds=initial_path_info['duration']
             )
             
-            travel_time_to_dropoff = await self.network_manager.calculate_travel_time(
+            # Get path info for service segment (pickup to dropoff)
+            service_path_info = await self._get_segment_with_waypoints(
                 stop_assignment.origin_stop.location,
                 stop_assignment.destination_stop.location
             )
 
-            if travel_time_to_dropoff == float('inf'):
+            if not service_path_info or service_path_info['distance'] == float('inf'):
+                logger.warning(f"Could not calculate path to dropoff for vehicle {vehicle.id}")
                 return None
             
             dropoff_arrival_time = pickup_arrival_time + timedelta(
-                seconds=vehicle.config.boarding_time + travel_time_to_dropoff
+                seconds=vehicle.config.boarding_time + service_path_info['duration']
             )
+
+            logger.debug(f"Creating route stops with pickup arrival at {pickup_arrival_time} and dropoff at {dropoff_arrival_time}")
 
             # Create route stops
             pickup_stop = RouteStop(
@@ -86,51 +94,51 @@ class RouteService:
                 service_time=vehicle.config.alighting_time
             )
 
-            # Create segments list to include vehicle's current position
+            logger.debug("Creating route segments")
+            # Create segments with waypoints
             segments: List[RouteSegment] = []
             
-            # Add initial positioning segment (from vehicle's current location to pickup)
             initial_segment = RouteSegment(
                 origin=None,  # No RouteStop for vehicle's current position
                 destination=pickup_stop,
-                estimated_duration=pickup_travel_time,
-                estimated_distance=await self.network_manager.calculate_distance(
-                    vehicle.current_state.current_location,
-                    stop_assignment.origin_stop.location
-                ),
-                origin_location=vehicle.current_state.current_location,  # Add current location
-                destination_location=stop_assignment.origin_stop.location
+                estimated_duration=initial_path_info['duration'],
+                estimated_distance=initial_path_info['distance'],
+                origin_location=vehicle.current_state.current_location,
+                destination_location=stop_assignment.origin_stop.location,
+                waypoints=initial_path_info['waypoints']
             )
             segments.append(initial_segment)
 
-            # Add segment between pickup and dropoff
             service_segment = RouteSegment(
                 origin=pickup_stop,
                 destination=dropoff_stop,
-                estimated_duration=travel_time_to_dropoff,
-                estimated_distance=await self.network_manager.calculate_distance(
-                    stop_assignment.origin_stop.location,
-                    stop_assignment.destination_stop.location
-                ),
+                estimated_duration=service_path_info['duration'],
+                estimated_distance=service_path_info['distance'],
                 origin_location=stop_assignment.origin_stop.location,
-                destination_location=stop_assignment.destination_stop.location
+                destination_location=stop_assignment.destination_stop.location,
+                waypoints=service_path_info['waypoints']
             )
             segments.append(service_segment)
+
+            total_distance = sum(segment.estimated_distance for segment in segments)
+            total_duration = sum(segment.estimated_duration for segment in segments) + \
+                           vehicle.config.boarding_time + \
+                           vehicle.config.alighting_time
+                           
+            logger.info(f"Created new route for vehicle {vehicle.id} with total distance {total_distance}m and duration {total_duration}s")
 
             return Route(
                 vehicle_id=vehicle.id,
                 stops=[pickup_stop, dropoff_stop],
                 segments=segments,
                 status=RouteStatus.CREATED,
-                total_distance=sum(segment.estimated_distance for segment in segments),
-                total_duration=sum(segment.estimated_duration for segment in segments) + 
-                              vehicle.config.boarding_time + 
-                              vehicle.config.alighting_time,
+                total_distance=total_distance,
+                total_duration=total_duration,
                 current_segment_index=0
             )
             
         except Exception as e:
-            logger.error(f"Error creating new route: {traceback.format_exc()}")
+            logger.error(f"Error creating new route for vehicle {vehicle.id}: {traceback.format_exc()}")
             return None
 
     async def create_modified_route(
@@ -143,21 +151,15 @@ class RouteService:
     ) -> Optional[Route]:
         """
         Creates new route with stops inserted at specified positions
-        
-        Args:
-            current_route: Current route to modify
-            stop_assignment: Stop assignment to insert
-            pickup_idx: Index to insert pickup
-            dropoff_idx: Index to insert dropoff
-            vehicle: Vehicle operating the route
-            
-        Returns:
-            Modified route if successful, None otherwise
         """
         try:
+            logger.debug(f"Starting route modification for vehicle {vehicle.id} with stop assignment {stop_assignment.id}")
+            logger.debug(f"Attempting insertion at pickup_idx={pickup_idx}, dropoff_idx={dropoff_idx}")
+            
             new_route = deepcopy(current_route)
             new_stops = new_route.stops
             
+            logger.debug("Finding compatible stops")
             # Find compatible stops or create new ones
             existing_pickup_stop, actual_pickup_idx = self._find_compatible_stop(
                 new_stops,
@@ -176,7 +178,11 @@ class RouteService:
                 False
             )
             
+            logger.debug(f"Found pickup stop: existing={existing_pickup_stop is not None}, idx={actual_pickup_idx}")
+            logger.debug(f"Found dropoff stop: existing={existing_dropoff_stop is not None}, idx={actual_dropoff_idx}")
+            
             # Process stops
+            logger.debug("Processing pickup stop")
             new_stops = await self._process_pickup_stop(
                 new_stops,
                 existing_pickup_stop,
@@ -185,6 +191,7 @@ class RouteService:
                 vehicle
             )
             
+            logger.debug("Processing dropoff stop")
             new_stops = await self._process_dropoff_stop(
                 new_stops,
                 existing_dropoff_stop,
@@ -194,49 +201,107 @@ class RouteService:
             )
             
             # Update route properties
+            logger.debug("Updating stop timings")
             await self._update_stop_timings(new_stops, vehicle)
+            
+            logger.debug("Updating occupancies")
             self._update_occupancies(new_stops)
             
+            logger.debug("Creating new segments")
             # Recreate segments for the modified route
-            new_segments = []
+            new_segments: List[RouteSegment] = []
             
-            # Add initial segment from vehicle's current position if needed
+            # Handle initial segment from vehicle's current position if needed
             if not new_stops[0].completed:
-                initial_segment = RouteSegment(
-                    origin=None,
-                    destination=new_stops[0],
-                    estimated_duration=await self.network_manager.calculate_travel_time(
+                logger.debug("Adding initial positioning segment")
+                
+                # Get current segment if vehicle is en route
+                current_segment = None
+                if current_route and current_route.segments:
+                    current_segment = current_route.get_current_segment()
+                
+                # If vehicle is in the middle of a segment, use its current position
+                if (current_segment and 
+                    vehicle.current_state.status == VehicleStatus.IN_SERVICE and 
+                    not current_segment.completed):
+                    logger.debug(f"Vehicle is currently en route in segment {current_segment.id}")
+                    
+                    # Get path info from current position to next stop
+                    initial_path_info = await self._get_segment_with_waypoints(
                         vehicle.current_state.current_location,
                         new_stops[0].stop.location
-                    ),
-                    estimated_distance=await self.network_manager.calculate_distance(
+                    )
+                    
+                    if not initial_path_info or initial_path_info['distance'] == float('inf'):
+                        logger.warning(f"Could not calculate path from current position to next stop for vehicle {vehicle.id}")
+                        return None
+                    
+                    initial_segment = RouteSegment(
+                        origin=None,
+                        destination=new_stops[0],
+                        estimated_duration=initial_path_info['duration'],
+                        estimated_distance=initial_path_info['distance'],
+                        origin_location=vehicle.current_state.current_location,
+                        destination_location=new_stops[0].stop.location,
+                        waypoints=initial_path_info['waypoints']
+                    )
+                    new_segments.append(initial_segment)
+                else:
+                    # Vehicle is at a stop or hasn't started, use normal path calculation
+                    initial_path_info = await self._get_segment_with_waypoints(
                         vehicle.current_state.current_location,
                         new_stops[0].stop.location
-                    ),
-                    origin_location=vehicle.current_state.current_location,
-                    destination_location=new_stops[0].stop.location
-                )
-                new_segments.append(initial_segment)
+                    )
+                    
+                    if not initial_path_info or initial_path_info['distance'] == float('inf'):
+                        logger.warning(f"Could not calculate path to first stop for vehicle {vehicle.id}")
+                        return None
+                    
+                    initial_segment = RouteSegment(
+                        origin=None,
+                        destination=new_stops[0],
+                        estimated_duration=initial_path_info['duration'],
+                        estimated_distance=initial_path_info['distance'],
+                        origin_location=vehicle.current_state.current_location,
+                        destination_location=new_stops[0].stop.location,
+                        waypoints=initial_path_info['waypoints']
+                    )
+                    new_segments.append(initial_segment)
             
             # Add segments between stops
+            logger.debug("Adding inter-stop segments")
             for i in range(len(new_stops) - 1):
                 origin_stop = new_stops[i]
                 destination_stop = new_stops[i + 1]
                 
+                # Skip if both stops are completed
+                if origin_stop.completed and destination_stop.completed:
+                    logger.debug(f"Skipping completed segment between stops {i} and {i+1}")
+                    continue
+                
+                # Get path info with waypoints
+                path_info = await self._get_segment_with_waypoints(
+                    origin_stop.stop.location,
+                    destination_stop.stop.location
+                )
+                
+                if not path_info or path_info['distance'] == float('inf'):
+                    logger.warning(f"Could not calculate path between stops {i} and {i+1}")
+                    return None
+                
+                logger.debug(f"Segment {i}: distance={path_info['distance']}m, "
+                          f"duration={path_info['duration']}s, "
+                          f"waypoints={len(path_info['waypoints'])}")
+                
                 segment = RouteSegment(
                     origin=origin_stop,
                     destination=destination_stop,
-                    estimated_duration=await self.network_manager.calculate_travel_time(
-                        origin_stop.stop.location,
-                        destination_stop.stop.location
-                    ),
-                    estimated_distance=await self.network_manager.calculate_distance(
-                        origin_stop.stop.location,
-                        destination_stop.stop.location
-                    ),
+                    estimated_duration=path_info['duration'],
+                    estimated_distance=path_info['distance'],
                     origin_location=origin_stop.stop.location,
                     destination_location=destination_stop.stop.location,
-                    completed=origin_stop.completed and destination_stop.completed
+                    completed=origin_stop.completed and destination_stop.completed,
+                    waypoints=path_info['waypoints']
                 )
                 new_segments.append(segment)
             
@@ -245,11 +310,25 @@ class RouteService:
             new_route.total_distance = sum(segment.estimated_distance for segment in new_segments)
             new_route.total_duration = sum(segment.estimated_duration for segment in new_segments) + \
                                      sum(stop.service_time for stop in new_stops)
+
+            new_route.current_segment_index = 0
+            for i, segment in enumerate(new_segments):
+                if not segment.completed:
+                    new_route.current_segment_index = i
+                    break
+
             
+            # Validate route consistency
+            is_valid, error_msg = new_route.validate_passenger_consistency()
+            if not is_valid:
+                logger.warning(f"Route is not valid, not being considered for assignment. Error: {error_msg}")
+                return None
+                
+            logger.debug(f"Successfully modified route for vehicle {vehicle.id}: total_distance={new_route.total_distance}m, total_duration={new_route.total_duration}s")
             return new_route
             
         except Exception as e:
-            logger.warning(f"Could not modify route: {traceback.format_exc()}")
+            logger.error(f"Error modifying route for vehicle {vehicle.id}: {traceback.format_exc()}")
             return None
 
     def validate_route_constraints(
@@ -394,7 +473,15 @@ class RouteService:
         is_pickup: bool,
         expected_passenger_origin_stop_arrival_time: Optional[datetime] = None
     ) -> Tuple[Optional[RouteStop], int]:
-        """Finds existing compatible stop or determines insertion point"""
+        """
+        Finds existing compatible stop or determines insertion point.
+        
+        A stop is compatible if:
+        1. It has the same physical location (stop.id)
+        2. It hasn't been completed yet
+        3. For pickups: The passenger's arrival time is compatible with the stop's timing
+        4. For dropoffs: The stop occurs after the pickup
+        """
         # Look for existing compatible stop
         for i, stop in enumerate(stops):
             if (
@@ -402,7 +489,10 @@ class RouteService:
                 not stop.completed and
                 self._is_stop_time_compatible(stop, is_pickup, expected_passenger_origin_stop_arrival_time)
             ):
+                logger.debug(f"Found compatible {'pickup' if is_pickup else 'dropoff'} stop at index {i}")
                 return stop, i
+                
+        logger.debug(f"No compatible {'pickup' if is_pickup else 'dropoff'} stop found, will insert at index {preferred_idx}")
         return None, preferred_idx
 
     async def _process_pickup_stop(
@@ -415,13 +505,16 @@ class RouteService:
     ) -> List[RouteStop]:
         """Process pickup stop insertion or modification"""
         if existing_stop:
+            # If the stop is already in the list, just update it, don't insert again
             if stop_assignment.request_id not in existing_stop.pickup_passengers:
                 existing_stop.pickup_passengers.append(stop_assignment.request_id)
                 existing_stop.service_time = self._calculate_stop_service_time(
                     existing_stop, 
                     vehicle.config
                 )
-            stops.insert(index, existing_stop)
+            # Don't insert if the stop is already in the list
+            if existing_stop not in stops:
+                stops.insert(index, existing_stop)
         else:
             new_stop = RouteStop(
                 stop=stop_assignment.origin_stop,
@@ -443,24 +536,48 @@ class RouteService:
         vehicle: Vehicle
     ) -> List[RouteStop]:
         """Process dropoff stop insertion or modification"""
+        # First, find if and where this passenger's pickup occurs
+        pickup_index = -1
+        for i, stop in enumerate(stops):
+            if stop_assignment.request_id in stop.pickup_passengers:
+                pickup_index = i
+                break
+        
+        # If we found a pickup and we're trying to insert the dropoff before it,
+        # adjust the index to be after the pickup
+        if pickup_index != -1 and index <= pickup_index:
+            index = pickup_index + 1
+            logger.debug(f"Adjusted dropoff index to {index} to maintain pickup-before-dropoff order")
+
         if existing_stop:
-            if stop_assignment.request_id not in existing_stop.dropoff_passengers:
-                existing_stop.dropoff_passengers.append(stop_assignment.request_id)
-                existing_stop.service_time = self._calculate_stop_service_time(
-                    existing_stop, 
-                    vehicle.config
-                )
-            stops.insert(index, existing_stop)
+            # Only add to existing stop if it's after the pickup
+            if pickup_index == -1 or index > pickup_index:
+                if stop_assignment.request_id not in existing_stop.dropoff_passengers:
+                    existing_stop.dropoff_passengers.append(stop_assignment.request_id)
+                    existing_stop.service_time = self._calculate_stop_service_time(
+                        existing_stop, 
+                        vehicle.config
+                    )
+                # Don't insert if the stop is already in the list
+                if existing_stop not in stops:
+                    stops.insert(index, existing_stop)
+            else:
+                logger.warning(f"Prevented adding dropoff for {stop_assignment.request_id} at index {index} before pickup at {pickup_index}")
         else:
-            new_stop = RouteStop(
-                stop=stop_assignment.destination_stop,
-                sequence=index,
-                pickup_passengers=[],
-                dropoff_passengers=[stop_assignment.request_id],
-                service_time=vehicle.config.alighting_time,
-                current_load=0  # Will be updated by _update_occupancies
-            )
-            stops.insert(index, new_stop)
+            # Only create new stop if it's after the pickup
+            if pickup_index == -1 or index > pickup_index:
+                new_stop = RouteStop(
+                    stop=stop_assignment.destination_stop,
+                    sequence=index,
+                    pickup_passengers=[],
+                    dropoff_passengers=[stop_assignment.request_id],
+                    service_time=vehicle.config.alighting_time,
+                    current_load=0  # Will be updated by _update_occupancies
+                )
+                stops.insert(index, new_stop)
+            else:
+                logger.warning(f"Prevented creating dropoff for {stop_assignment.request_id} at index {index} before pickup at {pickup_index}")
+        
         return stops
     
     async def _update_stop_timings(
@@ -563,10 +680,7 @@ class RouteService:
         """Validates timing constraints for pickup and dropoff"""
         try:
             # Check passenger arrival feasibility
-            passenger_arrival = (
-                stop_assignment.assignment_time +
-                timedelta(seconds=stop_assignment.walking_time_origin)
-            )
+            passenger_arrival = stop_assignment.expected_passenger_origin_stop_arrival_time
             
             # Validate waiting time
             waiting_time = (
@@ -677,7 +791,7 @@ class RouteService:
         Args:
             stop: Stop to check
             is_pickup: Whether this is a pickup stop
-            time_window: Time window for combining stops in seconds
+            expected_passenger_origin_stop_arrival_time: Expected arrival time of the passenger
             
         Returns:
             True if stop can be combined, False otherwise
@@ -687,14 +801,25 @@ class RouteService:
             
         if not stop.planned_arrival_time:
             return False
-            
-        current_time = self.sim_context.current_time
         
-        if is_pickup:
-            # For pickups, ensure that the passenger arrives before the vehicle's planned arrival time + its max dwell time
-            return expected_passenger_origin_stop_arrival_time < stop.planned_arrival_time + self.config.vehicle.max_dwell_time
+        if is_pickup and expected_passenger_origin_stop_arrival_time:
+            # For pickups, ensure that:
+            # 1. The passenger arrives before the vehicle's planned arrival + max dwell time
+            # 2. The vehicle doesn't arrive too early before the passenger
+            max_wait = timedelta(seconds=self.config.vehicle.max_dwell_time)
+            too_early_threshold = timedelta(minutes=5)  # Don't arrive more than 5 mins early
+            
+            passenger_arrival = expected_passenger_origin_stop_arrival_time
+            vehicle_arrival = stop.planned_arrival_time
+            
+            # Check if timing works for both passenger and vehicle
+            return (
+                passenger_arrival <= vehicle_arrival + max_wait and
+                vehicle_arrival - too_early_threshold <= passenger_arrival
+            )
         else:
-            # For dropoffs, be more lenient with timing
+            # For dropoffs, be more lenient with timing since we've already
+            # enforced pickup-before-dropoff order in _process_dropoff_stop
             return True
 
     def get_route_summary(self, route: Route) -> Dict[str, Any]:
@@ -762,3 +887,24 @@ class RouteService:
         except Exception as e:
             logger.error(f"Error estimating completion time: {str(e)}")
             return None
+
+    async def _get_segment_with_waypoints(
+        self,
+        origin: Location,
+        destination: Location
+    ) -> Dict[str, Any]:
+        """Get detailed path information including waypoints."""
+        path_info = await self.network_manager.get_path_info(
+            origin,
+            destination
+        )
+        
+        # Extract waypoint locations from path_info
+        waypoints = [w['location'] for w in path_info.get('waypoints', [])]
+        
+        return {
+            'distance': path_info['distance'],
+            'duration': path_info['duration'],
+            'waypoints': waypoints,
+            'path': path_info.get('path', [])
+        }

@@ -17,7 +17,6 @@ class Assignment(ModelBase):
     estimated_dropoff_time: datetime
     waiting_time_mins: float
     in_vehicle_time_mins: float
-    detour_time_mins: float
     assignment_score: float
     computation_time: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -42,7 +41,6 @@ class Assignment(ModelBase):
             "estimated_dropoff_time": self.estimated_dropoff_time.isoformat(),
             "waiting_time_mins": self.waiting_time_mins,
             "in_vehicle_time_mins": self.in_vehicle_time_mins,
-            "detour_time_mins": self.detour_time_mins,
             "assignment_score": self.assignment_score,
             "computation_time": self.computation_time,
             "metadata": self.metadata,
@@ -64,7 +62,6 @@ class Assignment(ModelBase):
             estimated_dropoff_time=datetime.fromisoformat(data["estimated_dropoff_time"]),
             waiting_time_mins=data["waiting_time_mins"],
             in_vehicle_time_mins=data["in_vehicle_time_mins"],
-            detour_time_mins=data["detour_time_mins"],
             assignment_score=data["assignment_score"],
             computation_time=data.get("computation_time", 0.0),
             metadata=data.get("metadata", {})

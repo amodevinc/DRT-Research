@@ -42,6 +42,7 @@ class SimulationContext:
         self.warm_up_duration = warm_up_duration
         self.event_manager = event_manager
         self.metrics_collector = metrics_collector
+        self.stop_coordinator = None
         self.status = SimulationStatus.WARMING_UP
         
         # Derived times

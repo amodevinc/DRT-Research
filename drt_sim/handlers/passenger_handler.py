@@ -12,6 +12,7 @@ from drt_sim.models.request import Request
 from drt_sim.config.config import ParameterSet
 from drt_sim.models.matching import Assignment
 from drt_sim.models.stop import StopAssignment
+from drt_sim.core.coordination.stop_coordinator import StopCoordinator
 import logging
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,13 @@ class PassengerHandler:
         self,
         config: ParameterSet,
         context: SimulationContext,
-        state_manager: StateManager
+        state_manager: StateManager,
+        stop_coordinator: StopCoordinator
     ):
         self.config = config
         self.context = context
         self.state_manager = state_manager
+        self.stop_coordinator = stop_coordinator
         self.service_thresholds = self._setup_service_thresholds()
         self.initialized = True
         
@@ -123,46 +126,15 @@ class PassengerHandler:
                     'current_location': event.data.get('location')
                 }
             )
-            request_id = passenger_state.request_id
-            request = self.state_manager.request_worker.get_request(request_id)
 
-            # Log walking time metric with MLflow
-            self.context.metrics_collector.log(
-                MetricName.PASSENGER_WALK_TIME_TO_ORIGIN_STOP,
-                event.data.get('walking_time'),
-                self.context.current_time,
-                {
-                    'passenger_id': event.passenger_id,
-                    'origin': request.origin.to_dict(),
-                    'origin_stop': passenger_state.assigned_origin_stop.location.to_dict(),
-                    'current_time': self.context.current_time.isoformat(),
-                    'request_id': request_id,
-                    'walking_distance': event.data.get('walking_distance', 0)
-                }
+            # Register arrival with coordinator
+            self.stop_coordinator.register_passenger_arrival(
+                stop_id=passenger_state.assigned_origin_stop.id,
+                passenger_id=passenger_state.id,
+                request_id=passenger_state.request_id,
+                arrival_time=self.context.current_time,
+                location=event.data.get('location')
             )
-            
-            # Get vehicle route to check if vehicle has arrived
-            vehicle_id = passenger_state.assigned_vehicle_id
-            vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
-            vehicle_route = self.state_manager.route_worker.get_route(vehicle.get_active_route_id())
-            
-            vehicle_at_pickup = False
-            if vehicle_route:
-                vehicle_current_location = vehicle.current_state.current_location
-                if vehicle_current_location == passenger_state.assigned_origin_stop.location:
-                    vehicle_at_pickup = True
-            
-            # Create boarding event if vehicle present, otherwise start waiting
-            if vehicle_at_pickup:
-                self._create_boarding_event(event.passenger_id, event.request_id)
-            else:
-                # Start waiting period and log the start of waiting
-                passenger_state = self.state_manager.passenger_worker.update_passenger_status(
-                    event.passenger_id,
-                    PassengerStatus.WAITING_FOR_VEHICLE,
-                    self.context.current_time,
-                    {'waiting_start_time': self.context.current_time}
-                )
             
             self.state_manager.commit_transaction()
             
@@ -172,62 +144,28 @@ class PassengerHandler:
             self._handle_passenger_error(event, str(e))
 
     def handle_boarding_completed(self, event: Event) -> None:
-        """Handle complete boarding process from waiting to in-vehicle"""
-        if not self.initialized:
-            raise RuntimeError("Handler not initialized")
-            
+        """Handle passenger boarding completed event."""
         try:
             self.state_manager.begin_transaction()
-            passenger_id = event.passenger_id
-            vehicle_id = event.vehicle_id
-            request_id = event.request_id
             
+            passenger_id = event.passenger_id
+            request_id = event.request_id
+            vehicle_id = event.vehicle_id
+            
+            logger.info(f"Processing boarding completion for passenger {passenger_id} on vehicle {vehicle_id}")
+
             passenger_state = self.state_manager.passenger_worker.get_passenger(passenger_id)
             if not passenger_state:
                 raise ValueError(f"No state found for passenger {passenger_id}")
                 
-            # Calculate and log wait time
-            if self.context.metrics_collector:
-                wait_time = (
-                    self.context.current_time - passenger_state.waiting_start_time
-                ).total_seconds() if passenger_state.waiting_start_time else 0
-                
-                self.context.metrics_collector.log(
-                    MetricName.PASSENGER_WAIT_TIME,
-                    wait_time,
-                    self.context.current_time,
-                    {
-                        'passenger_id': passenger_id,
-                        'vehicle_id': vehicle_id,
-                        'request_id': request_id,
-                        'timestamp': self.context.current_time.isoformat()
-                    }
-                )
-            
-            boarding_start_time = event.data.get('boarding_start_time')
-            actual_pickup_time = event.data.get('actual_pickup_time')
-            # Get passenger state and check wait time if applicable
-            if passenger_state.waiting_start_time:
-                wait_time = (self.context.current_time - passenger_state.waiting_start_time).total_seconds()
-                if wait_time > self.service_thresholds['max_wait_time']:
-                    self._create_service_violation_event(
-                        event.passenger_id,
-                        event.vehicle_id,
-                        'wait_time',
-                        wait_time
-                    )
-            boarding_end_time = self.context.current_time
-            # Update passenger state directly to in-vehicle
+            # Update passenger status
             self.state_manager.passenger_worker.update_passenger_status(
-                event.passenger_id,
+                passenger_id,
                 PassengerStatus.IN_VEHICLE,
                 self.context.current_time,
                 {
-                    'boarding_start_time': boarding_start_time,
-                    'boarding_end_time': boarding_end_time,
-                    'waiting_end_time': boarding_start_time,
-                    'in_vehicle_start_time': boarding_end_time,
-                    'actual_pickup_time': actual_pickup_time
+                    'boarding_end_time': self.context.current_time,
+                    'in_vehicle_start_time': self.context.current_time
                 }
             )
             
@@ -235,7 +173,7 @@ class PassengerHandler:
             
         except Exception as e:
             self.state_manager.rollback_transaction()
-            logger.error(f"Error handling boarding: {str(e)}")
+            logger.error(f"Error handling boarding: {traceback.format_exc()}")
             self._handle_passenger_error(event, str(e))
 
     def handle_alighting_completed(self, event: Event) -> None:
@@ -434,7 +372,7 @@ class PassengerHandler:
         )
         self.context.event_manager.publish_event(event)
 
-    def _create_boarding_event(self, passenger_id: str, request_id: str) -> None:
+    def _create_boarding_event(self, passenger_id: str, request_id: str, vehicle_id: str) -> None:
         """Create event for passenger boarding"""
         event = Event(
             event_type=EventType.PASSENGER_BOARDING_COMPLETED,
@@ -442,6 +380,7 @@ class PassengerHandler:
             timestamp=self.context.current_time + timedelta(seconds=self.config.vehicle.boarding_time),
             passenger_id=passenger_id,
             request_id=request_id,
+            vehicle_id=vehicle_id,
             data={'boarding_start_time': self.context.current_time, 'actual_pickup_time': self.context.current_time}
         )
         self.context.event_manager.publish_event(event)

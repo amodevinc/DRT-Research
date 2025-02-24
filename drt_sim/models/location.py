@@ -13,6 +13,11 @@ class Location(ModelBase):
     elevation: Optional[float] = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
+    def __str__(self) -> str:
+        """Provides a concise string representation of the location"""
+        elev = f"|elev={self.elevation:.1f}m" if self.elevation is not None else ""
+        return f"Loc[{self.id[:8]}|{self.lat:.5f},{self.lon:.5f}{elev}]"
+
     def __post_init__(self):
         """Initialize ModelBase attributes after dataclass initialization"""
         super().__init__()

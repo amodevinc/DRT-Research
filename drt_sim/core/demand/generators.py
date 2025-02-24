@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Tuple
 import random
 import pandas as pd
 from drt_sim.models.event import Event, EventType, EventPriority
@@ -10,7 +10,9 @@ from drt_sim.config.config import (
     DemandConfig, CSVDemandGeneratorConfig, RandomDemandGeneratorConfig
 )
 from drt_sim.models.location import haversine_distance
+from shapely.geometry import Point, Polygon
 import logging
+from math import cos, radians
 logger = logging.getLogger(__name__)
 
 class BaseDemandGenerator(ABC):
@@ -40,7 +42,6 @@ class BaseDemandGenerator(ABC):
         self.request_counter += 1
         distance = haversine_distance(origin, destination)
         if distance < 200:
-            logger.warning(f"Request {self.request_counter} has a distance of {distance} meters. It's too short to be a valid request, skipping.")
             return None
         return Request(
             id=f"R{self.request_counter}",
@@ -158,6 +159,48 @@ class CSVDemandGenerator(BaseDemandGenerator):
         self.dataframes = []
         self._load_data()
 
+    def _is_point_valid(self, lat: float, lon: float, service_area_polygon: List[Tuple[float, float]], buffer_distance: float = 100) -> bool:
+        """
+        Check if a point is within the service area polygon or within buffer_distance meters of it.
+        
+        Args:
+            lat: Latitude of the point
+            lon: Longitude of the point
+            service_area_polygon: List of (lat, lon) tuples defining the polygon
+            buffer_distance: Distance in meters to buffer the polygon
+            
+        Returns:
+            bool: True if point is valid, False otherwise
+        """
+        if not service_area_polygon:
+            return True
+            
+        try:
+            # Create point and polygon using (lon, lat) order for Shapely
+            point = Point(lon, lat)
+            polygon = Polygon([(lat, lon) for lat, lon in service_area_polygon])
+            
+            # Add some debug logging
+            
+            # If point is inside polygon, return True
+            if polygon.contains(point):
+                return True
+                
+            # If point is within buffer distance, return True
+            # Convert buffer distance from meters to degrees (approximate at the equator)
+            # Different scaling for lat/lon due to projection
+            lat_buffer = buffer_distance / 111000  # 1 degree lat ≈ 111km
+            lon_buffer = buffer_distance / (111000 * cos(radians(lat)))  # Adjust for latitude
+            buffered_polygon = polygon.buffer(max(lat_buffer, lon_buffer))
+            
+            result = buffered_polygon.contains(point)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in point validation: {str(e)}. Point: ({lat}, {lon})")
+            # If there's an error in validation, we'll be conservative and include the point
+            return True
+
     def _load_data(self):
         """Load and prepare data from multiple CSV files"""
         try:
@@ -180,10 +223,36 @@ class CSVDemandGenerator(BaseDemandGenerator):
                     end = pd.to_datetime(file_config.end_time, format=self.config.datetime_format)
                     df = df[df[self.config.columns["request_time"]] <= end]
                 
-                # Apply region filter if specified
-                if file_config.region:
-                    # Implement region filtering based on your needs
-                    pass
+                # Apply service area polygon filter if specified
+                service_area = self.config.service_area_polygon
+                if service_area:
+                    # Create mask for valid pickup locations
+                    pickup_mask = df.apply(
+                        lambda row: self._is_point_valid(
+                            row[self.config.columns["pickup_lat"]],
+                            row[self.config.columns["pickup_lon"]],
+                            service_area
+                        ),
+                        axis=1
+                    )
+                    
+                    # Create mask for valid dropoff locations
+                    dropoff_mask = df.apply(
+                        lambda row: self._is_point_valid(
+                            row[self.config.columns["dropoff_lat"]],
+                            row[self.config.columns["dropoff_lon"]],
+                            service_area
+                        ),
+                        axis=1
+                    )
+                    
+                    # Filter dataframe to only include rows where both pickup and dropoff are valid
+                    df = df[pickup_mask & dropoff_mask]
+                    
+                    logger.info(
+                        f"Filtered {len(pickup_mask) - len(df)} requests outside service area "
+                        f"for file {file_config.file_path}"
+                    )
                 
                 # Store weight with the dataframe
                 self.dataframes.append((df, file_config.weight))

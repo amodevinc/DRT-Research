@@ -78,6 +78,7 @@ class EventType(Enum):
     PASSENGER_WALKING_TO_DESTINATION = "passenger.walking.destination.started"
     PASSENGER_ARRIVED_DESTINATION = "passenger.walking.destination.completed"
     PASSENGER_JOURNEY_COMPLETED = "passenger.journey.completed"
+    CHECK_BOARDING_STATUS = "passenger.boarding.check_status"
     
     # Service Level Events
     EXCESS_WAIT_TIME = "passenger.wait_time.exceeded"
@@ -95,7 +96,6 @@ class EventType(Enum):
     VEHICLE_ALIGHTING_COMPLETED = "vehicle.alighting.completed"
     VEHICLE_IDLE = "vehicle.idle"
     VEHICLE_BUSY = "vehicle.busy"
-    VEHICLE_ACTIVE_ROUTE_UPDATE = "vehicle.active.route.update"
     VEHICLE_AT_CAPACITY = "vehicle.at_capacity"
     VEHICLE_DWELL_TIME_START = "vehicle.dwell.started"
     VEHICLE_DWELL_TIME_VIOLATION = "vehicle.dwell.violation"
@@ -106,7 +106,9 @@ class EventType(Enum):
     VEHICLE_WAIT_TIMEOUT = "vehicle.wait.timeout"
     VEHICLE_REBALANCING_REQUIRED = "vehicle.rebalancing.required"
     VEHICLE_SERVICE_KPI_VIOLATION = "vehicle.service.kpi.violation"
-
+    VEHICLE_POSITION_UPDATE = "vehicle.position.update"
+    VEHICLE_STOP_OPERATIONS_COMPLETED = "vehicle.stop.operations.completed"
+    
     # Route Management
     ROUTE_CREATED = "route.created"
     ROUTE_ACTIVATION = "route.activation"
@@ -115,6 +117,7 @@ class EventType(Enum):
     ROUTE_UPDATE_REQUEST = "route.update.request"
     ROUTE_UPDATED = "route.updated"
     ROUTE_COMPLETED = "route.completed"
+    ROUTE_SEGMENT_READY_FOR_COMPLETION = "route.segment.ready.for.completion"
 
     # Optimization Events
     SCHEDULED_GLOBAL_OPTIMIZATION = "optimization.global.scheduled"

@@ -87,7 +87,7 @@ class RequestHandler:
                 self._create_request_validation_failed_event(request, validation_result)
             
             self.state_manager.commit_transaction()
-            logger.info(f"Processed new request {request.id}")
+            logger.debug(f"Processed new request {request.id}")
             
         except Exception as e:
             self.state_manager.rollback_transaction()
@@ -160,29 +160,13 @@ class RequestHandler:
             self._handle_request_error(event, str(e))
 
     def handle_request_assigned(self, event: Event) -> None:
-        """Handle successful request assignment to vehicle."""
+        """Handle successful request assignment to vehicle. Only handles non-critical updates since critical state is already updated."""
         try:
-            self.state_manager.begin_transaction()
             assignment: Assignment | None = event.data.get('assignment', None)
             if not assignment:
                 raise ValueError("Assignment not found in event data")
             
-            request = self.state_manager.request_worker.get_request(assignment.request_id)
-            if not request:
-                raise ValueError(f"Request {assignment.request_id} not found")
-            
-            self.state_manager.request_worker.update_request_status(
-                request.id,
-                RequestStatus.ASSIGNED,
-            )
-            
-            # Create passenger journey start event
-            self._create_passenger_journey_start_event(assignment)
-            self._create_update_route_request_event(assignment)
-            
-            self.state_manager.commit_transaction()
-            
-            # Calculate and log assignment delay
+            # Calculate and log assignment metrics
             if self.context.metrics_collector:
                 stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
                 self.context.metrics_collector.log(
@@ -193,16 +177,19 @@ class RequestHandler:
                         'request_id': assignment.request_id,
                         'vehicle_id': assignment.vehicle_id,
                         'assignment_time': self.context.current_time.isoformat(),
-                        'request_origin': request.origin.to_dict(),
-                        'request_destination': request.destination.to_dict(),
+                        'request_origin': stop_assignment.origin_stop.location.to_dict(),
+                        'request_destination': stop_assignment.destination_stop.location.to_dict(),
                         'origin_stop': stop_assignment.origin_stop.location.to_dict(),
-                        'destination_stop': stop_assignment.destination_stop.location.to_dict()
+                        'destination_stop': stop_assignment.destination_stop.location.to_dict(),
+                        'estimated_pickup_time': assignment.estimated_pickup_time.isoformat(),
+                        'estimated_dropoff_time': assignment.estimated_dropoff_time.isoformat(),
+                        'waiting_time_mins': assignment.waiting_time_mins,
+                        'in_vehicle_time_mins': assignment.in_vehicle_time_mins
                     }
                 )
             
         except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling request assignment: {str(e)}\n{traceback.format_exc()}")
+            logger.error(f"Error handling request assignment: {str(e)}")
             self._handle_request_error(event, str(e))
 
     def handle_request_cancelled(self, event: Event) -> None:
@@ -366,7 +353,7 @@ class RequestHandler:
                 'destination': request.destination.to_dict(),
             }
         )
-        logger.info(f"Creating DETERMINE_VIRTUAL_STOPS event for request {request.id}")
+        logger.debug(f"Creating DETERMINE_VIRTUAL_STOPS event for request {request.id}")
         self.context.event_manager.publish_event(event)
 
     def _create_passenger_journey_start_event(self, assignment: Assignment) -> None:

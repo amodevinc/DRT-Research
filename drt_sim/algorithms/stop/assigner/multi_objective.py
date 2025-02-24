@@ -88,7 +88,7 @@ class MultiObjectiveStopAssigner(StopAssigner):
         origin_candidates = sorted(origin_candidates, key=lambda x: x[1])[:3]
         dest_candidates = sorted(dest_candidates, key=lambda x: x[1])[:3]
 
-        if not origin_candidates or not dest_candidates:
+        if not origin_candidates or not dest_candidates or len(origin_candidates) == 0 or len(dest_candidates) == 0:
             raise ValueError("No viable stop combinations found within walking distance")
 
         # Extract just the stops for scoring
@@ -101,10 +101,7 @@ class MultiObjectiveStopAssigner(StopAssigner):
             self._score_stops_batch(request.destination, filtered_dest_stops)
         )
 
-        logger.info(f"Origin scores: {origin_scores}")
-        logger.info(f"Destination scores: {dest_scores}")
-        
-        if not origin_scores or not dest_scores:
+        if not origin_scores or not dest_scores or len(origin_scores) == 0 or len(dest_scores) == 0:
             raise ValueError("No viable stop combinations found")
         
         # Sort scores in thread pool
@@ -221,6 +218,9 @@ class MultiObjectiveStopAssigner(StopAssigner):
         
         if not active_vehicles:
             return 0.0
+        
+        logger.info(f"Active vehicles' locations: {[vehicle.current_state.current_location for vehicle in active_vehicles]}")
+        logger.info(f"Active vehicles' locations type: {[type(vehicle.current_state.current_location) for vehicle in active_vehicles]}")
         
         # Calculate distances concurrently
         distances = await asyncio.gather(*[

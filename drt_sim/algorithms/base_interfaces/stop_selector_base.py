@@ -89,7 +89,7 @@ class StopSelector(ABC):
 
     @abstractmethod
     async def create_virtual_stops_for_request(self,
-                                       request: Request) -> Tuple[Stop, Stop]:
+                                       request: Request) -> Tuple[Tuple[Stop, float], Tuple[Stop, float]]:
         """
         Create optimally placed virtual stops for a specific request when no existing stops are viable.
         """

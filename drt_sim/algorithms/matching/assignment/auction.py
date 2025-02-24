@@ -34,10 +34,14 @@ class AuctionAssigner:
         self.network_manager = network_manager
         self.state_manager = state_manager
         
-        # Configuration parameters
-        self.max_waiting_time = config.max_waiting_time
-        self.max_detour_ratio = config.max_detour_ratio
-        self.cost_weights = config.weights
+        # Configuration parameters from constraints
+        self.max_waiting_time = config.constraints["max_waiting_time_mins"]
+        self.max_detour_time = config.constraints["max_detour_time_mins"]
+        self.max_vehicle_access_time = config.constraints["max_vehicle_access_time_mins"]
+        self.max_capacity_utilization = config.constraints["max_capacity_utilization"]
+        
+        # Configuration parameters from weights
+        self.weights = config.weights
         self.reserve_price = config.reserve_price if config.reserve_price else float('inf')
 
     def assign_requests(
@@ -156,7 +160,7 @@ class AuctionAssigner:
         return (
             waiting_time <= self.max_waiting_time and
             (direct_time == 0 or
-             (direct_time + detour_time) / direct_time <= self.max_detour_ratio)
+             (direct_time + detour_time) / direct_time <= self.max_detour_time)
         )
 
     def _calculate_cost(
@@ -167,13 +171,13 @@ class AuctionAssigner:
     ) -> float:
         """Calculate bid cost using weighted sum of metrics."""
         normalized_waiting = waiting_time / self.max_waiting_time
-        normalized_detour = detour_time / (self.max_detour_ratio * 3600)
+        normalized_detour = detour_time / (self.max_detour_time * 60)
         normalized_distance = extra_distance / 5000  # Assuming 5km reference
         
         cost = (
-            self.cost_weights['waiting_time'] * normalized_waiting +
-            self.cost_weights['detour_time'] * normalized_detour +
-            self.cost_weights['distance'] * normalized_distance
+            self.weights['waiting_time'] * normalized_waiting +
+            self.weights['detour_time'] * normalized_detour +
+            self.weights['distance'] * normalized_distance
         )
         
         return cost

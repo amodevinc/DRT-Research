@@ -285,3 +285,67 @@ class EventManager:
         self.handlers.clear()
         self.validation_rules.clear()
         self.error_handlers.clear()
+
+    def cancel_event(self, event_id: str) -> bool:
+        """
+        Cancel a pending event by its ID.
+        
+        Args:
+            event_id: The ID of the event to cancel
+            
+        Returns:
+            bool: True if event was found and canceled, False otherwise
+        """
+        try:
+            logger.info(f"Attempting to cancel event with ID: {event_id}")
+            
+            # Convert queue to list to find and remove event
+            events = list(self.event_queue.queue)
+            logger.debug(f"Current event queue size: {len(events)}")
+            
+            # Find event with matching ID
+            event_to_cancel = None
+            for event in events:
+                if event.id == event_id:
+                    event_to_cancel = event
+                    break
+            
+            if not event_to_cancel:
+                logger.warning(f"No pending event found with ID {event_id}")
+                return False
+                
+            # Log event details before canceling
+            logger.info(f"Found event to cancel:")
+            logger.info(f"  Event Type: {event_to_cancel.event_type.value}")
+            logger.info(f"  Timestamp: {event_to_cancel.timestamp}")
+            logger.info(f"  Priority: {event_to_cancel.priority}")
+            logger.info(f"  Vehicle ID: {event_to_cancel.vehicle_id if event_to_cancel.vehicle_id else 'None'}")
+            logger.info(f"  Request ID: {event_to_cancel.request_id if event_to_cancel.request_id else 'None'}")
+            logger.info(f"  Passenger ID: {event_to_cancel.passenger_id if event_to_cancel.passenger_id else 'None'}")
+            logger.info(f"  Data: {dict(event_to_cancel.data)}")
+            
+            # Remove event from queue
+            events.remove(event_to_cancel)
+            logger.debug(f"Removed event from queue. New queue size: {len(events)}")
+            
+            # Clear and rebuild queue
+            while not self.event_queue.empty():
+                self.event_queue.get()
+            
+            for event in events:
+                self.event_queue.put(event)
+            
+            # Create canceled event for history
+            canceled_event = self._create_status_updated_event(
+                event_to_cancel,
+                EventStatus.CANCELLED,
+                "Event explicitly canceled"
+            )
+            self.event_history.append(canceled_event)
+            
+            logger.info(f"Successfully canceled event {event_id} of type {event_to_cancel.event_type.value}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error canceling event {event_id}: {str(e)}\n{traceback.format_exc()}")
+            return False

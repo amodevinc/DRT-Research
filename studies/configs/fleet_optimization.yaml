@@ -62,6 +62,17 @@ base_config:
       files:
         - file_path: "data/demands/base_real_time.csv"
           weight: 1.0
+      service_area_polygon:
+        - [126.827032, 37.198957]
+        - [126.822082, 37.203549]
+        - [126.818869, 37.206509]
+        - [126.817734, 37.209793]
+        - [126.832442, 37.216226]
+        - [126.833297, 37.209711]
+        - [126.836499, 37.210003]
+        - [126.838809, 37.206861]
+        - [126.844007, 37.201823]
+        - [126.828538, 37.198760]
       columns:
         request_time: "time"
         pickup_lat: "o_y"
@@ -119,12 +130,18 @@ parameter_sets:
       assignment_method: "insertion"
       optimization_method: "none"
       assignment_config:
-        max_waiting_time_mins: 10
-        max_detour_time_mins: 15
+        constraints:
+          max_waiting_time_mins: 15.0
+          max_in_vehicle_time_mins: 30.0
+          max_vehicle_access_time_mins: 15.0
+          max_existing_passenger_delay_mins: 10.0
+          max_distance_meters: 10000.0
+          max_total_journey_time_mins: 45.0
         weights:
-          waiting_time: 0.4
-          detour_time: 0.3
-          distance: 0.3
+          passenger_waiting_time: 0.25
+          passenger_in_vehicle_time: 0.30
+          existing_passenger_delay: 0.20
+          distance: 0.10
   
   medium_fleet:
     name: "medium_fleet"
@@ -142,12 +159,18 @@ parameter_sets:
       assignment_method: "insertion"
       optimization_method: "none"
       assignment_config:
-        max_waiting_time_mins: 10
-        max_detour_time_mins: 15
+        constraints:
+          max_waiting_time_mins: 15.0
+          max_in_vehicle_time_mins: 30.0
+          max_vehicle_access_time_mins: 15.0
+          max_existing_passenger_delay_mins: 10.0
+          max_distance_meters: 10000.0
+          max_capacity_utilization: 0.8
         weights:
-          waiting_time: 0.4
-          detour_time: 0.3
-          distance: 0.3
+          passenger_waiting_time: 0.25
+          passenger_in_vehicle_time: 0.30
+          existing_passenger_delay: 0.20
+          distance: 0.10
   
   large_fleet:
     name: "large_fleet"
@@ -165,9 +188,14 @@ parameter_sets:
       assignment_method: "insertion"
       optimization_method: "none"
       assignment_config:
-        max_waiting_time_mins: 10
-        max_detour_time_mins: 15
+        constraints:
+          max_waiting_time_mins: 15.0
+          max_in_vehicle_time_mins: 30.0
+          max_vehicle_access_time_mins: 15.0
+          max_existing_passenger_delay_mins: 10.0
+          max_distance_meters: 10000.0
         weights:
-          waiting_time: 0.4
-          detour_time: 0.3
-          distance: 0.3
+          passenger_waiting_time: 0.20
+          passenger_in_vehicle_time: 0.35
+          existing_passenger_delay: 0.20
+          distance: 0.10

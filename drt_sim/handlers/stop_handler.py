@@ -82,21 +82,14 @@ class StopHandler:
 
     def _init_stop_selector(self) -> StopSelector:
         """Initialize stop selector based on algorithm configuration"""
-        logger.info("Initializing stop selector")
-        logger.info(f"Algorithm config: {self.config.algorithm}")
-        
         selector_params = self.config.algorithm.stop_selector_params
-        logger.info(f"Stop selector params: {selector_params}")
         
         if selector_params is None:
             raise ValueError("Stop selector parameters are missing")
             
-        logger.info("Creating StopSelectorConfig")
         selector_config = StopSelectorConfig(**selector_params)
-        logger.info(f"Created selector config: {selector_config}")
 
         if self.config.algorithm.stop_selector == "coverage_based":
-            logger.info("Initializing CoverageBasedStopSelector")
             return CoverageBasedStopSelector(
                 sim_context=self.context,
                 config=selector_config,
@@ -105,7 +98,6 @@ class StopHandler:
                 visualization_manager=self.visualization_manager
             )
         elif self.config.algorithm.stop_selector == "demand_based":
-            logger.info("Initializing DemandBasedStopSelector")
             return DemandBasedStopSelector(
                 sim_context=self.context,
                 config=selector_config,
@@ -117,21 +109,15 @@ class StopHandler:
 
     def _init_stop_assigner(self) -> StopAssigner:
         """Initialize stop assigner based on algorithm configuration"""
-        logger.info("Initializing stop assigner")
-        logger.info(f"Algorithm config: {self.config.algorithm}")
         
         assigner_params = self.config.algorithm.stop_assigner_params
-        logger.info(f"Stop assigner params: {assigner_params}")
         
         if assigner_params is None:
             raise ValueError("Stop assigner parameters are missing")
             
-        logger.info("Creating StopAssignerConfig")
         assigner_config = StopAssignerConfig(**assigner_params)
-        logger.info(f"Created assigner config: {assigner_config}")
 
         if self.config.algorithm.stop_assigner == "nearest":
-            logger.info("Initializing NearestStopAssigner")
             return NearestStopAssigner(
                 sim_context=self.context,
                 config=assigner_config,
@@ -139,7 +125,6 @@ class StopHandler:
                 state_manager=self.state_manager,
             )
         elif self.config.algorithm.stop_assigner == "multi_objective":
-            logger.info("Initializing MultiObjectiveStopAssigner")
             return MultiObjectiveStopAssigner(
                 sim_context=self.context,
                 config=assigner_config,
@@ -147,7 +132,6 @@ class StopHandler:
                 state_manager=self.state_manager,
             )
         elif self.config.algorithm.stop_assigner == "accessibility":
-            logger.info("Initializing AccessibilityFocusedAssigner")
             return AccessibilityFocusedAssigner(
                 sim_context=self.context,
                 config=assigner_config,
@@ -171,6 +155,7 @@ class StopHandler:
         """Handle periodic stop selection check"""
         try:
             self.state_manager.begin_transaction()
+            logger.debug(f"Handling stop selection tick at {self.context.current_time}")
             #TODO: Implement stop selection for background selection
             self.state_manager.commit_transaction()
             
@@ -247,7 +232,7 @@ class StopHandler:
     async def handle_determine_virtual_stops(self, event: Event) -> None:
         """Handle determination of optimal virtual stops for pickup and dropoff"""
         try:
-            logger.info(f"Handling determine virtual stops for request {event.request_id}")
+            logger.debug(f"Handling determine virtual stops for request {event.request_id}")
             self.state_manager.begin_transaction()
             
             request = self.state_manager.request_worker.get_request(event.request_id)
@@ -263,16 +248,24 @@ class StopHandler:
                     request=request,
                     available_stops=available_stops,
                 )
-                logger.info("Assignment from stop assigner: %s", assignment)
+                logger.debug("Assignment from stop assigner: %s", assignment)
                 
                 # Add normal assignment to state
                 self.state_manager.stop_assignment_worker.add_assignment(assignment)
                 
             except ValueError as e:
                 # If no viable stops found, create virtual stops using the selector
-                origin_stop, dest_stop = await self.stop_selector.create_virtual_stops_for_request(
+                (origin_stop, origin_distance), (dest_stop, dest_distance) = await self.stop_selector.create_virtual_stops_for_request(
                     request=request
                 )
+
+                if origin_distance == float('inf'):
+                    self._create_rejected_event(request, "no_viable_origin_stops")
+                    return
+                
+                if dest_distance == float('inf'):
+                    self._create_rejected_event(request, "no_viable_destination_stops")
+                    return
                 
                 # Add virtual stops to state
                 # Verify stops don't already exist
@@ -282,31 +275,20 @@ class StopHandler:
                     self.state_manager.stop_worker.create_new_stop(dest_stop)
 
 
-                # Calculate walking distances and times
-                distance_to_origin_stop = await self.network_manager.calculate_distance(
-                    request.origin, 
-                    origin_stop.location, 
-                    network_type='walk'
-                )
-                distance_from_destination_stop = await self.network_manager.calculate_distance(
-                    dest_stop.location, 
-                    request.destination, 
-                    network_type='walk'
-                )
                 walking_speed = self.config.network.walking_speed
-                walking_time_to_origin_stop = distance_to_origin_stop / walking_speed
-                walking_time_from_destination_stop = distance_from_destination_stop / walking_speed
+                walking_time_to_origin_stop = origin_distance / walking_speed
+                walking_time_from_destination_stop = dest_distance / walking_speed
                 
                 # Create assignment with virtual stops
                 assignment = StopAssignment(
                     request_id=request.id,
                     origin_stop=origin_stop,
                     destination_stop=dest_stop,
-                    walking_distance_origin=distance_to_origin_stop,
-                    walking_distance_destination=distance_from_destination_stop,
+                    walking_distance_origin=origin_distance,
+                    walking_distance_destination=dest_distance,
                     walking_time_origin=walking_time_to_origin_stop,
                     walking_time_destination=walking_time_from_destination_stop,
-                    expected_passenger_origin_stop_arrival_time = self.context.current_time + timedelta(walking_time_to_origin_stop),
+                    expected_passenger_origin_stop_arrival_time = self.context.current_time + timedelta(seconds=walking_time_to_origin_stop),
                     total_score=1.0,
                     alternative_origins=[],
                     alternative_destinations=[],
@@ -481,6 +463,18 @@ class StopHandler:
             data={
                 'stop_assignment_id': stop_assignment_id
             }
+        )
+        self.context.event_manager.publish_event(event)
+    
+    def _create_rejected_event(self, request: Request, reason: str) -> None:
+        """Create event to reject request"""
+        # Create matching failed event
+        event = Event(
+            event_type=EventType.REQUEST_REJECTED,
+            timestamp=self.context.current_time,
+            priority=EventPriority.HIGH,
+            request_id=request.id,
+            data={'reason': reason}
         )
         self.context.event_manager.publish_event(event)
 
