@@ -406,7 +406,25 @@ class AlgorithmConfig(DataclassYAMLMixin):
             
         logger.info(f"Final stop_selector_params: {self.stop_selector_params}")
         logger.info(f"Final stop_assigner_params: {self.stop_assigner_params}")
-
+        
+@dataclass
+class SUMOConfig(DataclassYAMLMixin):
+    """Configuration for SUMO integration"""
+    enabled: bool = False
+    sumo_binary: str = "sumo-gui"  # Use "sumo" for headless mode
+    network_file: Optional[str] = None
+    route_file: Optional[str] = None
+    additional_files: List[str] = field(default_factory=list)
+    gui_settings_file: Optional[str] = None
+    step_length: float = 1.0
+    begin_time: float = 0.0
+    end_time: float = 86400.0
+    use_geo_coordinates: bool = True
+    port: int = 8813
+    seed: int = 42
+    auto_convert_network: bool = True
+    visualization: bool = True
+    custom_params: Dict[str, Any] = field(default_factory=dict)
 @dataclass
 class SimulationConfig(DataclassYAMLMixin):
     start_time: str = "2025-01-01 07:00:00"
@@ -418,6 +436,12 @@ class SimulationConfig(DataclassYAMLMixin):
     time_scale_factor: float = 1.0
     save_state: bool = True
     save_interval: int = 3600
+    sumo: SUMOConfig = field(default_factory=SUMOConfig)
+
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        if isinstance(self.sumo, dict):
+            self.sumo = SUMOConfig(**self.sumo)
 
 @dataclass
 class ParameterSweepConfig(DataclassYAMLMixin):
@@ -598,3 +622,4 @@ class StudyConfig(DataclassYAMLMixin):
             else:
                 source[key] = value
         return source
+

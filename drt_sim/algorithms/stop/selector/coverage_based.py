@@ -333,7 +333,6 @@ class CoverageBasedStopSelector(StopSelector):
                 current_load=0,
                 metadata={
                     'virtual': True,
-                    'request_id': request.id,
                     'creation_time': self.sim_context.current_time,
                     'type': 'origin',
                     'selection_method': 'coverage_based',
@@ -361,7 +360,6 @@ class CoverageBasedStopSelector(StopSelector):
                 current_load=0,
                 metadata={
                     'virtual': True,
-                    'request_id': request.id,
                     'creation_time': self.sim_context.current_time,
                     'type': 'destination',
                     'selection_method': 'coverage_based',

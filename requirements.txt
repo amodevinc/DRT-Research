@@ -15,3 +15,15 @@ ray
 statsmodels
 kaleido
 contextily
+
+# Network and spatial analysis
+networkx>=2.8.0
+geopandas>=0.12.0
+shapely>=2.0.0
+pyproj>=3.4.0
+osmnx>=1.2.0  # For OpenStreetMap data
+
+# SUMO integration
+# Note: SUMO itself should be installed separately following the instructions in docs/sumo_integration.md
+traci>=1.15.0  # TraCI interface for SUMO
+sumolib>=1.15.0  # SUMO Python library

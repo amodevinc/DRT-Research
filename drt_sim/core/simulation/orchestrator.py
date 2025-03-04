@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import logging
 from pathlib import Path
+import asyncio
 
 from drt_sim.models.state import SimulationStatus
 from drt_sim.core.monitoring.metrics.collector import MetricsCollector
@@ -25,6 +26,7 @@ from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.event import EventType
 from drt_sim.network.manager import NetworkManager
 from drt_sim.models.base import SimulationEncoder
+from drt_sim.integration.traffic_sim_integration import SUMOIntegration, SUMOConfig
 import traceback
 import json
 import logging
@@ -72,12 +74,13 @@ class SimulationOrchestrator:
         self.user_profile_manager: Optional[UserProfileManager] = None
         self.route_service: Optional[RouteService] = None
         self.visualization_manager: Optional[VisualizationManager] = None
+        self.sumo_integration: Optional[SUMOIntegration] = None
         
         # Tracking
         self.initialized: bool = False
         self.step_count: int = 0
         
-    def initialize(self) -> None:
+    async def initialize(self) -> None:
         """Initialize all simulation components and prepare for execution."""
         if self.initialized:
             logger.warning("Simulation already initialized")
@@ -117,6 +120,12 @@ class SimulationOrchestrator:
             # Initialize user profile manager
             self.user_profile_manager = UserProfileManager()
 
+            # Initialize SUMO integration if enabled
+            if self.sim_cfg.sumo.enabled:
+                logger.info("Initializing SUMO integration")
+                self.sumo_integration = SUMOIntegration(config=self.sim_cfg.sumo)
+                await self.sumo_integration.initialize(drt_network_config=self.cfg.network)
+
             # Initialize simulation engine last
             self.engine = SimulationEngine(
                 context=self.context,
@@ -144,6 +153,10 @@ class SimulationOrchestrator:
 
             # Schedule all demand before starting simulation
             self._schedule_all_demand()
+
+            # Start SUMO if enabled
+            if self.sumo_integration and self.sim_cfg.sumo.enabled:
+                await self.sumo_integration.start()
 
             self.initialized = True
             logger.info("Simulation initialization completed successfully")
@@ -317,6 +330,11 @@ class SimulationOrchestrator:
             # Execute simulation step
             simulation_step = await self.engine.step()
             
+            # Synchronize with SUMO if enabled
+            if self.sumo_integration and self.sim_cfg.sumo.enabled:
+                await self._synchronize_with_sumo()
+                await self.sumo_integration.step(self.sim_cfg.time_step)
+            
             # Log step execution time
             step_duration = (datetime.now() - step_start_time).total_seconds()
             # if self.metrics_collector:
@@ -334,6 +352,36 @@ class SimulationOrchestrator:
         except Exception as e:
             logger.error(f"Error during simulation step: {str(e)}")
             raise
+
+    async def _synchronize_with_sumo(self) -> None:
+        """Synchronize DRT simulation state with SUMO."""
+        if not self.sumo_integration or not self.state_manager:
+            return
+            
+        try:
+            # Get current vehicle states
+            state = self.state_manager.get_state()
+            if not hasattr(state, 'vehicles') or not state.vehicles:
+                return
+                
+            # Update each vehicle in SUMO
+            for vehicle_id, vehicle in state.vehicles.items():
+                if vehicle.route and vehicle.route.current_segment:
+                    # Update vehicle position in SUMO
+                    if vehicle.position:
+                        await self.sumo_integration.update_vehicle_position(
+                            vehicle_id=vehicle_id,
+                            position=vehicle.position
+                        )
+                    
+                    # If vehicle has a new route, update it in SUMO
+                    if vehicle.route and vehicle.route.waypoints:
+                        await self.sumo_integration.update_vehicle_route(
+                            vehicle_id=vehicle_id,
+                            route=vehicle.route.waypoints
+                        )
+        except Exception as e:
+            logger.error(f"Error synchronizing with SUMO: {str(e)}")
 
     def _schedule_all_demand(self) -> None:
         """Schedule all demand events for the entire simulation period."""
@@ -396,6 +444,10 @@ class SimulationOrchestrator:
         """Clean up simulation resources."""
         try:
             if self.initialized:
+                # Clean up SUMO integration if enabled
+                if self.sumo_integration:
+                    asyncio.create_task(self.sumo_integration.stop())
+                
                 # Clean up components
                 if self.state_manager:
                     self.state_manager.cleanup()

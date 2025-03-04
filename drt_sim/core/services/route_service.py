@@ -321,7 +321,7 @@ class RouteService:
             # Validate route consistency
             is_valid, error_msg = new_route.validate_passenger_consistency()
             if not is_valid:
-                logger.warning(f"Route is not valid, not being considered for assignment. Error: {error_msg}")
+                logger.warning(f"Route is not valid, not being considered for assignment. {error_msg}")
                 return None
                 
             logger.debug(f"Successfully modified route for vehicle {vehicle.id}: total_distance={new_route.total_distance}m, total_duration={new_route.total_duration}s")

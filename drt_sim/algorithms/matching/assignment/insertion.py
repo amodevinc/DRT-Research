@@ -217,7 +217,7 @@ class InsertionAssigner:
             
             logger.info(f"Vehicle {vehicle.id} has existing route, evaluating insertion into current route")
             
-            first_valid_index = self._get_first_valid_index(current_route)
+            first_valid_index = self._get_first_valid_index(current_route, vehicle)
             max_stops = len(current_route.stops)
             best_insertion = None
             min_cost = float('inf')
@@ -257,7 +257,6 @@ class InsertionAssigner:
                     )
 
                     if not new_route:
-                        logger.warning(f"Failed to create modified route for vehicle {vehicle.id} at pickup_idx={pickup_idx}, dropoff_idx={dropoff_idx}")
                         route_creation_failed = True
                         continue
 
@@ -302,7 +301,8 @@ class InsertionAssigner:
                         new_route=new_route,
                         current_route=current_route,
                         stop_assignment=stop_assignment,
-                        pickup_idx=pickup_idx
+                        pickup_idx=pickup_idx,
+                        vehicle=vehicle
                     )
                     
                     # Calculate total weighted cost
@@ -408,71 +408,118 @@ class InsertionAssigner:
         logger.debug(f"New route details: stops={len(new_route.stops)}, duration={new_route.total_duration}, "
                   f"distance={new_route.total_distance}")
 
+        # Validate pickup index
+        if not new_route.stops or pickup_idx >= len(new_route.stops):
+            logger.error(f"Invalid pickup index {pickup_idx} for route with {len(new_route.stops)} stops")
+            return {
+                "invalid_index": {
+                    "actual": pickup_idx,
+                    "max_valid": len(new_route.stops) - 1 if new_route.stops else -1,
+                    "reason": "Pickup index out of range"
+                }
+            }
+
         # Add detailed constraint checking logs
-        vehicle_access_time = (
-            new_route.stops[pickup_idx].planned_arrival_time - 
-            self.sim_context.current_time
-        ).total_seconds() / 60
-        logger.debug(f"Vehicle access time: {vehicle_access_time:.2f} min (limit: {constraints['max_vehicle_access_time_secs'] / 60} mins)")
-        if vehicle_access_time > constraints["max_vehicle_access_time_secs"]:
+        try:
+            vehicle_access_time = (
+                new_route.stops[pickup_idx].planned_arrival_time - 
+                self.sim_context.current_time
+            ).total_seconds() / 60
+            logger.debug(f"Vehicle access time: {vehicle_access_time:.2f} min (limit: {constraints['max_vehicle_access_time_secs'] / 60} mins)")
+            if vehicle_access_time > constraints["max_vehicle_access_time_secs"]:
+                violations["vehicle_access_time"] = {
+                    "actual": vehicle_access_time,
+                    "limit": constraints["max_vehicle_access_time_secs"]
+                }
+        except Exception as e:
+            logger.error(f"Error calculating vehicle access time: {str(e)}")
             violations["vehicle_access_time"] = {
-                "actual": vehicle_access_time,
-                "limit": constraints["max_vehicle_access_time_secs"]
+                "error": str(e),
+                "reason": "Failed to calculate vehicle access time"
             }
 
         # 2. Check passenger waiting time
-        passenger_wait_time = (
-            new_route.stops[pickup_idx].planned_arrival_time - 
-            stop_assignment.expected_passenger_origin_stop_arrival_time
-        ).total_seconds() / 60
-        logger.debug(f"Passenger wait time: {passenger_wait_time:.2f} min (limit: {constraints['max_waiting_time_secs'] / 60} mins)")
-        if passenger_wait_time > constraints["max_waiting_time_secs"]:
+        try:
+            passenger_wait_time = (
+                new_route.stops[pickup_idx].planned_arrival_time - 
+                stop_assignment.expected_passenger_origin_stop_arrival_time
+            ).total_seconds() / 60
+            logger.debug(f"Passenger wait time: {passenger_wait_time:.2f} min (limit: {constraints['max_waiting_time_secs'] / 60} mins)")
+            if passenger_wait_time > constraints["max_waiting_time_secs"]:
+                violations["waiting_time"] = {
+                    "actual": passenger_wait_time,
+                    "limit": constraints["max_waiting_time_secs"]
+                }
+        except Exception as e:
+            logger.error(f"Error calculating passenger wait time: {str(e)}")
             violations["waiting_time"] = {
-                "actual": passenger_wait_time,
-                "limit": constraints["max_waiting_time_secs"]
+                "error": str(e),
+                "reason": "Failed to calculate passenger wait time"
             }
 
         # 3. Check in-vehicle time for new passenger
-        # Find the dropoff stop index
-        dropoff_idx = -1
-        for i, stop in enumerate(new_route.stops):
-            if stop_assignment.request_id in stop.dropoff_passengers:
-                dropoff_idx = i
-                break
-                
-        if dropoff_idx == -1 or dropoff_idx <= pickup_idx:
-            # If we can't find the dropoff or it's before pickup, this is invalid
-            violations["ride_time"] = {
-                "actual": float('inf'),
-                "limit": constraints["max_in_vehicle_time_secs"],
-                "reason": "No valid dropoff found after pickup"
-            }
-        else:
-            in_vehicle_time = (
-                new_route.stops[dropoff_idx].planned_arrival_time - 
-                new_route.stops[pickup_idx].planned_arrival_time
-            ).total_seconds() / 60
-            logger.debug(f"In-vehicle time: {in_vehicle_time:.2f} min (limit: {constraints['max_in_vehicle_time_secs'] / 60} mins)")
-            if in_vehicle_time > constraints["max_in_vehicle_time_secs"]:
+        try:
+            # Find the dropoff stop index
+            dropoff_idx = -1
+            for i, stop in enumerate(new_route.stops):
+                if stop_assignment.request_id in stop.dropoff_passengers:
+                    dropoff_idx = i
+                    break
+                    
+            if dropoff_idx == -1 or dropoff_idx <= pickup_idx:
+                # If we can't find the dropoff or it's before pickup, this is invalid
                 violations["ride_time"] = {
-                    "actual": in_vehicle_time,
-                    "limit": constraints["max_in_vehicle_time_secs"]
+                    "actual": float('inf'),
+                    "limit": constraints["max_in_vehicle_time_secs"],
+                    "reason": "No valid dropoff found after pickup"
                 }
-        # 4. Check existing passenger delay
-        max_existing_passenger_delay_secs = self._calculate_total_passenger_inconvenience(new_route, current_route) * 60
+            else:
+                in_vehicle_time = (
+                    new_route.stops[dropoff_idx].planned_arrival_time - 
+                    new_route.stops[pickup_idx].planned_arrival_time
+                ).total_seconds() / 60
+                logger.debug(f"In-vehicle time: {in_vehicle_time:.2f} min (limit: {constraints['max_in_vehicle_time_secs'] / 60} mins)")
+                if in_vehicle_time > constraints["max_in_vehicle_time_secs"]:
+                    violations["ride_time"] = {
+                        "actual": in_vehicle_time,
+                        "limit": constraints["max_in_vehicle_time_secs"]
+                    }
+        except Exception as e:
+            logger.error(f"Error calculating in-vehicle time: {str(e)}")
+            violations["ride_time"] = {
+                "error": str(e),
+                "reason": "Failed to calculate in-vehicle time"
+            }
 
-        logger.debug(f"Existing passenger delay: {max_existing_passenger_delay_secs / 60} mins (limit: {constraints['max_existing_passenger_delay_secs'] / 60} mins)")
-        if max_existing_passenger_delay_secs > constraints["max_existing_passenger_delay_secs"]:
+        # 4. Check existing passenger delay
+        try:
+            max_existing_passenger_delay_secs = self._calculate_total_passenger_inconvenience(new_route, current_route, vehicle) * 60
+
+            logger.debug(f"Existing passenger delay: {max_existing_passenger_delay_secs / 60} mins (limit: {constraints['max_existing_passenger_delay_secs'] / 60} mins)")
+            if max_existing_passenger_delay_secs > constraints["max_existing_passenger_delay_secs"]:
+                violations["existing_passenger_delay"] = {
+                    "actual": max_existing_passenger_delay_secs,
+                    "limit": constraints["max_existing_passenger_delay_secs"]
+                }
+        except Exception as e:
+            logger.error(f"Error calculating existing passenger delay: {str(e)}")
             violations["existing_passenger_delay"] = {
-                "actual": max_existing_passenger_delay_secs,
-                "limit": constraints["max_existing_passenger_delay_secs"]
+                "error": str(e),
+                "reason": "Failed to calculate existing passenger delay"
             }
 
         # 5. Check distance
-        if new_route.total_distance > constraints["max_distance_meters"]:
+        try:
+            if new_route.total_distance > constraints["max_distance_meters"]:
+                violations["distance"] = {
+                    "actual": new_route.total_distance,
+                    "limit": constraints["max_distance_meters"]
+                }
+        except Exception as e:
+            logger.error(f"Error checking distance constraint: {str(e)}")
             violations["distance"] = {
-                "actual": new_route.total_distance,
-                "limit": constraints["max_distance_meters"]
+                "error": str(e),
+                "reason": "Failed to check distance constraint"
             }
 
         return violations
@@ -482,7 +529,8 @@ class InsertionAssigner:
         new_route: Route,
         current_route: Route,
         stop_assignment: StopAssignment,
-        pickup_idx: int
+        pickup_idx: int,
+        vehicle: Vehicle
     ) -> Dict[str, float]:
         """Calculate all cost components for optimization.
         
@@ -502,18 +550,18 @@ class InsertionAssigner:
         logger.debug(f"New route metrics: duration={new_route.total_duration}, distance={new_route.total_distance}")
 
         # Time-based costs (in seconds)
-        passenger_waiting_time = (
+        passenger_waiting_time = abs((
             new_route.stops[pickup_idx].planned_arrival_time - 
             stop_assignment.expected_passenger_origin_stop_arrival_time
-        ).total_seconds()
+        ).total_seconds())
 
         passenger_in_vehicle_time = (
-            new_route.stops[pickup_idx + 1].planned_arrival_time - 
+            new_route.stops[pickup_idx + 1].planned_arrival_time -  
             new_route.stops[pickup_idx].planned_arrival_time
         ).total_seconds()
 
         # Convert helper function results from minutes to seconds
-        existing_passenger_delay = self._calculate_total_passenger_inconvenience(new_route, current_route) * 60
+        existing_passenger_delay = self._calculate_total_passenger_inconvenience(new_route, current_route, vehicle) * 60
 
         # Distance (meters)
         distance = new_route.total_distance - (current_route.total_distance if current_route else 0)
@@ -816,12 +864,30 @@ class InsertionAssigner:
         )
         return travel_time / 60
 
-    def _get_first_valid_index(self, route: Route) -> int:
-        """Gets index of first non-completed stop"""
+    def _get_first_valid_index(self, route: Route, vehicle: Vehicle) -> int:
+        """Gets index of first valid insertion point considering vehicle status"""
+        first_non_completed_idx = len(route.stops)
+        
         for i, stop in enumerate(route.stops):
             if not stop.completed:
-                return i
-        return len(route.stops)
+                first_non_completed_idx = i
+                break
+        
+        # For vehicles at a stop, we need to ensure we're not inserting before
+        # the current active stop is completed
+        if vehicle.current_state.status == VehicleStatus.AT_STOP:
+            # Find the index of the stop the vehicle is currently at
+            for i, stop in enumerate(route.stops):
+                if (not stop.completed and 
+                    stop.stop.id == vehicle.current_state.current_stop_id):
+                    # We can only insert after this stop
+                    if vehicle.id == 'vehicle_5':
+                        logger.info(f"Vehicle 5 is at stop {stop.id}, returning first valid index {i + 1}")
+                    return i + 1
+        
+        if vehicle.id == 'vehicle_5':
+            logger.info(f"Vehicle 5 first valid index: {first_non_completed_idx} (vehicle not at stop)")
+        return first_non_completed_idx
 
     def _is_vehicle_compatible(self, vehicle: Vehicle) -> bool:
         """Checks if vehicle is available for assignment"""
@@ -848,10 +914,10 @@ class InsertionAssigner:
         if not planned_arrival_time:
             return False
             
-        # For pickups, ensure passenger arrives before vehicle's planned arrival + max dwell time
-        return expected_passenger_arrival_time < planned_arrival_time + timedelta(seconds=self.state_manager.vehicle_worker.config.max_dwell_time)
+        # For pickups, ensure passenger arrives before vehicle's planned arrival
+        return expected_passenger_arrival_time < planned_arrival_time
     
-    def _calculate_total_passenger_inconvenience(self, new_route: Route, current_route: Optional[Route] = None) -> float:
+    def _calculate_total_passenger_inconvenience(self, new_route: Route, current_route: Optional[Route] = None, vehicle: Optional[Vehicle] = None) -> float:
         """
         Calculate the maximum total inconvenience for any existing passenger by combining
         pickup delay and in-vehicle (ride) delay.
@@ -861,7 +927,7 @@ class InsertionAssigner:
         if not current_route:
             return 0.0  # No inconvenience if there is no current route
 
-        first_valid_idx = self._get_first_valid_index(current_route)
+        first_valid_idx = self._get_first_valid_index(current_route, vehicle)
         max_inconvenience = 0.0
 
         # Gather all passengers from the original route (from the first non-completed stop onward)

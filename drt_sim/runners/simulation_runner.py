@@ -132,7 +132,7 @@ class SimulationRunner:
 
                 # Initialize and run the simulation.
                 self._initialize_components(replication)
-                self.orchestrator.initialize()
+                await self.orchestrator.initialize()
                 results = await self._run_simulation_loop()
 
                 # Initialize metrics manager and analyze results

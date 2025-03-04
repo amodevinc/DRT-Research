@@ -219,8 +219,6 @@ class MultiObjectiveStopAssigner(StopAssigner):
         if not active_vehicles:
             return 0.0
         
-        logger.info(f"Active vehicles' locations: {[vehicle.current_state.current_location for vehicle in active_vehicles]}")
-        logger.info(f"Active vehicles' locations type: {[type(vehicle.current_state.current_location) for vehicle in active_vehicles]}")
         
         # Calculate distances concurrently
         distances = await asyncio.gather(*[

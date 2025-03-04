@@ -408,7 +408,7 @@ class Route(ModelBase):
     
     def validate_capacity(self, vehicle_capacity: int) -> tuple[bool, Optional[str]]:
         """
-        Validates if the remaining route segments can be completed within vehicle capacity constraints.
+        Validates if the route can be completed within vehicle capacity constraints.
         
         Args:
             vehicle_capacity: Maximum number of passengers the vehicle can carry
@@ -418,45 +418,34 @@ class Route(ModelBase):
                 - Boolean indicating if the route is valid (True) or would exceed capacity (False)
                 - Error message string if invalid, None if valid
         """
-        if not self.segments:
+        if not self.stops:
             return True, None
             
-        # Start with current load at the current segment
+        # Simulate route traversal to check capacity
         current_load = 0
-        if self.current_segment_index > 0:
-            current_load = self.segments[self.current_segment_index].origin.current_load
         
-        # Iterate through remaining incomplete segments
-        for segment_index in range(self.current_segment_index, len(self.segments)):
-            segment = self.segments[segment_index]
-            if segment.completed:
-                continue
-                
-            # Check origin stop
-            origin_stop = segment.origin
-            if not origin_stop.completed:
-                # Add pickups
-                current_load += len(origin_stop.pickup_passengers)
-                # Remove dropoffs
-                current_load -= len(origin_stop.dropoff_passengers)
-                
-                if current_load > vehicle_capacity:
-                    return False, f"Capacity exceeded at stop {origin_stop.stop.id}: {current_load} passengers vs capacity of {vehicle_capacity}"
-                if current_load < 0:
-                    return False, f"Invalid negative load at stop {origin_stop.stop.id}: {current_load} passengers"
-                    
-            # Check destination stop
-            dest_stop = segment.destination
-            if not dest_stop.completed:
-                # Add pickups
-                current_load += len(dest_stop.pickup_passengers)
-                # Remove dropoffs
-                current_load -= len(dest_stop.dropoff_passengers)
-                
-                if current_load > vehicle_capacity:
-                    return False, f"Capacity exceeded at stop {dest_stop.stop.id}: {current_load} passengers vs capacity of {vehicle_capacity}"
-                if current_load < 0:
-                    return False, f"Invalid negative load at stop {dest_stop.stop.id}: {current_load} passengers"
+        # Process stops in sequence
+        for i, stop in enumerate(self.stops):
+            # Apply pickups and dropoffs
+            pickup_count = len(stop.pickup_passengers)
+            dropoff_count = len(stop.dropoff_passengers)
+            
+            # Calculate new load
+            new_load = current_load + pickup_count - dropoff_count
+            
+            # Validate capacity constraints
+            if new_load > vehicle_capacity:
+                return False, f"Capacity exceeded at stop {i} (ID: {stop.stop.id}): {new_load} passengers vs capacity of {vehicle_capacity}"
+            
+            if new_load < 0:
+                return False, f"Invalid negative load at stop {i} (ID: {stop.stop.id}): {new_load} passengers (current: {current_load}, pickup: {pickup_count}, dropoff: {dropoff_count})"
+            
+            # Update current load for next stop
+            current_load = new_load
+        
+        # Ensure all passengers are dropped off by the end
+        if current_load != 0:
+            return False, f"Route ends with {current_load} passengers still onboard"
         
         return True, None
 

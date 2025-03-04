@@ -48,11 +48,28 @@ class PassengerHandler:
     def handle_start_passenger_journey(self, event: Event) -> None:
         """Initial handler when a request is assigned to a vehicle"""
         try:
+            logger.debug(f"Entering handle_start_passenger_journey for event {event.id}, "
+             f"data: {event.data}")
             self.state_manager.begin_transaction()
-            
+            if 'assignment' not in event.data:
+                logger.error(f"No assignment found in event data for event {event.id}. "
+                            f"Event data keys: {list(event.data.keys())}")
+                raise ValueError(f"Missing 'assignment' in event data for event {event.id}")
             assignment: Assignment = event.data['assignment']
             stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
             request = self.state_manager.request_worker.get_request(assignment.request_id)
+            if request.id == "R7" and request.passenger_id == "P8":
+                logger.info(f"Found problematic request R7/passenger P8! Assignment details: "
+                            f"stop_assignment_id={assignment.stop_assignment_id}, "
+                            f"vehicle_id={assignment.vehicle_id}")
+                
+                # Verify the stop_assignment exists
+                stop_assignment_exists = self.state_manager.stop_assignment_worker.get_assignment(
+                    assignment.stop_assignment_id) is not None
+                logger.info(f"Stop assignment {assignment.stop_assignment_id} exists: {stop_assignment_exists}")
+                
+                # Check transaction status
+                logger.info(f"Transaction active: {self.state_manager.is_transaction_active()}")
             if not request:
                 raise ValueError(f"Request {assignment.request_id} not found")
             
@@ -75,7 +92,8 @@ class PassengerHandler:
             
             # Create walking to pickup event
             self._create_walking_to_pickup_event(request, stop_assignment)
-            
+            logger.debug(f"Successfully created passenger state for passenger_id={request.passenger_id}, "
+             f"request_id={request.id}, stop_assignment_id={assignment.stop_assignment_id}")
             self.state_manager.commit_transaction()
             
         except Exception as e:

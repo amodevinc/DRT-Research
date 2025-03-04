@@ -19,6 +19,7 @@ from drt_sim.core.user.manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.rejection import RejectionReason, RejectionMetadata
 import logging
+import traceback
 logger = logging.getLogger(__name__)
 
 class MatchingHandler:
@@ -179,97 +180,172 @@ class MatchingHandler:
             logger.error(f"Error handling optimization completion: {str(e)}")
     
     async def _process_assignment(self, assignment: Assignment) -> None:
-        """Process successful assignments."""
-        # 1. Update request status
-        self.state_manager.request_worker.update_request_status(
-            assignment.request_id, 
-            RequestStatus.ASSIGNED
-        )
-        
-        # 2. Update vehicle state immediately
-        vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
-        if not vehicle:
-            raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
-            
-        # Add and update route with proper status
-        route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
-        if not route_exists:
-            logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
-                      f"segments={len(assignment.route.segments)}, "
-                      f"total_distance={assignment.route.total_distance:.2f}m, "
-                      f"total_duration={assignment.route.total_duration:.2f}s")
-            assignment.route.status = RouteStatus.CREATED
-            self.state_manager.route_worker.add_route(assignment.route)
-        else:
-            existing_route = self.state_manager.route_worker.get_route(assignment.route.id)
-            # Keep existing status if route exists
-            assignment.route.status = existing_route.status
-            self.state_manager.route_worker.update_route(assignment.route)
-            
-        # Update vehicle's active route
-        self.state_manager.vehicle_worker.update_vehicle_active_route_id(
-            vehicle.id,
-            assignment.route.id
-        )
-        
-        if vehicle.current_state.status == VehicleStatus.IDLE:
-            # Create dispatch event for idle vehicle
-            dispatch_event = Event(
-                event_type=EventType.VEHICLE_DISPATCH_REQUEST,
-                priority=EventPriority.HIGH,
-                timestamp=self.context.current_time,
-                vehicle_id=vehicle.id,
-                data={
-                    'dispatch_type': 'initial',
-                    'timestamp': self.context.current_time,
-                    'route_id': assignment.route.id
-                }
+        try:
+            """Process successful assignments."""
+            # 1. Update request status
+            self.state_manager.request_worker.update_request_status(
+                assignment.request_id, 
+                RequestStatus.ASSIGNED
             )
-            self.context.event_manager.publish_event(dispatch_event)
-        else:
-            # Create reroute event for active vehicle
-            reroute_event = Event(
-                event_type=EventType.VEHICLE_REROUTE_REQUEST,
-                priority=EventPriority.HIGH,
-                timestamp=self.context.current_time,
-                vehicle_id=vehicle.id,
-                data={
-                    'dispatch_type': 'reroute',
-                    'timestamp': self.context.current_time,
-                    'route_id': assignment.route.id
-                }
+            
+            # 2. Update vehicle state immediately
+            vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
+            if not vehicle:
+                raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
+                
+            # Add and update route with proper status
+            route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
+            if not route_exists:
+                logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
+                        f"segments={len(assignment.route.segments)}, "
+                        f"total_distance={assignment.route.total_distance:.2f}m, "
+                        f"total_duration={assignment.route.total_duration:.2f}s")
+                assignment.route.status = RouteStatus.CREATED
+                self.state_manager.route_worker.add_route(assignment.route)
+            else:
+                existing_route = self.state_manager.route_worker.get_route(assignment.route.id)
+                # Keep existing status if route exists
+                assignment.route.status = existing_route.status
+                self.state_manager.route_worker.update_route(assignment.route)
+                
+            # Validate route consistency before proceeding
+            is_consistent, consistency_error = assignment.route.validate_passenger_consistency()
+            if not is_consistent:
+                logger.warning(f"Route {assignment.route.id} has passenger consistency issues: {consistency_error}")
+                logger.warning(f"Route details: vehicle={assignment.vehicle_id}, stops={len(assignment.route.stops)}, "
+                            f"segments={len(assignment.route.segments)}")
+                
+                # Log detailed information about each stop for debugging
+                for i, stop in enumerate(assignment.route.stops):
+                    logger.warning(f"Stop {i}: pickup={stop.pickup_passengers}, dropoff={stop.dropoff_passengers}, "
+                                f"current_load={stop.current_load}")
+                
+                # Track all pickups and dropoffs across stops for detailed diagnostics
+                all_pickups = {}  # request_id -> stop_index
+                all_dropoffs = {}  # request_id -> stop_index
+                
+                # Collect all pickups and dropoffs
+                for i, stop in enumerate(assignment.route.stops):
+                    for request_id in stop.pickup_passengers:
+                        if request_id in all_pickups:
+                            logger.warning(f"Duplicate pickup for request {request_id} at stops {all_pickups[request_id]} and {i}")
+                        all_pickups[request_id] = i
+                        
+                    for request_id in stop.dropoff_passengers:
+                        if request_id in all_dropoffs:
+                            logger.warning(f"Duplicate dropoff for request {request_id} at stops {all_dropoffs[request_id]} and {i}")
+                        all_dropoffs[request_id] = i
+                
+                # Check for passengers picked up but not dropped off
+                for request_id in all_pickups:
+                    if request_id not in all_dropoffs:
+                        logger.warning(f"Passenger with request {request_id} was picked up but not dropped off")
+                
+                # Check for passengers dropped off but not picked up
+                for request_id in all_dropoffs:
+                    if request_id not in all_pickups:
+                        logger.warning(f"Passenger with request {request_id} was dropped off but not picked up")
+                
+                # Check for pickup after dropoff
+                for request_id in set(all_pickups.keys()) & set(all_dropoffs.keys()):
+                    if all_pickups[request_id] > all_dropoffs[request_id]:
+                        logger.warning(f"Pickup for request {request_id} occurs after dropoff (pickup at {all_pickups[request_id]}, dropoff at {all_dropoffs[request_id]})")
+            
+            # Validate capacity constraints
+            is_capacity_valid, capacity_error = assignment.route.validate_capacity(vehicle.capacity)
+            if not is_capacity_valid:
+                logger.warning(f"Route {assignment.route.id} has capacity issues: {capacity_error}")
+                logger.warning(f"Vehicle capacity: {vehicle.capacity}")
+                
+                # Log detailed information about each stop for debugging
+                current_load = 0
+                for i, stop in enumerate(assignment.route.stops):
+                    expected_load = current_load + len(stop.pickup_passengers) - len(stop.dropoff_passengers)
+                    logger.warning(f"Stop {i}: pickup={len(stop.pickup_passengers)}, "
+                                f"dropoff={len(stop.dropoff_passengers)}, "
+                                f"current_load={stop.current_load}, "
+                                f"expected_load={expected_load}")
+                    if expected_load < 0:
+                        logger.warning(f"Negative load detected at stop {i}: {expected_load}")
+                    if expected_load > vehicle.capacity:
+                        logger.warning(f"Capacity exceeded at stop {i}: {expected_load} vs {vehicle.capacity}")
+                    current_load = expected_load
+                
+            # Update vehicle's active route
+            self.state_manager.vehicle_worker.update_vehicle_active_route_id(
+                vehicle.id,
+                assignment.route.id
             )
-            self.context.event_manager.publish_event(reroute_event)
-        
-        # 3. Update stop assignment state
-        stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
-        if not stop_assignment:
-            raise ValueError(f"Stop assignment {assignment.stop_assignment_id} not found")
-        
-        request = self.state_manager.request_worker.get_request(stop_assignment.request_id)
+            
+            if vehicle.current_state.status == VehicleStatus.IDLE:
+                # Create dispatch event for idle vehicle
+                dispatch_event = Event(
+                    event_type=EventType.VEHICLE_DISPATCH_REQUEST,
+                    priority=EventPriority.HIGH,
+                    timestamp=self.context.current_time,
+                    vehicle_id=vehicle.id,
+                    data={
+                        'dispatch_type': 'initial',
+                        'timestamp': self.context.current_time,
+                        'route_id': assignment.route.id
+                    }
+                )
+                self.context.event_manager.publish_event(dispatch_event)
+            else:
+                # Create reroute event for active vehicle
+                reroute_event = Event(
+                    event_type=EventType.VEHICLE_REROUTE_REQUEST,
+                    priority=EventPriority.HIGH,
+                    timestamp=self.context.current_time,
+                    vehicle_id=vehicle.id,
+                    data={
+                        'dispatch_type': 'reroute',
+                        'timestamp': self.context.current_time,
+                        'route_id': assignment.route.id
+                    }
+                )
+                self.context.event_manager.publish_event(reroute_event)
+            
+            # 3. Update stop assignment state
+            stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
+            if not stop_assignment:
+                raise ValueError(f"Stop assignment {assignment.stop_assignment_id} not found")
+            
+            request = self.state_manager.request_worker.get_request(stop_assignment.request_id)
 
-        passenger_journey_event = Event(
-            event_type=EventType.START_PASSENGER_JOURNEY,
-            priority=EventPriority.HIGH,
-            timestamp=self.context.current_time,
-            passenger_id=request.passenger_id,
-            request_id=request.id,
-            data={
-                'assignment': assignment
-            }
-        )
-        self.context.event_manager.publish_event(passenger_journey_event)
-        
-        # Now that all critical state is updated, create event for non-critical updates
-        assignment_event = Event(
-            event_type=EventType.REQUEST_ASSIGNED,
-            timestamp=self.context.current_time,
-            priority=EventPriority.HIGH,
-            data={
-                'assignment': assignment
-            }
-        )
-        self.context.event_manager.publish_event(assignment_event)
+            passenger_journey_event = Event(
+                event_type=EventType.START_PASSENGER_JOURNEY,
+                priority=EventPriority.HIGH,
+                timestamp=self.context.current_time,
+                passenger_id=request.passenger_id,
+                request_id=request.id,
+                data={
+                    'assignment': assignment
+                }
+            )
+            logger.debug(f"Event Queue Size Before Publishing: {self.context.event_manager.get_queue_size()}")
+            logger.debug(f"Publishing START_PASSENGER_JOURNEY event for request={request.id}, passenger={request.passenger_id}, "
+             f"stop_assignment_id={assignment.stop_assignment_id}, vehicle={assignment.vehicle_id}")
+            self.context.event_manager.publish_event(passenger_journey_event)
+            
+            logger.debug(f"START_PASSENGER_JOURNEY event published with ID {passenger_journey_event.id}. "
+             f"Current event queue size: {self.context.event_manager.get_queue_size()}")
+            
+            # Now that all critical state is updated, create event for non-critical updates
+            assignment_event = Event(
+                event_type=EventType.REQUEST_ASSIGNED,
+                timestamp=self.context.current_time,
+                priority=EventPriority.HIGH,
+                data={
+                    'assignment': assignment
+                }
+            )
+            self.context.event_manager.publish_event(assignment_event)
+        except Exception as e:
+            logger.error(f"Error in _process_assignment: {str(e)}")
+            logger.error(f"Assignment details: request_id={assignment.request_id if assignment else 'unknown'}, "
+                    f"vehicle_id={assignment.vehicle_id if assignment else 'unknown'}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
     
     async def _handle_no_vehicles_available(self, request: Request) -> None:
         """Handle case when no vehicles are available."""

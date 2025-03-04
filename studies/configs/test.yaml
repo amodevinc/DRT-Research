@@ -57,7 +57,7 @@ base_config:
   
   demand:
     generator_type: "csv"
-    num_requests: 10
+    num_requests: 30
     csv_config:
       files:
         - file_path: "data/demands/base_real_time.csv"

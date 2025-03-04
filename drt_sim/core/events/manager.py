@@ -4,6 +4,7 @@ from queue import PriorityQueue
 import traceback
 import asyncio
 from copy import deepcopy
+import threading
 from drt_sim.models.event import Event, EventType, EventPriority, EventStatus
 import logging
 logger = logging.getLogger(__name__)
@@ -13,14 +14,23 @@ class EventManager:
     """
     Manages event registration, dispatch, and processing throughout the simulation.
     Updated to work with immutable Event objects by creating new instances for status updates.
+    Thread-safe implementation for concurrent access.
     """
     
-    def __init__(self):
+    def __init__(self, max_history_size: int = 10000, continue_on_handler_error: bool = False):
         self.handlers: Dict[EventType, List[Callable[[Event], None]]] = {}
         self.event_queue: PriorityQueue[Event] = PriorityQueue()
         self.event_history: List[Event] = []
         self.validation_rules: Dict[EventType, List[Callable[[Event], bool]]] = {}
         self.error_handlers: Dict[EventType, Callable[[Event, Exception], None]] = {}
+        self.lock = threading.RLock()  # Reentrant lock for thread safety
+        self.max_history_size = max_history_size
+        self.continue_on_handler_error = continue_on_handler_error
+
+    def get_queue_size(self) -> int:
+        """Get the current size of the event queue."""
+        with self.lock:
+            return len(self.event_queue.queue)
     
     def register_handler(
         self,
@@ -29,19 +39,30 @@ class EventManager:
         validation_rules: Optional[List[Callable[[Event], bool]]] = None
     ) -> None:
         """Register an event handler with optional validation rules."""
-        if event_type not in self.handlers:
-            self.handlers[event_type] = []
-        self.handlers[event_type].append(handler)
-        
-        if validation_rules:
-            if event_type not in self.validation_rules:
-                self.validation_rules[event_type] = []
-            self.validation_rules[event_type].extend(validation_rules)
+        with self.lock:
+            if event_type not in self.handlers:
+                self.handlers[event_type] = []
+            self.handlers[event_type].append(handler)
             
-        logger.debug(
-            f"Registered {'async' if asyncio.iscoroutinefunction(handler) else 'sync'} "
-            f"handler for event type: {event_type.value}"
-        )
+            if validation_rules:
+                if event_type not in self.validation_rules:
+                    self.validation_rules[event_type] = []
+                self.validation_rules[event_type].extend(validation_rules)
+                
+            logger.debug(
+                f"Registered {'async' if asyncio.iscoroutinefunction(handler) else 'sync'} "
+                f"handler for event type: {event_type.value}"
+            )
+    
+    def register_error_handler(
+        self,
+        event_type: EventType,
+        error_handler: Callable[[Event, Exception], None]
+    ) -> None:
+        """Register an error handler for a specific event type."""
+        with self.lock:
+            self.error_handlers[event_type] = error_handler
+            logger.debug(f"Registered error handler for event type: {event_type.value}")
 
     def schedule_recurring_event(
         self,
@@ -122,13 +143,14 @@ class EventManager:
         try:
             # Create new event with PROCESSING status
             processing_event = self._create_status_updated_event(event, EventStatus.PROCESSING)
-            self.event_history.append(processing_event)
+            self._add_to_history(processing_event)
             
             handlers = self.handlers.get(event.event_type, [])
             if not handlers:
                 logger.warning(f"No handlers registered for event type: {event.event_type.value}")
                 return False
             
+            success = True
             for handler in handlers:
                 try:
                     if asyncio.iscoroutinefunction(handler):
@@ -137,23 +159,27 @@ class EventManager:
                         handler(event)
                 except Exception as e:
                     self._handle_error(event, e)
-                    return False
+                    success = False
+                    if not self.continue_on_handler_error:
+                        return False
             
-            # Create new event with COMPLETED status
-            completed_event = self._create_status_updated_event(event, EventStatus.COMPLETED)
-            self.event_history.append(completed_event)
-            
-            # Handle recurring events
-            if event.is_recurring:
-                next_event = event.create_next_recurrence()
-                if next_event:
-                    self.publish_event(next_event)
-                    logger.info(
-                        f"Scheduled next recurrence of event {event.event_type.value} "
-                        f"for {next_event.timestamp}"
-                    )
-            
-            return True
+            if success:
+                # Create new event with COMPLETED status
+                completed_event = self._create_status_updated_event(event, EventStatus.COMPLETED)
+                self._add_to_history(completed_event)
+                
+                # Handle recurring events
+                if event.is_recurring:
+                    next_event = event.create_next_recurrence()
+                    if next_event:
+                        self.publish_event(next_event)
+                        logger.info(
+                            f"Scheduled next recurrence of event {event.event_type.value} "
+                            f"for {next_event.timestamp}"
+                        )
+                
+                return True
+            return False
             
         except Exception as e:
             self._handle_error(event, e)
@@ -170,19 +196,35 @@ class EventManager:
         
         # Create new event with FAILED status and error message
         failed_event = self._create_status_updated_event(event, EventStatus.FAILED, str(error))
-        self.event_history.append(failed_event)
+        self._add_to_history(failed_event)
         logger.error(f"Error processing event {event.id}: {str(error)}\n{traceback.format_exc()}")
+
+    def _add_to_history(self, event: Event) -> None:
+        """Add event to history with size limit enforcement"""
+        with self.lock:
+            self.event_history.append(event)
+            # Trim history if it exceeds the maximum size
+            if len(self.event_history) > self.max_history_size:
+                self.event_history = self.event_history[-self.max_history_size:]
 
     async def process_events(self, current_time: datetime) -> List[Event]:
         """Process all queued events up to current time."""
         processed_events = []
         
-        while not self.event_queue.empty():
-            next_event = self.event_queue.queue[0]  # Peek without removing
-            if next_event.timestamp > current_time:
-                break
-            
-            event = self.event_queue.get()
+        with self.lock:
+            events_to_process = []
+            while not self.event_queue.empty():
+                # Peek at the next event
+                next_event = self.event_queue.queue[0]
+                if next_event.timestamp > current_time:
+                    break
+                
+                # Get the event for processing
+                event = self.event_queue.get()
+                events_to_process.append(event)
+        
+        # Process events outside the lock to avoid deadlocks
+        for event in events_to_process:
             if await self._process_event(event):
                 processed_events.append(event)
         
@@ -191,10 +233,20 @@ class EventManager:
     def publish_event(self, event: Event) -> bool:
         """Queue an event for later processing."""
         try:
-            if not self._validate_event(event):
+            validation_result = self._validate_event(event)
+            if not validation_result[0]:
+                # Create a failed event for validation failure
+                error_message = validation_result[1]
+                failed_event = self._create_status_updated_event(
+                    event, 
+                    EventStatus.FAILED, 
+                    f"Validation failed: {error_message}"
+                )
+                self._add_to_history(failed_event)
                 return False
             
-            self.event_queue.put(event)
+            with self.lock:
+                self.event_queue.put(event)
             return True
             
         except Exception as e:
@@ -204,38 +256,39 @@ class EventManager:
     
     def peek_next_event_time(self) -> Optional[datetime]:
         """Get timestamp of next event without removing it from queue."""
-        if self.event_queue.empty():
-            return None
-        return self.event_queue.queue[0].timestamp
+        with self.lock:
+            if self.event_queue.empty():
+                return None
+            return self.event_queue.queue[0].timestamp
     
-    def _validate_event(self, event: Event) -> bool:
-        """Validate an event using registered validation rules."""
+    def _validate_event(self, event: Event) -> tuple[bool, Optional[str]]:
+        """
+        Validate an event using registered validation rules.
+        
+        Returns:
+            tuple: (is_valid, error_message)
+        """
         try:
             # Basic validation
             if not event.event_type or not isinstance(event.event_type, EventType):
-                logger.warning(f"Invalid event type for event {event.id}")
-                return False
+                return False, "Invalid event type"
             
             if not event.timestamp:
-                logger.warning(f"Missing timestamp for event {event.id}")
-                return False
+                return False, "Missing timestamp"
             
             # Check custom validation rules
             rules = self.validation_rules.get(event.event_type, [])
             for rule in rules:
                 try:
                     if not rule(event):
-                        logger.warning(f"Event {event.id} failed validation rule")
-                        return False
+                        return False, "Failed custom validation rule"
                 except Exception as e:
-                    logger.error(f"Error in validation rule for event {event.id}: {str(e)}")
-                    return False
+                    return False, f"Error in validation rule: {str(e)}"
             
-            return True
+            return True, None
             
         except Exception as e:
-            logger.error(f"Error validating event {event.id}: {str(e)}")
-            return False
+            return False, f"Validation error: {str(e)}"
     
     def get_event_history(
         self,
@@ -244,7 +297,8 @@ class EventManager:
         end_time: Optional[datetime] = None
     ) -> List[Event]:
         """Get filtered event history"""
-        events = self.event_history
+        with self.lock:
+            events = self.event_history.copy()
         
         if event_type:
             events = [e for e in events if e.event_type == event_type]
@@ -257,8 +311,11 @@ class EventManager:
     
     def get_serializable_history(self) -> List[Dict[str, Any]]:
         """Convert event history to serializable format with explicit dict conversion"""
+        with self.lock:
+            events_to_serialize = self.event_history.copy()
+            
         history = []
-        for event in self.event_history:
+        for event in events_to_serialize:
             try:
                 event_dict = event.to_dict()
                 # Double-check all nested dictionaries are converted from MappingProxyType
@@ -279,12 +336,13 @@ class EventManager:
         
     def cleanup(self) -> None:
         """Clean up event manager resources"""
-        while not self.event_queue.empty():
-            self.event_queue.get()
-        self.event_history.clear()
-        self.handlers.clear()
-        self.validation_rules.clear()
-        self.error_handlers.clear()
+        with self.lock:
+            while not self.event_queue.empty():
+                self.event_queue.get()
+            self.event_history.clear()
+            self.handlers.clear()
+            self.validation_rules.clear()
+            self.error_handlers.clear()
 
     def cancel_event(self, event_id: str) -> bool:
         """
@@ -299,53 +357,57 @@ class EventManager:
         try:
             logger.info(f"Attempting to cancel event with ID: {event_id}")
             
-            # Convert queue to list to find and remove event
-            events = list(self.event_queue.queue)
-            logger.debug(f"Current event queue size: {len(events)}")
-            
-            # Find event with matching ID
-            event_to_cancel = None
-            for event in events:
-                if event.id == event_id:
-                    event_to_cancel = event
-                    break
-            
-            if not event_to_cancel:
-                logger.warning(f"No pending event found with ID {event_id}")
-                return False
+            with self.lock:
+                # Use a more efficient approach with a temporary queue
+                temp_queue = PriorityQueue()
+                event_to_cancel = None
+                event_count = 0
                 
-            # Log event details before canceling
-            logger.info(f"Found event to cancel:")
-            logger.info(f"  Event Type: {event_to_cancel.event_type.value}")
-            logger.info(f"  Timestamp: {event_to_cancel.timestamp}")
-            logger.info(f"  Priority: {event_to_cancel.priority}")
-            logger.info(f"  Vehicle ID: {event_to_cancel.vehicle_id if event_to_cancel.vehicle_id else 'None'}")
-            logger.info(f"  Request ID: {event_to_cancel.request_id if event_to_cancel.request_id else 'None'}")
-            logger.info(f"  Passenger ID: {event_to_cancel.passenger_id if event_to_cancel.passenger_id else 'None'}")
-            logger.info(f"  Data: {dict(event_to_cancel.data)}")
-            
-            # Remove event from queue
-            events.remove(event_to_cancel)
-            logger.debug(f"Removed event from queue. New queue size: {len(events)}")
-            
-            # Clear and rebuild queue
-            while not self.event_queue.empty():
-                self.event_queue.get()
-            
-            for event in events:
-                self.event_queue.put(event)
-            
-            # Create canceled event for history
-            canceled_event = self._create_status_updated_event(
-                event_to_cancel,
-                EventStatus.CANCELLED,
-                "Event explicitly canceled"
-            )
-            self.event_history.append(canceled_event)
-            
-            logger.info(f"Successfully canceled event {event_id} of type {event_to_cancel.event_type.value}")
-            return True
-            
+                # Move events to temp queue while searching for the one to cancel
+                while not self.event_queue.empty():
+                    event = self.event_queue.get()
+                    event_count += 1
+                    
+                    if event.id == event_id:
+                        event_to_cancel = event
+                    else:
+                        temp_queue.put(event)
+                
+                # If we didn't find the event, put everything back and return
+                if not event_to_cancel:
+                    logger.warning(f"No pending event found with ID {event_id}")
+                    # Restore the original queue
+                    while not temp_queue.empty():
+                        self.event_queue.put(temp_queue.get())
+                    return False
+                
+                # Log event details before canceling
+                logger.info(f"Found event to cancel:")
+                logger.info(f"  Event Type: {event_to_cancel.event_type.value}")
+                logger.info(f"  Timestamp: {event_to_cancel.timestamp}")
+                logger.info(f"  Priority: {event_to_cancel.priority}")
+                logger.info(f"  Vehicle ID: {event_to_cancel.vehicle_id if event_to_cancel.vehicle_id else 'None'}")
+                logger.info(f"  Request ID: {event_to_cancel.request_id if event_to_cancel.request_id else 'None'}")
+                logger.info(f"  Passenger ID: {event_to_cancel.passenger_id if event_to_cancel.passenger_id else 'None'}")
+                logger.info(f"  Data: {dict(event_to_cancel.data)}")
+                
+                # Restore the queue without the canceled event
+                while not temp_queue.empty():
+                    self.event_queue.put(temp_queue.get())
+                
+                logger.debug(f"Removed event from queue. New queue size: {event_count - 1}")
+                
+                # Create canceled event for history
+                canceled_event = self._create_status_updated_event(
+                    event_to_cancel,
+                    EventStatus.CANCELLED,
+                    "Event explicitly canceled"
+                )
+                self._add_to_history(canceled_event)
+                
+                logger.info(f"Successfully canceled event {event_id} of type {event_to_cancel.event_type.value}")
+                return True
+                
         except Exception as e:
             logger.error(f"Error canceling event {event_id}: {str(e)}\n{traceback.format_exc()}")
             return False

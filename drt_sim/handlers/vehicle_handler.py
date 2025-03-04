@@ -40,13 +40,16 @@ class VehicleHandler:
         }
 
     def handle_vehicle_dispatch_request(self, event: Event) -> None:
-        """Handle initial vehicle dispatch request."""
+        """Handle vehicle dispatch request."""
         try:
-            logger.info(f"Processing vehicle dispatch request for event: {event.id}")
+            logger.debug(f"=== START VEHICLE DISPATCH HANDLING ===")
+            logger.debug(f"Vehicle {event.vehicle_id} - Processing dispatch request at time: {self.context.current_time}")
+            
+            # Use a single transaction for all operations to ensure atomicity
             self.state_manager.begin_transaction()
             
             vehicle_id = event.vehicle_id
-            route_id = event.data['route_id']
+            route_id = event.data.get('route_id')
             
             vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
             if not vehicle:
@@ -56,13 +59,22 @@ class VehicleHandler:
             if not route:
                 raise ValueError(f"No route found with ID {route_id}")
             
-            logger.debug(f"Dispatching vehicle {vehicle_id}:")
-            logger.debug(f"Vehicle state: status={vehicle.current_state.status}, "
-                      f"location={vehicle.current_state.current_location}, "
-                      f"occupancy={vehicle.current_state.current_occupancy}")
-            logger.debug(f"Route details: stops={len(route.stops)}, segments={len(route.segments)}, "
-                      f"status={route.status}")
-                
+            # IMPORTANT: Cancel any pending events for this vehicle before creating new ones
+            # This is critical to prevent conflicts, especially during initial dispatch
+            self._cancel_pending_vehicle_events(vehicle_id)
+            
+            # Update vehicle status to IN_SERVICE
+            self.state_manager.vehicle_worker.update_vehicle_status(
+                vehicle_id,
+                VehicleStatus.IN_SERVICE,
+                self.context.current_time
+            )
+            
+            # Get current segment
+            current_segment = route.get_current_segment()
+            if not current_segment:
+                raise ValueError(f"No current segment found in route {route_id}")
+            
             # Update route status if it's just starting
             if route.status == RouteStatus.CREATED or route.status == RouteStatus.PLANNED:
                 route.status = RouteStatus.ACTIVE
@@ -80,20 +92,6 @@ class VehicleHandler:
             # Verify route update
             vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
             logger.info(f"Vehicle {vehicle_id} state after route update: {vehicle.current_state.to_dict()}")
-            
-            # Update vehicle status to in service
-            if vehicle.current_state.status != VehicleStatus.IN_SERVICE:
-                logger.debug(f"Updating vehicle {vehicle_id} status to IN_SERVICE")
-                self.state_manager.vehicle_worker.update_vehicle_status(
-                    vehicle_id,
-                    VehicleStatus.IN_SERVICE,
-                    self.context.current_time
-                )
-            
-            # Get first/current segment
-            current_segment = route.get_current_segment()
-            if not current_segment:
-                raise ValueError(f"No current segment found in route {route_id}")
             
             # Create movement event for the current segment
             logger.info(f"Creating movement event for vehicle {vehicle_id} on segment {current_segment.id}")
@@ -142,6 +140,7 @@ class VehicleHandler:
         """
         try:
             logger.info(f"Processing vehicle reroute request for vehicle {event.vehicle_id} with route: {event.data['route_id']}")
+            # Use a single transaction for all operations to ensure atomicity
             self.state_manager.begin_transaction()
             
             vehicle_id = event.vehicle_id
@@ -150,55 +149,104 @@ class VehicleHandler:
             
             if not vehicle:
                 raise ValueError(f"Vehicle {vehicle_id} not found")
-            
-            # Update vehicle's active route ID
-            self.state_manager.vehicle_worker.update_vehicle_active_route_id(
-                vehicle_id,
-                route_id
-            )
-            
-            # Get the updated route from state
-            active_route_id = self.state_manager.vehicle_worker.get_vehicle_active_route_id(vehicle.id)
-            route = self.state_manager.route_worker.get_route(active_route_id)
-
-            logger.info(f"Updated route segments: {[str(seg) for seg in route.segments]}")
+                
+            # Validate route has segments
+            route = self.state_manager.route_worker.get_route(route_id)
             if not route:
                 raise ValueError(f"No active route found for vehicle {vehicle_id}")
+                
+            # Validate route has segments
+            if not route.segments or len(route.segments) == 0:
+                raise ValueError(f"Route {route_id} has no segments")
+                
+            logger.info(f"Updated route segments: {[str(seg) for seg in route.segments]}")
             
-            
-            # Check if vehicle is currently at a stop waiting for passengers
-            is_at_stop_waiting = (
-                vehicle.current_state.status == VehicleStatus.AT_STOP and
-                vehicle.current_state.waiting_for_passengers
-            )
-            
-            if is_at_stop_waiting:
-                logger.info(f"Vehicle {vehicle_id} is currently at stop waiting for passengers. "
-                          f"Movement will be handled by stop coordinator after passenger operations complete.")
-                self.state_manager.commit_transaction()
-                return
-            
-            route.recalc_current_segment_index()
+            try:
+                logger.info(f"Vehicle {vehicle_id} current state: {str(vehicle.current_state)}")
+                # Check if vehicle is currently at a stop waiting for passengers
+                is_at_stop_waiting = (
+                    vehicle.current_state.status == VehicleStatus.AT_STOP
+                )
+                # IMPORTANT: Cancel any pending movement events for this vehicle
+                # This is critical to prevent duplicate arrivals and inconsistent state
+                self._cancel_pending_vehicle_events(vehicle_id)
+                
+                route.recalc_current_segment_index()
+                
+                if is_at_stop_waiting:
+                    logger.info(f"Vehicle {vehicle_id} is currently at stop waiting for passengers. "
+                              f"Movement will be handled by stop coordinator after passenger operations complete.")
+                    self.state_manager.commit_transaction()
+                    return
+                
+               
 
-            
-            # Get current segment
-            current_segment = route.get_current_segment()
-            if not current_segment:
-                raise ValueError(f"No current segment found in route for vehicle {vehicle_id}")
-            
-            # Create movement event for current segment only if not at stop waiting
-            self._create_vehicle_movement_event(
-                vehicle_id=vehicle_id,
-                segment=current_segment,
-                current_time=self.context.current_time
-            )
-            
-            self.state_manager.commit_transaction()
-            
+                
+                # Get current segment
+                current_segment = route.get_current_segment()
+                if not current_segment:
+                    raise ValueError(f"No current segment found in route for vehicle {vehicle_id}")
+                
+                # Create movement event for current segment only if not at stop waiting
+                self._create_vehicle_movement_event(
+                    vehicle_id=vehicle_id,
+                    segment=current_segment,
+                    current_time=self.context.current_time
+                )
+                
+                self.state_manager.commit_transaction()
+                
+            except Exception as e:
+                self.state_manager.rollback_transaction()
+                logger.error(f"Error handling vehicle reroute: {str(e)}")
+                self._handle_vehicle_error(event, str(e))
+                
         except Exception as e:
             self.state_manager.rollback_transaction()
             logger.error(f"Error handling vehicle reroute: {str(e)}")
             self._handle_vehicle_error(event, str(e))
+
+    def _cancel_pending_vehicle_events(self, vehicle_id: str) -> int:
+        """
+        Cancel all pending movement-related events for a vehicle.
+        This is critical when rerouting to prevent duplicate arrivals and inconsistent state.
+        
+        Args:
+            vehicle_id: The ID of the vehicle
+            
+        Returns:
+            int: Number of events canceled
+        """
+        logger.info(f"Canceling pending movement events for vehicle {vehicle_id}")
+        
+        # Get all pending events from the event queue
+        events = list(self.context.event_manager.event_queue.queue)
+        
+        # Find events related to this vehicle's movement
+        events_to_cancel = []
+        for event in events:
+            if event.vehicle_id == vehicle_id and event.event_type in [
+                EventType.VEHICLE_POSITION_UPDATE,
+                EventType.VEHICLE_ARRIVED_STOP,
+                EventType.VEHICLE_STOP_OPERATIONS_COMPLETED,
+                EventType.VEHICLE_DISPATCH_REQUEST,  # Also cancel pending dispatch requests
+                EventType.VEHICLE_REROUTE_REQUEST    # Also cancel pending reroute requests
+            ]:
+                events_to_cancel.append(event.id)
+                logger.info(f"Found event to cancel: {event.event_type.value} at {event.timestamp}")
+        
+        # Cancel each event
+        canceled_count = 0
+        for event_id in events_to_cancel:
+            success = self.context.event_manager.cancel_event(event_id)
+            if success:
+                logger.info(f"Successfully canceled event {event_id}")
+                canceled_count += 1
+            else:
+                logger.warning(f"Failed to cancel event {event_id}")
+        
+        logger.info(f"Canceled {canceled_count} events for vehicle {vehicle_id}")
+        return canceled_count
 
     def handle_vehicle_rebalancing_required(self, event: Event) -> None:
         """Handle rebalancing request to depot."""
@@ -217,58 +265,44 @@ class VehicleHandler:
             self._handle_vehicle_error(event, str(e))
 
     def handle_vehicle_arrived_stop(self, event: Event) -> None:
-        """
-        Handle vehicle arrival at a stop and manage next steps.
-        Handles both regular stop arrivals and rebalancing arrivals.
-        """
+        """Handle vehicle arrival at a stop."""
         try:
             logger.info(f"Processing vehicle arrival for event: {event.id}")
+            
+            # Use a single transaction for all operations to ensure atomicity
             self.state_manager.begin_transaction()
             
             vehicle_id = event.vehicle_id
             vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+            
             if not vehicle:
                 raise ValueError(f"Vehicle {vehicle_id} not found")
-                
+            
             logger.debug(f"Vehicle {vehicle_id} arrived at stop:")
             logger.debug(f"Current state: status={vehicle.current_state.status}, "
                       f"location={vehicle.current_state.current_location}, "
                       f"occupancy={vehicle.current_state.current_occupancy}")
-            logger.debug(f"Arrival details: origin={event.data['origin']}, "
-                      f"destination={event.data['destination']}, "
-                      f"movement_start_time={event.data['movement_start_time']}")
+            logger.debug(f"Arrival details: origin={event.data.get('origin')}, "
+                      f"destination={event.data.get('destination')}, "
+                      f"movement_start_time={event.data.get('movement_start_time')}")
             
-            # Update vehicle location first for all arrival types
-            self.state_manager.vehicle_worker.update_vehicle_location(
-                vehicle_id,
-                event.data['destination']
-            )
-            # Log distance metric if available
-            distance = event.data.get('actual_distance', 0)
-            if vehicle.current_state.current_occupancy > 0:
-                self.context.metrics_collector.log(
-                    MetricName.VEHICLE_OCCUPIED_DISTANCE,
-                    distance,
-                    self.context.current_time,
-                    { 'vehicle_id': vehicle_id }
-                )
+            # Check if this is a rebalancing arrival or a regular stop arrival
+            if event.data.get('is_rebalancing', False):
+                self._handle_rebalancing_arrival(vehicle_id, event)
             else:
-                self.context.metrics_collector.log(
-                    MetricName.VEHICLE_EMPTY_DISTANCE,
-                    distance,
-                    self.context.current_time,
-                    { 'vehicle_id': vehicle_id }
-                )
+                try:
+                    self._handle_regular_stop_arrival(vehicle_id, event)
+                except Exception as e:
+                    if "already at stop" in str(e):
+                        # This is a stale event, log and ignore
+                        logger.warning(f"Ignoring stale arrival event for vehicle {vehicle_id}: {str(e)}")
+                        self.state_manager.rollback_transaction()
+                        return
+                    else:
+                        # Re-raise other exceptions
+                        raise
             
-            # Handle rebalancing arrival
-            if event.data.get('movement_type') == 'rebalancing':
-                self._handle_rebalancing_arrival(vehicle_id, event.data)
-                self.state_manager.commit_transaction()
-                return
-                
-            # Handle regular stop arrival
-            self._handle_regular_stop_arrival(vehicle_id, event)
-            
+            # Commit the transaction
             self.state_manager.commit_transaction()
             
         except Exception as e:
@@ -276,8 +310,33 @@ class VehicleHandler:
             logger.error(f"Error handling vehicle arrival: {traceback.format_exc()}")
             self._handle_vehicle_error(event, str(e))
 
-    def _handle_rebalancing_arrival(self, vehicle_id: str, event_data: Dict[str, Any]) -> None:
+    def _handle_rebalancing_arrival(self, vehicle_id: str, event: Event) -> None:
         """Handle vehicle arrival at depot after rebalancing."""
+        # Update vehicle location first
+        self.state_manager.vehicle_worker.update_vehicle_location(
+            vehicle_id,
+            event.data.get('destination')
+        )
+        
+        # Log distance metric if available
+        distance = event.data.get('actual_distance', 0)
+        vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+        if vehicle.current_state.current_occupancy > 0:
+            self.context.metrics_collector.log(
+                MetricName.VEHICLE_OCCUPIED_DISTANCE,
+                distance,
+                self.context.current_time,
+                { 'vehicle_id': vehicle_id }
+            )
+        else:
+            self.context.metrics_collector.log(
+                MetricName.VEHICLE_EMPTY_DISTANCE,
+                distance,
+                self.context.current_time,
+                { 'vehicle_id': vehicle_id }
+            )
+        
+        # Update vehicle status to IDLE
         self.state_manager.vehicle_worker.update_vehicle_status(
             vehicle_id,
             VehicleStatus.IDLE,
@@ -293,23 +352,66 @@ class VehicleHandler:
         if not vehicle:
             raise ValueError(f"Vehicle {vehicle_id} not found")
             
+        # Check if the vehicle is already at a stop - this could indicate a stale event
+        if vehicle.current_state.status == VehicleStatus.AT_STOP:
+            logger.warning(f"[Stop Arrival] Vehicle {vehicle_id} is already at stop {vehicle.current_state.current_stop_id} - This may be a stale event")
+            raise ValueError(f"Vehicle {vehicle_id} is already at stop {vehicle.current_state.current_stop_id}")
+        
+        # Update vehicle location first
+        self.state_manager.vehicle_worker.update_vehicle_location(
+            vehicle_id,
+            event.data.get('destination')
+        )
+        
+        # Log distance metric if available
+        distance = event.data.get('actual_distance', 0)
+        if vehicle.current_state.current_occupancy > 0:
+            self.context.metrics_collector.log(
+                MetricName.VEHICLE_OCCUPIED_DISTANCE,
+                distance,
+                self.context.current_time,
+                { 'vehicle_id': vehicle_id }
+            )
+        else:
+            self.context.metrics_collector.log(
+                MetricName.VEHICLE_EMPTY_DISTANCE,
+                distance,
+                self.context.current_time,
+                { 'vehicle_id': vehicle_id }
+            )
+        
         active_route_id = self.state_manager.vehicle_worker.get_vehicle_active_route_id(vehicle.id)
         route = self.state_manager.route_worker.get_route(active_route_id)
         if not route:
             logger.error(f"[Stop Arrival] Vehicle {vehicle_id} - No active route found")
             raise ValueError("No active route found")
-            
+        
         logger.debug(f"Route state: {str(route)}")
         logger.debug(f"Current segment index: {route.current_segment_index}")
         logger.debug(f"Total segments: {len(route.segments)}")
         logger.debug(f"All segments: {[str(seg) for seg in route.segments]}")
-
+        
         current_segment = route.get_current_segment()
         if not current_segment:
-            logger.error(f"[Stop Arrival] Vehicle {vehicle_id} - No current segment found. Route details: {str(route)}")
-            raise ValueError("No current segment found in route")
+            # Try to recalculate the current segment index
+            route.recalc_current_segment_index()
+            current_segment = route.get_current_segment()
             
+            if not current_segment:
+                logger.error(f"[Stop Arrival] Vehicle {vehicle_id} - No current segment found. Route details: {str(route)}")
+                raise ValueError("No current segment found in route")
+        
+        # Check if the segment in the event matches the current segment in the route
+        segment_id = event.data.get('segment_id')
+        if segment_id and segment_id != current_segment.id:
+            logger.warning(f"[Stop Arrival] Vehicle {vehicle_id} - Segment ID in event ({segment_id}) doesn't match current segment ({current_segment.id}) - This may be a stale event")
+            # We'll continue processing with the current segment from the route
+            logger.info(f"Using current segment {current_segment.id} instead of segment from event {segment_id}")
+        
         current_stop = current_segment.destination
+
+        logger.debug(f"Vehicle arrived at {str(current_stop)}")
+
         
         # Update vehicle state to AT_STOP
         self.state_manager.vehicle_worker.update_vehicle_status(
@@ -324,6 +426,11 @@ class VehicleHandler:
             vehicle.current_state.current_stop_id = current_stop.stop.id
             vehicle.current_state.waiting_for_passengers = True
             self.state_manager.vehicle_worker.update_vehicle(vehicle)
+        
+        # Mark the segment as completed when the vehicle arrives at the stop
+        # This prevents matching algorithms from modifying segments that have already been traversed
+        current_segment.completed = True
+        route.recalc_current_segment_index()
         
         # Register vehicle arrival with coordinator AFTER updating vehicle state
         self.stop_coordinator.register_vehicle_arrival(
@@ -344,7 +451,7 @@ class VehicleHandler:
                 { 'vehicle_id': vehicle_id }
             )
         
-        # Update route in state
+        # Update route in state - this is important to persist the segment completion status
         self.state_manager.route_worker.update_route(route)
 
     def handle_stop_operations_completed(self, event: Event) -> None:
@@ -374,7 +481,45 @@ class VehicleHandler:
                     break
 
             if not current_segment:
-                raise ValueError(f"Segment {segment_id} not found in route {route_id}")
+                # Instead of raising an error, log a warning and gracefully handle the stale event
+                logger.warning(f"Segment {segment_id} not found in route {route_id} - This may be a stale event due to rerouting")
+                
+                # Check if the vehicle is already at a different segment
+                if route.get_current_segment():
+                    logger.info(f"Vehicle {vehicle_id} is already at segment {route.get_current_segment().id} - Ignoring stale event")
+                    self.state_manager.rollback_transaction()
+                    return
+                
+                # If we can't find the current segment, try to recalculate it
+                route.recalc_current_segment_index()
+                current_segment = route.get_current_segment()
+                
+                # If we still can't find a valid segment, we need to handle this case
+                if not current_segment:
+                    logger.warning(f"Cannot find a valid current segment for route {route_id} - Handling as route completion")
+                    route = self._handle_route_completion(vehicle_id, route, self.context.current_time)
+                    self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle.id, None)
+                    
+                    # Clear stop-related state
+                    self.state_manager.vehicle_worker.update_vehicle_status(
+                        vehicle_id,
+                        VehicleStatus.IDLE,
+                        self.context.current_time
+                    )
+                    # Update additional vehicle state
+                    vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+                    if vehicle:
+                        vehicle.current_state.current_stop_id = None
+                        vehicle.current_state.waiting_for_passengers = False
+                        self.state_manager.vehicle_worker.update_vehicle(vehicle)
+                    
+                    # Update route in state
+                    self.state_manager.route_worker.update_route(route)
+                    self.state_manager.commit_transaction()
+                    return
+                
+                # If we found a valid segment, continue with that one
+                logger.info(f"Using recalculated current segment {current_segment.id} instead of stale segment {segment_id}")
 
             current_stop = current_segment.destination
                 
@@ -423,7 +568,8 @@ class VehicleHandler:
     ) -> None:
         """Update segment completion metrics and timing."""
         stop.actual_arrival_time = self.context.current_time
-        segment.completed = True
+        # segment.completed is now set in _handle_regular_stop_arrival
+        # We just update the metrics here
         segment.actual_duration = (
             self.context.current_time - event.data['movement_start_time']
         ).total_seconds()
@@ -521,15 +667,25 @@ class VehicleHandler:
         total_duration = segment.estimated_duration
         total_distance = segment.estimated_distance
         
-        # If we have waypoints, create intermediate position update events
+        # If we have waypoints, create intermediate position update events (max 4)
         if waypoints:
+            # Limit the number of position updates to a maximum of 4
+            max_updates = min(4, len(waypoints))
+            
+            # Select evenly spaced waypoints if we have more than max_updates
+            if len(waypoints) > max_updates:
+                step = len(waypoints) / max_updates
+                selected_indices = [int(i * step) for i in range(max_updates)]
+                selected_waypoints = [waypoints[i] for i in selected_indices]
+            else:
+                selected_waypoints = waypoints
+            
             # Calculate time intervals for waypoint updates
-            num_waypoints = len(waypoints)
-            time_between_updates = total_duration / (num_waypoints + 1)
-            distance_between_updates = total_distance / (num_waypoints + 1)
+            time_between_updates = total_duration / (max_updates + 1)
+            distance_between_updates = total_distance / (max_updates + 1)
             
             current_distance = 0
-            for i, waypoint in enumerate(waypoints):
+            for i, waypoint in enumerate(selected_waypoints):
                 update_time = current_time + timedelta(seconds=(i+1) * time_between_updates)
                 current_distance += distance_between_updates
                 
@@ -542,7 +698,7 @@ class VehicleHandler:
                     data={
                         'segment_id': segment.id,
                         'location': waypoint,
-                        'progress_percentage': ((i+1) / (num_waypoints + 1)) * 100,
+                        'progress_percentage': ((i+1) / (max_updates + 1)) * 100,
                         'distance_covered': current_distance,
                         'movement_start_time': current_time
                     }

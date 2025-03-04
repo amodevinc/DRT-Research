@@ -1,0 +1,99 @@
+name: sumo_integration_example
+description: "Example study configuration with SUMO integration"
+version: "1.0.0"
+authors:
+  - "DRT Research Team"
+tags:
+  - "sumo"
+  - "visualization"
+  - "traffic_simulation"
+
+mlflow:
+  tracking_uri: "sqlite:///studies/mlflow.db"
+  experiment_name: "sumo_integration_example"
+  tags:
+    category: "integration"
+    type: "visualization"
+
+execution:
+  distributed: false
+  max_parallel: 1  # Run sequentially for SUMO visualization
+  continue_on_error: true
+  save_intermediate: true
+
+simulation:
+  start_time: "2025-01-01 07:00:00"
+  end_time: "2025-01-01 09:00:00"  # 2-hour simulation
+  warm_up_duration: 300  # 5 minutes warm-up
+  random_seed: 42
+  time_step: 1  # 1-second time step for smoother visualization
+  time_scale_factor: 1.0
+  save_state: true
+  save_interval: 300  # Save state every 5 minutes
+  sumo:
+    enabled: true
+    sumo_binary: "sumo-gui"  # Use GUI version for visualization
+    step_length: 1.0
+    use_geo_coordinates: true
+    visualization: true
+    seed: 42
+    custom_params:
+      delay_ms: 100  # Add delay for visualization
+
+base_config:
+  network:
+    network_file: "data/networks/example_network.graphml"
+    coordinate_system: "EPSG:4326"
+    walking_speed: 1.4  # m/s
+    driving_speed: 8.33  # m/s (30 km/h)
+  
+  demand:
+    generator_type: "csv"
+    csv_config:
+      files:
+        - file_path: "data/demand/example_demand.csv"
+          weight: 1.0
+      demand_multiplier: 0.5  # Reduce demand for visualization
+  
+  service:
+    max_wait_time: 600  # 10 minutes
+    max_ride_time: 1200  # 20 minutes
+    max_walking_distance: 400.0  # 400 meters
+  
+  algorithm:
+    routing_algorithm: "dijkstra"
+    cost_function: "simple"
+    user_acceptance_model: "logit"
+    rebalancing_interval: 300  # 5 minutes
+  
+  vehicle:
+    fleet_size: 10
+    capacity: 4
+    speed: 8.33  # m/s (30 km/h)
+    boarding_time: 10  # seconds
+    alighting_time: 10  # seconds
+    min_dwell_time: 10  # seconds
+    max_dwell_time: 60  # seconds
+    rebalancing_enabled: true
+
+parameter_sets:
+  small_fleet:
+    name: "small_fleet"
+    description: "Small fleet with SUMO visualization"
+    vehicle:
+      fleet_size: 5
+    replications: 1
+    
+  medium_fleet:
+    name: "medium_fleet"
+    description: "Medium fleet with SUMO visualization"
+    vehicle:
+      fleet_size: 10
+    replications: 1
+    
+  large_fleet:
+    name: "large_fleet"
+    description: "Large fleet with SUMO visualization"
+    vehicle:
+      fleet_size: 20
+    replications: 1 
