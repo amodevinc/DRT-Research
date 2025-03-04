@@ -314,7 +314,6 @@ class StopCoordinator:
         arrival_time: datetime,
         location: Location,
         event: Event,
-        segment_id: Optional[str] = None
     ) -> None:
         logger.info(f"Vehicle {vehicle_id} arrived at stop {stop_id} at {arrival_time}")
         
@@ -338,7 +337,6 @@ class StopCoordinator:
         state.last_vehicle_arrival_time = arrival_time
         state.movement_start_time = event.data.get('movement_start_time')
         state.actual_distance = event.data.get('actual_distance')
-        state.segment_id = segment_id
         state.vehicle_id = vehicle_id
         state.vehicle_location = location
         state.vehicle_is_at_stop = True
@@ -635,14 +633,104 @@ class StopCoordinator:
         if not state.expected_pickup_request_ids:
             self._complete_stop_operation(state, last_alighting_time, 'alighting')
 
+    def handle_route_change_at_stop(self, vehicle_id: str, stop_id: str, new_route_id: str) -> None:
+        """
+        Handle a route change that occurred while a vehicle is at a stop.
+        This ensures that stop operations complete correctly before the vehicle
+        continues with its new route.
+        
+        Args:
+            vehicle_id: The ID of the vehicle
+            stop_id: The ID of the stop where the vehicle is currently located
+            new_route_id: The ID of the new route assigned to the vehicle
+        """
+        logger.info(f"Handling route change for vehicle {vehicle_id} at stop {stop_id} to route {new_route_id}")
+        
+        # Find the relevant route stop state
+        route, route_stop = self._find_route_stop_by_stop_and_vehicle_id(stop_id, vehicle_id)
+        if not route_stop:
+            logger.warning(f"No route stop found for vehicle {vehicle_id} at stop {stop_id}")
+            return
+            
+        # Get the stop coordination state
+        state = self._get_or_create_stop_state(route_stop.id)
+        if not state:
+            logger.warning(f"Could not get or create stop state for route stop {route_stop.id}")
+            return
+        
+        # Update the state to reflect the route change
+        state.pending_route_change = True
+        state.new_route_id = new_route_id
+        
+        # Update the state with this information
+        self._update_stop_state_with_transaction(state)
+        
+        # Check if we need to speed up the stop operation completion
+        # For example, if no more passengers are expected, we can complete now
+        self._check_for_expedited_completion(state)
+        
+        logger.info(f"Route change recorded for vehicle {vehicle_id}. Operations will complete before continuing with new route.")
+
+    def _check_for_expedited_completion(self, state: StopCoordinationState) -> None:
+        """
+        Check if stop operations can be completed immediately after a route change.
+        This is possible if all expected boarding operations are complete or no longer needed.
+        
+        Args:
+            state: The stop coordination state
+        """
+        # If there's no pending route change, nothing to do
+        if not hasattr(state, 'pending_route_change') or not state.pending_route_change:
+            return
+            
+        # If the vehicle isn't at the stop, can't expedite
+        if not self._is_vehicle_at_stop(state):
+            return
+            
+        # Get the new route to check if this stop's operations are still needed
+        if not hasattr(state, 'new_route_id') or not state.new_route_id:
+            return
+            
+        new_route = self.state_manager.route_worker.get_route(state.new_route_id)
+        if not new_route:
+            logger.warning(f"Could not find new route {state.new_route_id}")
+            return
+        
+        # Find the route stop for this vehicle's current location
+        route, route_stop = self._find_route_stop(state.route_stop_id)
+        if not route_stop:
+            logger.warning(f"Could not find route stop {state.route_stop_id}")
+            return
+        
+        # Check if all necessary boarding operations are complete
+        pending_arrivals = state.expected_pickup_request_ids - state.arrived_pickup_request_ids
+        pending_boarding = state.arrived_pickup_request_ids - state.boarded_request_ids
+        
+        # Calculate stop operation priority based on route change
+        stop_needed_in_new_route = False
+        current_physical_stop_id = route_stop.stop.id
+        
+        # Check if the current physical stop is in the new route
+        for new_stop in new_route.stops:
+            if new_stop.stop.id == current_physical_stop_id:
+                stop_needed_in_new_route = True
+                break
+        
+        # If no more boarding operations and stop isn't in new route, complete operations
+        if (not pending_boarding and not stop_needed_in_new_route) or \
+        (not stop_needed_in_new_route and len(pending_arrivals) > 0 and not pending_boarding):
+            logger.info(f"Expediting stop operation completion for vehicle {state.vehicle_id} after route change")
+            self._complete_stop_operation(state, self.context.current_time, 'route_change')
+
     def _complete_stop_operation(self, state: StopCoordinationState, completion_time: datetime, operation_type: str) -> None:
         """
         Complete a stop operation (boarding or alighting) and prepare for vehicle departure.
+        Enhanced to handle route changes during stop operations.
         
         Args:
             state: The stop coordination state
             completion_time: When the operation completes
-            operation_type: Type of operation ('boarding' or 'alighting')
+            operation_type: Type of operation ('boarding', 'alighting', or 'route_change')
         """
         # Get the route and route stop
         route, route_stop = self._find_route_stop(state.route_stop_id)
@@ -652,21 +740,28 @@ class StopCoordinator:
             
         logger.info(f"Completing {operation_type} operation at stop {route_stop.stop.id}")
         
+        # Check if there was a route change during stop operations
+        route_changed = hasattr(state, 'pending_route_change') and state.pending_route_change
+        new_route_id = getattr(state, 'new_route_id', None) if route_changed else None
+        
         # Mark the stop as completed in the route
         route_stop.completed = True
         route_stop.actual_departure_time = completion_time
         
         # Ensure passenger lists are consistent between route_stop and state
-        # This is critical for maintaining consistency
-        if operation_type == 'boarding':
-            # All expected pickups should be in boarded_request_ids
+        if operation_type in ['boarding', 'route_change']:
+            # For boarding or route change operations, handle expected pickups
             for request_id in state.expected_pickup_request_ids:
                 if request_id not in state.boarded_request_ids:
-                    logger.warning(f"Expected pickup {request_id} not in boarded_request_ids - marking as no-show")
-                    # Handle no-show case
-                    passengers = self.state_manager.passenger_worker.get_all_passenger_ids_for_request_ids([request_id])
-                    for passenger_id in passengers:
-                        self._create_no_show_event(passenger_id, route_stop.stop.id)
+                    # If this is a route change, we may not need to wait for all passengers
+                    if operation_type == 'route_change' and route_changed:
+                        logger.info(f"Expected pickup {request_id} not boarded due to route change")
+                    else:
+                        logger.warning(f"Expected pickup {request_id} not in boarded_request_ids - marking as no-show")
+                        # Handle no-show case
+                        passengers = self.state_manager.passenger_worker.get_all_passenger_ids_for_request_ids([request_id])
+                        for passenger_id in passengers:
+                            self._create_no_show_event(passenger_id, route_stop.stop.id)
                 
                 # Ensure route_stop.boarded_request_ids is consistent with state.boarded_request_ids
                 if request_id in state.boarded_request_ids and request_id not in route_stop.boarded_request_ids:
@@ -683,6 +778,14 @@ class StopCoordinator:
         # Update the route in the state manager
         self.state_manager.route_worker.update_route(route)
         
+        # If there was a route change, ensure we're using the correct route ID for the completion event
+        active_route_id = new_route_id if route_changed and new_route_id else \
+                        self.state_manager.vehicle_worker.get_vehicle_active_route_id(state.vehicle_id)
+        
+        logger.info(f"DIAGNOSTIC: Completing stop operations for vehicle {state.vehicle_id}, type: {operation_type}")
+        logger.info(f"DIAGNOSTIC: Route: {route.id if route else 'None'}, Stop: {route_stop.stop.id if route_stop else 'None'}")
+        logger.info(f"DIAGNOSTIC: Active route ID from vehicle worker: {self.state_manager.vehicle_worker.get_vehicle_active_route_id(state.vehicle_id)}")
+        
         # Update vehicle status
         self.state_manager.vehicle_worker.update_vehicle_status(
             state.vehicle_id,
@@ -697,22 +800,28 @@ class StopCoordinator:
             vehicle.current_state.current_stop_id = route_stop.stop.id
             self.state_manager.vehicle_worker.update_vehicle(vehicle)
             
-            # Get active route and create completion event
-            active_route_id = self.state_manager.vehicle_worker.get_vehicle_active_route_id(vehicle.id)
+            # Create completion event with the appropriate route ID
             if active_route_id:
+                # Include route change information in the event data if applicable
+                event_data = {
+                    'route_id': active_route_id,
+                    'stop_id': state.route_stop_id,
+                    'operation_type': operation_type,
+                    'movement_start_time': state.movement_start_time,
+                    'actual_distance': state.actual_distance
+                }
+                
+                if route_changed:
+                    event_data['route_changed'] = True
+                    event_data['previous_route_id'] = route.id if route else None
+                    event_data['new_route_id'] = new_route_id
+                
                 completion_event = Event(
                     event_type=EventType.VEHICLE_STOP_OPERATIONS_COMPLETED,
                     priority=EventPriority.HIGH,
                     timestamp=completion_time,
                     vehicle_id=state.vehicle_id,
-                    data={
-                        'route_id': active_route_id,
-                        'segment_id': state.segment_id,
-                        'stop_id': state.route_stop_id,
-                        'operation_type': operation_type,
-                        'movement_start_time': state.movement_start_time,
-                        'actual_distance': state.actual_distance
-                    }
+                    data=event_data
                 )
                 self.context.event_manager.publish_event(completion_event)
         

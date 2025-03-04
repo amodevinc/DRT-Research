@@ -3,83 +3,95 @@ from datetime import datetime
 from typing import Dict, Set, Optional, Any
 from drt_sim.core.state.base import StateWorker, StateContainer
 from drt_sim.models.location import Location
+from drt_sim.models.base import ModelBase
 from drt_sim.config.config import ParameterSet
 import logging
 
 logger = logging.getLogger(__name__)
 
 @dataclass
-class StopCoordinationState:
+class StopCoordinationState(ModelBase):
+    """State tracking for stop coordination between passengers and vehicles"""
     route_stop_id: str
-    expected_pickup_request_ids: Set[str] = field(default_factory=set)  # Passengers expected to be picked up
-    expected_dropoff_request_ids: Set[str] = field(default_factory=set)  # Passengers expected to be dropped off
-    arrived_pickup_request_ids: Set[str] = field(default_factory=set)  # Passengers who have arrived for pickup
-    boarded_request_ids: Set[str] = field(default_factory=set)  # Passengers who have successfully boarded
-    completed_dropoff_request_ids: Set[str] = field(default_factory=set)  # Passengers who have been dropped off
-    segment_id: Optional[str] = None
+    expected_pickup_request_ids: Set[str]
+    expected_dropoff_request_ids: Set[str]
+    arrived_pickup_request_ids: Set[str]
+    boarded_request_ids: Set[str]
+    completed_dropoff_request_ids: Set[str]
     vehicle_id: Optional[str] = None
     vehicle_location: Optional[Location] = None
     vehicle_is_at_stop: bool = False
     wait_start_time: Optional[datetime] = None
     wait_timeout_event_id: Optional[str] = None
+    last_vehicle_arrival_time: Optional[datetime] = None
     movement_start_time: Optional[datetime] = None
     actual_distance: Optional[float] = None
-    last_vehicle_arrival_time: Optional[datetime] = None  # Track last time vehicle arrived at this stop
-
-    def __str__(self):
-        pending_pickups = len(self.expected_pickup_request_ids - self.boarded_request_ids)
-        pending_dropoffs = len(self.expected_dropoff_request_ids - self.completed_dropoff_request_ids)
-        return (f"StopCoordinationState(route_stop_id={self.route_stop_id}, "
-                f"segment_id={self.segment_id}, "
-                f"expected_pickup_request_ids={self.expected_pickup_request_ids}, "
-                f"expected_dropoff_request_ids={self.expected_dropoff_request_ids}, "
-                f"pending_pickups={pending_pickups}, "
-                f"pending_dropoffs={pending_dropoffs}, "
-                f"arrived_passengers={len(self.arrived_pickup_request_ids)}, "
-                f"boarded_passengers={len(self.boarded_request_ids)}, "
-                f"completed_dropoffs={len(self.completed_dropoff_request_ids)}, "
-                f"vehicle={self.vehicle_id}, "
-                f"vehicle_at_stop={self.vehicle_is_at_stop}, "
-                f"last_vehicle_arrival={self.last_vehicle_arrival_time})")
-
+    segment_id: Optional[str] = None
+    # Fields to track route changes while at stop
+    pending_route_change: bool = False
+    new_route_id: Optional[str] = None
+    route_change_time: Optional[datetime] = None
+    
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "route_stop_id": self.route_stop_id,
-            "segment_id": self.segment_id,
-            "expected_pickup_request_ids": list(self.expected_pickup_request_ids),
-            "expected_dropoff_request_ids": list(self.expected_dropoff_request_ids),
-            "arrived_pickup_request_ids": list(self.arrived_pickup_request_ids),
-            "boarded_request_ids": list(self.boarded_request_ids),
-            "completed_dropoff_request_ids": list(self.completed_dropoff_request_ids),
-            "vehicle_id": self.vehicle_id,
-            "vehicle_location": self.vehicle_location.to_dict() if self.vehicle_location else None,
-            "vehicle_is_at_stop": self.vehicle_is_at_stop,
-            "wait_start_time": self.wait_start_time.isoformat() if self.wait_start_time else None,
-            "wait_timeout_event_id": self.wait_timeout_event_id,
-            "movement_start_time": self.movement_start_time.isoformat() if self.movement_start_time else None,
-            "actual_distance": self.actual_distance,
-            "last_vehicle_arrival_time": self.last_vehicle_arrival_time.isoformat() if self.last_vehicle_arrival_time else None
+        """Convert to dictionary representation"""
+        result = {
+            'id': self.id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'route_stop_id': self.route_stop_id,
+            'expected_pickup_request_ids': list(self.expected_pickup_request_ids),
+            'expected_dropoff_request_ids': list(self.expected_dropoff_request_ids),
+            'arrived_pickup_request_ids': list(self.arrived_pickup_request_ids),
+            'boarded_request_ids': list(self.boarded_request_ids),
+            'completed_dropoff_request_ids': list(self.completed_dropoff_request_ids),
+            'vehicle_id': self.vehicle_id,
+            'vehicle_location': self.vehicle_location.to_dict() if self.vehicle_location else None,
+            'vehicle_is_at_stop': self.vehicle_is_at_stop,
+            'wait_start_time': self.wait_start_time.isoformat() if self.wait_start_time else None,
+            'wait_timeout_event_id': self.wait_timeout_event_id,
+            'last_vehicle_arrival_time': self.last_vehicle_arrival_time.isoformat() if self.last_vehicle_arrival_time else None,
+            'movement_start_time': self.movement_start_time.isoformat() if self.movement_start_time else None,
+            'actual_distance': self.actual_distance,
+            'segment_id': self.segment_id,
+            'pending_route_change': self.pending_route_change,
+            'new_route_id': self.new_route_id,
+            'route_change_time': self.route_change_time.isoformat() if self.route_change_time else None
         }
+        return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'StopCoordinationState':
-        return cls(
-            route_stop_id=data["route_stop_id"],
-            segment_id=data["segment_id"],
-            expected_pickup_request_ids=set(data["expected_pickup_request_ids"]),
-            expected_dropoff_request_ids=set(data["expected_dropoff_request_ids"]),
-            arrived_pickup_request_ids=set(data["arrived_pickup_request_ids"]),
-            boarded_request_ids=set(data["boarded_request_ids"]),
-            completed_dropoff_request_ids=set(data["completed_dropoff_request_ids"]),
-            vehicle_id=data["vehicle_id"],
-            vehicle_location=Location.from_dict(data["vehicle_location"]) if data["vehicle_location"] else None,
-            vehicle_is_at_stop=data["vehicle_is_at_stop"],
-            wait_start_time=datetime.fromisoformat(data["wait_start_time"]) if data["wait_start_time"] else None,
-            wait_timeout_event_id=data["wait_timeout_event_id"],
-            movement_start_time=datetime.fromisoformat(data["movement_start_time"]) if data["movement_start_time"] else None,
-            actual_distance=data["actual_distance"],
-            last_vehicle_arrival_time=datetime.fromisoformat(data["last_vehicle_arrival_time"]) if data["last_vehicle_arrival_time"] else None
+        """Create from dictionary representation"""
+        state = cls(
+            route_stop_id=data['route_stop_id'],
+            expected_pickup_request_ids=set(data.get('expected_pickup_request_ids', [])),
+            expected_dropoff_request_ids=set(data.get('expected_dropoff_request_ids', [])),
+            arrived_pickup_request_ids=set(data.get('arrived_pickup_request_ids', [])),
+            boarded_request_ids=set(data.get('boarded_request_ids', [])),
+            completed_dropoff_request_ids=set(data.get('completed_dropoff_request_ids', [])),
+            vehicle_id=data.get('vehicle_id'),
+            vehicle_location=Location.from_dict(data['vehicle_location']) if data.get('vehicle_location') else None,
+            vehicle_is_at_stop=data.get('vehicle_is_at_stop', False),
+            wait_start_time=datetime.fromisoformat(data['wait_start_time']) if data.get('wait_start_time') else None,
+            wait_timeout_event_id=data.get('wait_timeout_event_id'),
+            last_vehicle_arrival_time=datetime.fromisoformat(data['last_vehicle_arrival_time']) if data.get('last_vehicle_arrival_time') else None,
+            movement_start_time=datetime.fromisoformat(data['movement_start_time']) if data.get('movement_start_time') else None,
+            actual_distance=data.get('actual_distance'),
+            segment_id=data.get('segment_id'),
+            pending_route_change=data.get('pending_route_change', False),
+            new_route_id=data.get('new_route_id'),
+            route_change_time=datetime.fromisoformat(data['route_change_time']) if data.get('route_change_time') else None
         )
+        
+        # Set ID and timestamps if present
+        if 'id' in data:
+            state.id = data['id']
+        if 'created_at' in data and data['created_at']:
+            state.created_at = datetime.fromisoformat(data['created_at'])
+        if 'updated_at' in data and data['updated_at']:
+            state.updated_at = datetime.fromisoformat(data['updated_at'])
+            
+        return state
 
 class StopCoordinationStateWorker(StateWorker):
     """Worker for managing stop coordination states"""

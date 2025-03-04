@@ -3,7 +3,7 @@ from datetime import datetime
 from collections import defaultdict
 import traceback
 from drt_sim.core.state.base import StateWorker, StateContainer
-from drt_sim.models.route import Route, RouteStatus, RouteSegment, DeviationType
+from drt_sim.models.route import Route, RouteStatus, RouteSegment
 from drt_sim.models.state import RouteSystemState
 import logging
 logger = logging.getLogger(__name__)
@@ -135,38 +135,6 @@ class RouteStateWorker(StateWorker):
             logger.error(f"Failed to update route status: {str(e)}")
             raise
 
-    def record_route_deviation(
-        self,
-        route_id: str,
-        deviation_type: DeviationType,
-        deviation_value: float,
-        deviation_time: datetime,
-        segment_id: Optional[str] = None,
-        description: Optional[str] = None
-    ) -> None:
-        """Record a route deviation event"""
-        if not self.initialized:
-            raise RuntimeError("Worker not initialized")
-            
-        try:
-            route = self.routes.get(route_id)
-            if not route:
-                raise ValueError(f"Route {route_id} not found")
-                
-            # Add to route
-            route.add_deviation(
-                deviation_type=deviation_type,
-                value=deviation_value,
-                time=deviation_time,
-                segment_id=segment_id,
-                description=description
-            )
-            
-            logger.debug(f"Recorded {deviation_type.value} deviation for route {route_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to record route deviation: {str(e)}")
-            raise
 
     def get_routes_by_status(self, status: RouteStatus) -> List[Route]:
         """Get all routes with specified status"""

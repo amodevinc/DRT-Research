@@ -134,12 +134,17 @@ class InsertionAssigner:
                 key=lambda x: x.total_cost,
                 default=None
             )
+
+            #best vehicle current route:
+            best_vehicle_current_route = self.state_manager.vehicle_worker.get_vehicle_active_route_id(best_insertion.vehicle.id)
+            best_vehicle_current_route = self.state_manager.route_worker.get_route(best_vehicle_current_route)
             
             if best_insertion:
                 assignment = await self._create_assignment(
-                    stop_assignment,
-                    best_insertion,
-                    computation_start
+                    best_vehicle_current_route=best_vehicle_current_route,
+                    stop_assignment=stop_assignment,
+                    insertion=best_insertion,
+                    computation_start=computation_start
                 )
                 return assignment, None
             
@@ -806,6 +811,7 @@ class InsertionAssigner:
 
     async def _create_assignment(
         self,
+        best_vehicle_current_route: Optional[Route],
         stop_assignment: StopAssignment,
         insertion: InsertionCost,
         computation_start: datetime
@@ -828,6 +834,15 @@ class InsertionAssigner:
             computation_time = (datetime.now() - computation_start).total_seconds()
             
             logger.info(f"Creating assignment for request {stop_assignment.request_id} with vehicle {insertion.vehicle.id}\n Insertion cost components: {insertion.cost_components}")
+            logger.debug(f"Is vehicle currently at stop: {insertion.vehicle.current_state.status == VehicleStatus.AT_STOP}")
+            logger.debug(f"Vehicle current stop id: {insertion.vehicle.current_state.current_stop_id}")
+            if best_vehicle_current_route:
+                logger.debug(f"Best vehicle current route stops: {[str(stop) for stop in best_vehicle_current_route.stops]}")
+                logger.debug(f"Best Vehicle Current Route Segments: {[str(segment) for segment in best_vehicle_current_route.segments]}")
+            else:
+                logger.debug(f"Best vehicle current route is None")
+            logger.debug(f"New Route stops: {[str(stop) for stop in insertion.updated_route.stops]}")
+            logger.debug(f"New Route Segments: {[str(segment) for segment in insertion.updated_route.segments]}")
             return Assignment(
                 request_id=stop_assignment.request_id,
                 vehicle_id=insertion.vehicle.id,
