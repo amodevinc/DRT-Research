@@ -88,3 +88,4 @@ studies/artifacts/*
 
 # Results
 studies/results/*
+studies/mlflow.db
