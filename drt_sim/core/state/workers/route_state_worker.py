@@ -3,7 +3,7 @@ from datetime import datetime
 from collections import defaultdict
 import traceback
 from drt_sim.core.state.base import StateWorker, StateContainer
-from drt_sim.models.route import Route, RouteStatus, RouteSegment
+from drt_sim.models.route import Route, RouteStatus
 from drt_sim.models.state import RouteSystemState
 import logging
 logger = logging.getLogger(__name__)
@@ -14,13 +14,6 @@ class RouteStateWorker(StateWorker):
     def __init__(self):
         self.routes = StateContainer[Route]()
         self.initialized = False
-        
-        # Indexes for quick lookups
-        self.vehicle_to_route: Dict[str, str] = {}
-        self.active_routes: set[str] = set()
-    
-        # Additional properties needed for RouteSystemState
-        self.passenger_route_mapping: Dict[str, str] = {}  # passenger_id -> route_id
     
     def initialize(self, config: Optional[Any] = None) -> None:
         """Initialize route state worker"""
@@ -43,25 +36,11 @@ class RouteStateWorker(StateWorker):
             # Add to main container
             self.routes.add(route.id, route)
             
-            # Update indexes
-            self.vehicle_to_route[route.vehicle_id] = route.id
-            if route.status == RouteStatus.ACTIVE:
-                self.active_routes.add(route.id)
-            
             logger.debug(f"Added route {route.id} for vehicle {route.vehicle_id}")
             
         except Exception as e:
             logger.error(f"Failed to add route: {str(e)}")
             raise
-
-    def update_segment(self, route_id: str, segment: RouteSegment) -> None:
-        """Update a segment in the route"""
-        route = self.get_route(route_id)
-        if route:
-            segment_index = route.segments.index(segment)
-            if segment_index != -1:
-                route.segments[segment_index] = segment
-                self.routes.update(route_id, route)
     
     def get_route(self, route_id: str) -> Optional[Route]:
         """Get route by ID"""
@@ -76,18 +55,9 @@ class RouteStateWorker(StateWorker):
             old_route = self.routes.get(route.id)
             if not old_route:
                 raise ValueError(f"Route {route.id} not found")
-            
-            # Log route state changes
-            if old_route.current_segment_index != route.current_segment_index:
-                logger.info(f"[Route State] Route {route.id} - Segment index changed: {old_route.current_segment_index} -> {route.current_segment_index}")
-                
+        
             if old_route.status != route.status:
                 logger.info(f"[Route State] Route {route.id} - Status changed: {old_route.status} -> {route.status}")
-            
-            completed_segments = len([s for s in route.segments if s.completed])
-            old_completed = len([s for s in old_route.segments if s.completed])
-            if completed_segments != old_completed:
-                logger.info(f"[Route State] Route {route.id} - Completed segments changed: {old_completed} -> {completed_segments}")
             
             # Update route
             self.routes.update(route.id, route)
@@ -113,12 +83,7 @@ class RouteStateWorker(StateWorker):
             
             old_status = route.status
             route.status = status
-            # Update indexes based on status change
-            if status == RouteStatus.ACTIVE:
-                self.active_routes.add(route_id)
-            elif old_status == RouteStatus.ACTIVE:
-                self.active_routes.remove(route_id)
-
+            
             if status == RouteStatus.COMPLETED:
                 logger.info(f"Route {route_id} completed")
             # Update additional data if provided
@@ -171,33 +136,22 @@ class RouteStateWorker(StateWorker):
         count = 0
         for route in self.routes.items.values():
             if route.status == RouteStatus.ACTIVE:
-                count += len(route.segments[route.current_segment_index:])
+                count += len(route.stops[route.current_stop_index:])
         return count
 
-    @property
-    def routes_by_vehicle(self) -> Dict[str, str]:
-        """Get mapping of vehicle_id to route_id"""
-        return self.vehicle_to_route.copy()
-
     def get_state(self) -> RouteSystemState:
-        """Get current state of the route system"""
+        """Get current route system state"""
         if not self.initialized:
             raise RuntimeError("Worker not initialized")
             
         try:
-            # Get routes by status
+            # Group routes by status
             routes_by_status = defaultdict(list)
             for rid, route in self.routes.items.items():
                 routes_by_status[route.status].append(rid)
             
             return RouteSystemState(
-                active_routes={
-                    rid: route for rid, route in self.routes.items.items()
-                    if route.status == RouteStatus.ACTIVE
-                },
                 routes_by_status=dict(routes_by_status),
-                routes_by_vehicle=self.vehicle_to_route,
-                passenger_route_mapping=self.passenger_route_mapping,
             )
             
         except Exception as e:
@@ -211,20 +165,8 @@ class RouteStateWorker(StateWorker):
             
         try:
             # Update active routes
-            for route_id, route in state.active_routes.items():
-                if route_id in self.routes.items:
-                    self.routes.update(route_id, route)
-                else:
-                    self.routes.add(route_id, route)
-            
-            # Update mappings
-            self.vehicle_to_route = state.routes_by_vehicle
-            self.passenger_route_mapping = state.passenger_route_mapping
-            
-            
-            # Update active routes set
-            self.active_routes = set(state.active_routes.keys())
-            
+            for route_id, route in self.routes.items():
+                self.routes.update(route_id, route)
             logger.info("Route system state updated successfully")
             
         except Exception as e:
@@ -243,8 +185,6 @@ class RouteStateWorker(StateWorker):
             try:
                 # Reset current state
                 self.routes = StateContainer[Route]()
-                self.vehicle_to_route.clear()
-                self.active_routes.clear()
                 
                 # Restore state using update_state
                 self.update_state(saved_state)
@@ -275,7 +215,5 @@ class RouteStateWorker(StateWorker):
     def cleanup(self) -> None:
         """Clean up resources"""
         self.routes.clear_history()
-        self.vehicle_to_route.clear()
-        self.active_routes.clear()
         self.initialized = False
         logger.info("Route state worker cleaned up")

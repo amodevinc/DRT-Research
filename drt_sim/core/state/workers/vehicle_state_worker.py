@@ -14,7 +14,6 @@ class VehicleStateWorker(StateWorker):
     
     def __init__(self):
         self.vehicles = StateContainer[Vehicle]()
-        self.vehicle_to_route_mapping = {}  # Mapping of vehicle IDs to active route IDs
         self.initialized = False
         
     def initialize(self, config: Optional[VehicleConfig] = None) -> None:
@@ -159,17 +158,56 @@ class VehicleStateWorker(StateWorker):
             logger.error(f"Failed to update vehicle {vehicle_id} status: {str(e)}")
             raise
 
-    def update_vehicle_active_route_id(self, vehicle_id: str, route_id: str) -> None:
-        """Update vehicle active route mapping"""
+    def update_vehicle_active_route_id(self, vehicle_id: str, route_id: Optional[str]) -> None:
+        """Update vehicle active route ID in the vehicle's current state"""
         if not self.initialized:
             raise RuntimeError("Worker not initialized")
             
         try:
-            # Update the mapping
-            self.vehicle_to_route_mapping[vehicle_id] = route_id
+            # Get the vehicle
+            vehicle = self.get_vehicle(vehicle_id)
+            if not vehicle:
+                raise ValueError(f"Vehicle {vehicle_id} not found")
+                
+            # Update the vehicle's current_route_id
+            new_state = vehicle.current_state.clone()
+            new_state.current_route_id = route_id
+            vehicle.current_state = new_state
+            
+            # Persist the update
+            self.vehicles.update(vehicle_id, vehicle)
+            
             logger.info(f"Updated vehicle {vehicle_id} active route to {route_id}")
         except Exception as e:
             logger.error(f"Failed to update vehicle {vehicle_id} active route: {str(e)}")
+            raise
+
+    def get_vehicle_active_route_id(self, vehicle_id: str) -> Optional[str]:
+        """Get the active route ID from the vehicle's current state"""
+        vehicle = self.get_vehicle(vehicle_id)
+        if not vehicle:
+            return None
+        return vehicle.current_state.current_route_id
+
+    def remove_vehicle_active_route(self, vehicle_id: str) -> None:
+        """Remove the active route ID from the vehicle's current state"""
+        try:
+            vehicle = self.get_vehicle(vehicle_id)
+            if not vehicle:
+                logger.warning(f"Vehicle {vehicle_id} not found when trying to remove active route")
+                return
+                
+            # Update the vehicle's current_route_id to None
+            new_state = vehicle.current_state.clone()
+            new_state.current_route_id = None
+            vehicle.current_state = new_state
+            
+            # Persist the update
+            self.vehicles.update(vehicle_id, vehicle)
+            
+            logger.info(f"Removed active route for vehicle {vehicle_id}")
+        except Exception as e:
+            logger.error(f"Failed to remove active route for vehicle {vehicle_id}: {str(e)}")
             raise
 
     def update_vehicle(self, vehicle: Vehicle) -> None:
@@ -184,16 +222,6 @@ class VehicleStateWorker(StateWorker):
         except Exception as e:
             logger.error(f"Failed to update vehicle {vehicle.id}: {str(e)}")
             raise
-
-    def get_vehicle_active_route_id(self, vehicle_id: str) -> Optional[str]:
-        """Get the active route ID for a vehicle"""
-        return self.vehicle_to_route_mapping.get(vehicle_id)
-
-    def remove_vehicle_active_route(self, vehicle_id: str) -> None:
-        """Remove the active route mapping for a vehicle"""
-        if vehicle_id in self.vehicle_to_route_mapping:
-            del self.vehicle_to_route_mapping[vehicle_id]
-            logger.info(f"Removed active route mapping for vehicle {vehicle_id}")
 
     def update_vehicle_location(self, vehicle_id: str, location: Location, distance_traveled: Optional[float] = None) -> None:
         """Update vehicle location and record distance traveled"""
@@ -216,10 +244,14 @@ class VehicleStateWorker(StateWorker):
             raise ValueError(f"Vehicle {vehicle_id} not found")
             
         try:
+            #transactionally update vehicle occupancy
+            self.begin_transaction()
             vehicle.current_state.current_occupancy += 1
             logger.debug(f"Updated vehicle {vehicle_id} occupancy to {vehicle.current_state.current_occupancy}")
+            self.commit_transaction()
         except Exception as e:
             logger.error(f"Failed to update vehicle {vehicle_id} occupancy: {str(e)}")
+            self.rollback_transaction()
             raise
     
     def decrement_vehicle_occupancy(self, vehicle_id: str) -> None:
@@ -242,20 +274,19 @@ class VehicleStateWorker(StateWorker):
         self.vehicles.take_snapshot(timestamp)
     
     def get_state(self) -> VehicleSystemState:
-        """Get current state of the vehicle system"""
+        """Get current vehicle system state"""
         if not self.initialized:
             raise RuntimeError("Worker not initialized")
             
         try:
-            # Get vehicles by status
+            # Group vehicles by status
             vehicles_by_status = defaultdict(list)
             for vid, vehicle in self.vehicles.items.items():
                 vehicles_by_status[vehicle.current_state.status].append(vid)
             
             return VehicleSystemState(
                 vehicles={vid: v.current_state for vid, v in self.vehicles.items.items()},
-                vehicles_by_status=vehicles_by_status,
-                vehicle_route_mapping=self.vehicle_to_route_mapping.copy()  # Include route mapping in state
+                vehicles_by_status=vehicles_by_status
             )
             
         except Exception as e:
@@ -275,13 +306,7 @@ class VehicleStateWorker(StateWorker):
                     vehicle.current_state = vehicle_state
                 else:
                     logger.warning(f"Vehicle {vehicle_id} not found during state update")
-            
-            # Update route mapping if present in state
-            if hasattr(state, 'vehicle_route_mapping'):
-                self.vehicle_to_route_mapping = state.vehicle_route_mapping.copy()
                 
-            logger.info("Vehicle system state updated successfully")
-            
         except Exception as e:
             logger.error(f"Failed to update vehicle system state: {str(e)}")
             raise
@@ -294,7 +319,6 @@ class VehicleStateWorker(StateWorker):
             
             # Reset current state
             self.vehicles = StateContainer[Vehicle]()
-            self.vehicle_to_route_mapping = {}
             
             # Restore vehicles using update_state
             self.update_state(vehicle_system_state)
@@ -319,9 +343,13 @@ class VehicleStateWorker(StateWorker):
 
     def cleanup(self) -> None:
         """Clean up resources"""
-        self.vehicles.clear_history()
-        self.initialized = False
-        logger.info("Vehicle state worker cleaned up")
+        if self.initialized:
+            # Reset current state
+            self.vehicles = StateContainer[Vehicle]()
+            
+            # Reset initialization flag
+            self.initialized = False
+            logger.info("Vehicle state worker cleaned up")
 
     def update_vehicle_waiting_state(self, vehicle_id: str, is_waiting: bool) -> None:
         """Update vehicle's waiting for passengers state"""

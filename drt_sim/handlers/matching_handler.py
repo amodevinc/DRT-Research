@@ -197,7 +197,6 @@ class MatchingHandler:
             route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
             if not route_exists:
                 logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
-                        f"segments={len(assignment.route.segments)}, "
                         f"total_distance={assignment.route.total_distance:.2f}m, "
                         f"total_duration={assignment.route.total_duration:.2f}s")
                 assignment.route.status = RouteStatus.CREATED
@@ -212,8 +211,7 @@ class MatchingHandler:
             is_consistent, consistency_error = assignment.route.validate_passenger_consistency()
             if not is_consistent:
                 logger.warning(f"Route {assignment.route.id} has passenger consistency issues: {consistency_error}")
-                logger.warning(f"Route details: vehicle={assignment.vehicle_id}, stops={len(assignment.route.stops)}, "
-                            f"segments={len(assignment.route.segments)}")
+                logger.warning(f"Route details: vehicle={assignment.vehicle_id}, stops={len(assignment.route.stops)}")
                 
                 # Log detailed information about each stop for debugging
                 for i, stop in enumerate(assignment.route.stops):
@@ -287,7 +285,8 @@ class MatchingHandler:
                     data={
                         'dispatch_type': 'initial',
                         'timestamp': self.context.current_time,
-                        'route_id': assignment.route.id
+                        'route_id': assignment.route.id,
+                        'route_version': assignment.route.version
                     }
                 )
                 self.context.event_manager.publish_event(dispatch_event)

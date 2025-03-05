@@ -230,6 +230,11 @@ class EventManager:
         
         return processed_events
     
+    def get_all_events(self) -> List[Event]:
+        """Get all events from the event queue."""
+        with self.lock:
+            return list(self.event_queue.queue)
+    
     def publish_event(self, event: Event) -> bool:
         """Queue an event for later processing."""
         try:

@@ -82,6 +82,7 @@ class EventType(Enum):
     PASSENGER_ARRIVED_DESTINATION = "passenger.walking.destination.completed"
     PASSENGER_JOURNEY_COMPLETED = "passenger.journey.completed"
     CHECK_BOARDING_STATUS = "passenger.boarding.check_status"
+    PASSENGER_READY_FOR_BOARDING = "passenger.ready.for.boarding"
     
     # Service Level Events
     EXCESS_WAIT_TIME = "passenger.wait_time.exceeded"

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import traceback
 import math
 from drt_sim.models.vehicle import Vehicle, VehicleStatus
-from drt_sim.models.route import Route, RouteSegment
+from drt_sim.models.route import Route
 from drt_sim.models.matching import Assignment
 from drt_sim.models.stop import StopAssignment
 from drt_sim.network.manager import NetworkManager
@@ -85,7 +85,6 @@ class InsertionAssigner:
         
         Args:
             stop_assignment: Stop assignment to be inserted
-            available_vehicles: List of available vehicles
             
         Returns:
             Tuple of (Assignment if feasible match found, RejectionMetadata if rejected)
@@ -135,58 +134,59 @@ class InsertionAssigner:
                 default=None
             )
 
-            #best vehicle current route:
-            best_vehicle_current_route = self.state_manager.vehicle_worker.get_vehicle_active_route_id(best_insertion.vehicle.id)
-            best_vehicle_current_route = self.state_manager.route_worker.get_route(best_vehicle_current_route)
-            
-            if best_insertion:
-                assignment = await self._create_assignment(
-                    best_vehicle_current_route=best_vehicle_current_route,
-                    stop_assignment=stop_assignment,
-                    insertion=best_insertion,
-                    computation_start=computation_start
-                )
-                return assignment, None
-            
-            # If no feasible insertion found, gather rejection reasons
-            rejection_reasons = [
-                result.rejection_reason for result in insertion_results 
-                if result and result.rejection_reason
-            ]
+            if not best_insertion:
+                # If no feasible insertion found, gather rejection reasons
+                rejection_reasons = [
+                    result.rejection_reason for result in insertion_results 
+                    if result and result.rejection_reason
+                ]
 
-            logger.info(f"Rejection reasons: {rejection_reasons}")
+                logger.info(f"Rejection reasons: {rejection_reasons}")
+                
+                # Get the most common rejection reason
+                most_common_reason = max(
+                    set(rejection_reasons),
+                    key=rejection_reasons.count,
+                    default=RejectionReason.NO_FEASIBLE_INSERTION
+                )
+                
+                # Aggregate rejection details
+                aggregated_details = {
+                    "evaluated_vehicles": len(compatible_vehicles),
+                    "rejection_counts": {
+                        reason.value: rejection_reasons.count(reason)
+                        for reason in set(rejection_reasons)
+                    },
+                    "constraint_violations": {}
+                }
+                
+                # Aggregate constraint violation details from all results
+                for result in insertion_results:
+                    if result and result.rejection_details:
+                        for constraint, value in result.rejection_details.get("violations", {}).items():
+                            if constraint not in aggregated_details["constraint_violations"]:
+                                aggregated_details["constraint_violations"][constraint] = []
+                            aggregated_details["constraint_violations"][constraint].append(value)
+                
+                return None, RejectionMetadata(
+                    reason=most_common_reason,
+                    timestamp=self.sim_context.current_time.isoformat(),
+                    stage="matching",
+                    details=aggregated_details
+                )
             
-            # Get the most common rejection reason
-            most_common_reason = max(
-                set(rejection_reasons),
-                key=rejection_reasons.count,
-                default=RejectionReason.NO_FEASIBLE_INSERTION
+            # Get best vehicle's current route for assignment creation
+            best_vehicle_current_route_id = self.state_manager.vehicle_worker.get_vehicle_active_route_id(best_insertion.vehicle.id)
+            best_vehicle_current_route = self.state_manager.route_worker.get_route(best_vehicle_current_route_id)
+            
+            # Create assignment
+            assignment = await self._create_assignment(
+                best_vehicle_current_route=best_vehicle_current_route,
+                stop_assignment=stop_assignment,
+                insertion=best_insertion,
+                computation_start=computation_start
             )
-            
-            # Aggregate rejection details
-            aggregated_details = {
-                "evaluated_vehicles": len(compatible_vehicles),
-                "rejection_counts": {
-                    reason.value: rejection_reasons.count(reason)
-                    for reason in set(rejection_reasons)
-                },
-                "constraint_violations": {}
-            }
-            
-            # Aggregate constraint violation details from all results
-            for result in insertion_results:
-                if result and result.rejection_details:
-                    for constraint, value in result.rejection_details.get("violations", {}).items():
-                        if constraint not in aggregated_details["constraint_violations"]:
-                            aggregated_details["constraint_violations"][constraint] = []
-                        aggregated_details["constraint_violations"][constraint].append(value)
-            
-            return None, RejectionMetadata(
-                reason=most_common_reason,
-                timestamp=self.sim_context.current_time.isoformat(),
-                stage="matching",
-                details=aggregated_details
-            )
+            return assignment, None
             
         except Exception as e:
             logger.error(f"Error in assign_request: {str(e)}", exc_info=True)
@@ -202,6 +202,7 @@ class InsertionAssigner:
         stop_assignment: StopAssignment,
         vehicle: Vehicle,
     ) -> Optional[InsertionCost]:
+        """Evaluate inserting a stop assignment into a vehicle's route"""
         try:
             logger.info(f"Evaluating insertion for vehicle {vehicle.id} with stop assignment {stop_assignment.id}")
             logger.debug(f"Vehicle state: location={vehicle.current_state.current_location}, "
@@ -211,8 +212,7 @@ class InsertionAssigner:
             current_route = self.state_manager.route_worker.get_route(active_route_id)
             
             if current_route:
-                logger.debug(f"Current route {current_route.id}: stops={len(current_route.stops)}, "
-                          f"segments={len(current_route.segments)}, status={current_route.status}")
+                logger.debug(f"Current route {current_route.id}: stops={len(current_route.stops)}, status={current_route.status}")
                 logger.debug(f"Route stops: {[str(stop) for stop in current_route.stops]}")
             
             # Handle both cases - vehicle with route and without route
@@ -537,18 +537,7 @@ class InsertionAssigner:
         pickup_idx: int,
         vehicle: Vehicle
     ) -> Dict[str, float]:
-        """Calculate all cost components for optimization.
-        
-        All time-based components are calculated in seconds for consistency with constraints.
-        Distance components are in meters.
-        
-        The component names exactly match the weight names from MatchingAssignmentConfig:
-        - passenger_waiting_time (seconds)
-        - passenger_in_vehicle_time (seconds)
-        - existing_passenger_delay (seconds)
-        - distance (meters)
-        - operational_cost (monetary units)
-        """
+        """Calculate all cost components for optimization."""
         logger.debug(f"Calculating cost components for route modification:")
         logger.debug(f"Current route metrics: duration={current_route.total_duration if current_route else 0}, "
                   f"distance={current_route.total_distance if current_route else 0}")
@@ -560,8 +549,15 @@ class InsertionAssigner:
             stop_assignment.expected_passenger_origin_stop_arrival_time
         ).total_seconds())
 
+        # Find the dropoff index
+        dropoff_idx = -1
+        for i, stop in enumerate(new_route.stops):
+            if stop_assignment.request_id in stop.dropoff_passengers:
+                dropoff_idx = i
+                break
+
         passenger_in_vehicle_time = (
-            new_route.stops[pickup_idx + 1].planned_arrival_time -  
+            new_route.stops[dropoff_idx].planned_arrival_time -  
             new_route.stops[pickup_idx].planned_arrival_time
         ).total_seconds()
 
@@ -586,11 +582,7 @@ class InsertionAssigner:
         }
 
     def _calculate_weighted_cost(self, cost_components: Dict[str, float]) -> float:
-        """Calculate total weighted cost using configured weights.
-        
-        All time components are in seconds to match constraints.
-        Normalizes each component to a 0-1 scale before applying weights.
-        """
+        """Calculate total weighted cost using configured weights."""
         total_cost = 0.0
         
         # Get constraint values from config for normalization
@@ -655,14 +647,7 @@ class InsertionAssigner:
         return duration * 0.5  # Convert seconds to hours and multiply by cost
 
     def _map_violation_to_reason(self, violation_type: str) -> RejectionReason:
-        """Map constraint violation type to rejection reason.
-        
-        Args:
-            violation_type: The type of constraint violation
-            
-        Returns:
-            Corresponding RejectionReason enum value
-        """
+        """Map constraint violation type to rejection reason."""
         violation_map = {
             # Time-based violations
             "vehicle_access_time": RejectionReason.VEHICLE_ACCESS_TIME_CONSTRAINT,
@@ -778,37 +763,6 @@ class InsertionAssigner:
             logger.error(f"Error evaluating new route for vehicle {vehicle.id}: {str(e)}", exc_info=True)
             return None
 
-    async def ensure_segments(self, route: Route) -> None:
-        """Ensures route segments have travel times and distances calculated"""
-        if not route.segments:
-            segment_tasks = []
-            for i in range(len(route.stops) - 1):
-                # Create tasks for both time and distance calculations
-                time_task = self.network_manager.calculate_travel_time(
-                    route.stops[i].location,
-                    route.stops[i + 1].location
-                )
-                distance_task = self.network_manager.calculate_distance(
-                    route.stops[i].location,
-                    route.stops[i + 1].location
-                )
-                segment_tasks.append(asyncio.gather(time_task, distance_task))
-            
-            # Calculate all segments in parallel
-            segment_results = await asyncio.gather(*segment_tasks)
-            
-            # Create RouteSegment objects
-            route.segments = [
-                RouteSegment(
-                    origin=route.stops[i],
-                    destination=route.stops[i + 1],
-                    estimated_duration=segment_results[i][0],  # travel time in seconds
-                    estimated_distance=segment_results[i][1],  # distance in meters
-                    completed=False
-                )
-                for i in range(len(route.stops) - 1)
-            ]
-
     async def _create_assignment(
         self,
         best_vehicle_current_route: Optional[Route],
@@ -818,10 +772,6 @@ class InsertionAssigner:
     ) -> Optional[Assignment]:
         """Creates final assignment from best insertion"""
         try:
-            # Ensure route segments are calculated
-            await self.ensure_segments(insertion.updated_route)
-
-            
             route_pickup_stop = next(
                 stop for stop in insertion.updated_route.stops
                 if stop_assignment.request_id in stop.pickup_passengers
@@ -838,11 +788,10 @@ class InsertionAssigner:
             logger.debug(f"Vehicle current stop id: {insertion.vehicle.current_state.current_stop_id}")
             if best_vehicle_current_route:
                 logger.debug(f"Best vehicle current route stops: {[str(stop) for stop in best_vehicle_current_route.stops]}")
-                logger.debug(f"Best Vehicle Current Route Segments: {[str(segment) for segment in best_vehicle_current_route.segments]}")
             else:
                 logger.debug(f"Best vehicle current route is None")
             logger.debug(f"New Route stops: {[str(stop) for stop in insertion.updated_route.stops]}")
-            logger.debug(f"New Route Segments: {[str(segment) for segment in insertion.updated_route.segments]}")
+
             return Assignment(
                 request_id=stop_assignment.request_id,
                 vehicle_id=insertion.vehicle.id,
@@ -896,12 +845,7 @@ class InsertionAssigner:
                 if (not stop.completed and 
                     stop.stop.id == vehicle.current_state.current_stop_id):
                     # We can only insert after this stop
-                    if vehicle.id == 'vehicle_5':
-                        logger.info(f"Vehicle 5 is at stop {stop.id}, returning first valid index {i + 1}")
                     return i + 1
-        
-        if vehicle.id == 'vehicle_5':
-            logger.info(f"Vehicle 5 first valid index: {first_non_completed_idx} (vehicle not at stop)")
         return first_non_completed_idx
 
     def _is_vehicle_compatible(self, vehicle: Vehicle) -> bool:

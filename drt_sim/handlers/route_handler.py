@@ -4,7 +4,7 @@ import asyncio
 from drt_sim.core.state.manager import StateManager
 from drt_sim.core.simulation.context import SimulationContext
 from drt_sim.models.event import Event, EventType, EventPriority
-from drt_sim.models.route import Route, RouteStatus, RouteSegment, RouteStop
+from drt_sim.models.route import Route, RouteStatus
 from drt_sim.config.config import ParameterSet
 from drt_sim.models.vehicle import VehicleStatus, Vehicle
 from drt_sim.models.matching import Assignment
@@ -16,6 +16,7 @@ class RouteHandler:
     """
     Handles route lifecycle and operations in the DRT system.
     Manages route creation, modifications, and coordinates with VehicleHandler.
+    Simplified to work without segments.
     """
     
     def __init__(
@@ -53,7 +54,6 @@ class RouteHandler:
             
             if not route_exists:
                 logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
-                          f"segments={len(assignment.route.segments)}, "
                           f"total_distance={assignment.route.total_distance:.2f}m, "
                           f"total_duration={assignment.route.total_duration:.2f}s")
                 logger.debug(f"Route stops sequence: {[str(stop) for stop in assignment.route.stops]}")
@@ -63,8 +63,8 @@ class RouteHandler:
             else:
                 existing_route = self.state_manager.route_worker.get_route(assignment.route.id)
                 logger.debug(f"Updating existing route {existing_route.id}:")
-                logger.debug(f"Old route: {str(existing_route)}. Segments: {[str(segment) for segment in existing_route.segments]}")
-                logger.debug(f"New route: {str(assignment.route)}. Segments: {[str(segment) for segment in assignment.route.segments]}")
+                logger.debug(f"Old route: {str(existing_route)}")
+                logger.debug(f"New route: {str(assignment.route)}")
                 logger.debug(f"New route stops sequence: {[str(stop) for stop in assignment.route.stops]}")
                 
                 # Keep existing status if route exists
@@ -119,6 +119,12 @@ class RouteHandler:
     
     def _create_initial_dispatch_event(self, vehicle_id: str, route_id: str) -> None:
         """Create dispatch event for initial vehicle start"""
+        # Get the route to include its version
+        route = self.state_manager.route_worker.get_route(route_id)
+        if not route:
+            logger.warning(f"Route {route_id} not found when creating dispatch event")
+            return
+            
         event = Event(
             event_type=EventType.VEHICLE_DISPATCH_REQUEST,
             priority=EventPriority.HIGH,
@@ -127,13 +133,20 @@ class RouteHandler:
             data={
                 'dispatch_type': 'initial',
                 'timestamp': self.context.current_time,
-                'route_id': route_id
+                'route_id': route_id,
+                'route_version': route.version  # Include route version for version checking
             }
         )
         self.context.event_manager.publish_event(event)
 
     def _create_reroute_dispatch_event(self, vehicle_id: str, route_id: str) -> None:
         """Create dispatch event for rerouting an active vehicle"""
+        # Get the route to include its version
+        route = self.state_manager.route_worker.get_route(route_id)
+        if not route:
+            logger.warning(f"Route {route_id} not found when creating reroute event")
+            return
+            
         event = Event(
             event_type=EventType.VEHICLE_REROUTE_REQUEST,
             priority=EventPriority.HIGH,
@@ -142,7 +155,8 @@ class RouteHandler:
             data={
                 'dispatch_type': 'reroute',
                 'timestamp': self.context.current_time,
-                'route_id': route_id
+                'route_id': route_id,
+                'route_version': route.version  # Include route version for version checking
             }
         )
         self.context.event_manager.publish_event(event)

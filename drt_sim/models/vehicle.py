@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from .base import ModelBase
 from .location import Location
-from .route import Route, RouteStatus
+from .route import Route
 from ..config.config import VehicleConfig
 import logging
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ class VehicleState(ModelBase):
     in_service_start_time: Optional[datetime] = None
     waiting_for_passengers: bool = False  # Flag to track if vehicle is waiting for passengers at a stop
     current_stop_id: Optional[str] = None  # Track which stop the vehicle is currently at
+    current_route_id: Optional[str] = None  # Track the active route ID
 
     def __str__(self) -> str:
         """Provides a concise string representation of the vehicle state"""
@@ -59,7 +60,8 @@ class VehicleState(ModelBase):
             'cumulative_occupied_time': self.cumulative_occupied_time,
             'in_service_start_time': self.in_service_start_time.isoformat() if self.in_service_start_time else None,
             'waiting_for_passengers': self.waiting_for_passengers,
-            'current_stop_id': self.current_stop_id
+            'current_stop_id': self.current_stop_id,
+            'current_route_id': self.current_route_id
         }
 
     @classmethod
@@ -76,7 +78,8 @@ class VehicleState(ModelBase):
             cumulative_occupied_time=data.get('cumulative_occupied_time', 0.0),
             in_service_start_time=datetime.fromisoformat(data['in_service_start_time']) if data['in_service_start_time'] else None,
             waiting_for_passengers=data.get('waiting_for_passengers', False),
-            current_stop_id=data.get('current_stop_id')
+            current_stop_id=data.get('current_stop_id'),
+            current_route_id=data.get('current_route_id')
         )
 
     def update_location(self, new_location: Location, distance_covered: Optional[float] = None) -> None:
@@ -107,7 +110,8 @@ class VehicleState(ModelBase):
             cumulative_occupied_time=self.cumulative_occupied_time,
             in_service_start_time=self.in_service_start_time,
             waiting_for_passengers=self.waiting_for_passengers,
-            current_stop_id=self.current_stop_id
+            current_stop_id=self.current_stop_id,
+            current_route_id=self.current_route_id
         )
 
 @dataclass

@@ -21,12 +21,11 @@ from drt_sim.handlers.passenger_handler import PassengerHandler
 from drt_sim.handlers.route_handler import RouteHandler
 from drt_sim.handlers.stop_handler import StopHandler
 from drt_sim.handlers.matching_handler import MatchingHandler
-from drt_sim.core.coordination.stop_coordinator import StopCoordinator
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.event import EventType
 from drt_sim.network.manager import NetworkManager
 from drt_sim.models.base import SimulationEncoder
-from drt_sim.integration.traffic_sim_integration import SUMOIntegration, SUMOConfig
+from drt_sim.integration.traffic_sim_integration import SUMOIntegration
 import traceback
 import json
 import logging
@@ -138,12 +137,6 @@ class SimulationOrchestrator:
                 config=self.cfg,
             )
 
-            self.stop_coordinator = StopCoordinator(
-                config=self.cfg,
-                context=self.context,
-                state_manager=self.state_manager,
-            )
-
             
             # Initialize handlers
             self._initialize_handlers()
@@ -179,14 +172,12 @@ class SimulationOrchestrator:
             config=self.cfg,
             context=self.context,
             state_manager=self.state_manager,
-            stop_coordinator=self.stop_coordinator
         )
         
         self.passenger_handler = PassengerHandler(
             config=self.cfg,
             context=self.context,
             state_manager=self.state_manager,
-            stop_coordinator=self.stop_coordinator
         )
         
         self.route_handler = RouteHandler(
@@ -249,6 +240,7 @@ class SimulationOrchestrator:
             EventType.PASSENGER_ARRIVED_DESTINATION: self.passenger_handler.handle_passenger_arrived_destination,
             EventType.PASSENGER_NO_SHOW: self.passenger_handler.handle_passenger_no_show,
             EventType.SERVICE_LEVEL_VIOLATION: self.passenger_handler.handle_service_level_violation,
+            EventType.PASSENGER_READY_FOR_BOARDING: self.vehicle_handler.handle_passenger_ready_for_boarding,
             
             # Route Events
             EventType.ROUTE_UPDATE_REQUEST: self.route_handler.handle_route_update_request,
@@ -272,8 +264,6 @@ class SimulationOrchestrator:
             ],
             EventType.VEHICLE_STOP_OPERATIONS_COMPLETED: [
                 lambda e: hasattr(e, 'vehicle_id'),
-                lambda e: 'route_id' in e.data,
-                lambda e: 'segment_id' in e.data,
             ],
             # Add other validation rules as needed
         }

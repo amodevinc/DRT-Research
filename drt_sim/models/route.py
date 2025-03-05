@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Tuple, Set
+from typing import List, Dict, Any, Optional, Set, ClassVar
 from enum import Enum
 import logging
 
@@ -17,14 +17,7 @@ class RouteStatus(Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     PLANNED = "planned"
-    MODIFIED = "modified"  # New status to track modifications
-
-class SegmentExecutionStatus(Enum):
-    """Tracks the execution status of a segment"""
-    PENDING = "pending"      # Not yet started
-    IN_PROGRESS = "in_progress"  # Vehicle is currently on this segment
-    COMPLETED = "completed"  # Segment has been completed
-    SKIPPED = "skipped"      # Segment was skipped due to rerouting
+    MODIFIED = "modified"  # Status to track modifications
 
 @dataclass
 class RouteStop(ModelBase):
@@ -46,10 +39,28 @@ class RouteStop(ModelBase):
     boarded_request_ids: List[str] = field(default_factory=list)  # List of request IDs that have boarded
     wait_start_time: Optional[datetime] = None
     wait_timeout_event_id: Optional[str] = None
-    # New fields for tracking modifications
+    # Fields for tracking modifications
     initial_sequence: Optional[int] = None  # Original sequence before any modifications
     modification_count: int = 0  # Number of times this stop has been modified
-
+    # Movement fields (replacing segment information)
+    origin_location: Optional[Location] = None  # For first stop or after modifications
+    estimated_duration_to_stop: float = 0.0  # Estimated travel time to this stop in seconds
+    estimated_distance_to_stop: float = 0.0  # Estimated distance to this stop in meters
+    actual_duration_to_stop: Optional[float] = None  # Actual travel time to this stop in seconds
+    actual_distance_to_stop: Optional[float] = None  # Actual travel distance to this stop in meters
+    movement_start_time: Optional[datetime] = None  # When vehicle started moving toward this stop
+    in_progress: bool = False  # Whether vehicle is currently moving toward this stop
+    progress_percentage: float = 0.0  # Progress percentage toward this stop (0-100)
+    vehicle_current_location: Optional[Location] = None  # Current vehicle location during movement
+    arrived_pickup_request_ids: Set[str] = field(default_factory=set)
+    completed_dropoff_request_ids: Set[str] = field(default_factory=set)
+    vehicle_is_present: bool = False
+    last_vehicle_arrival_time: Optional[datetime] = None
+    # Fields to track route changes while at stop
+    pending_route_change: bool = False
+    new_route_id: Optional[str] = None
+    route_change_time: Optional[datetime] = None
+    
     def __post_init__(self):
         super().__init__()
         if self.initial_sequence is None:
@@ -58,6 +69,9 @@ class RouteStop(ModelBase):
     def __str__(self) -> str:
         """Provides a concise string representation of the route stop"""
         status = "✓" if self.completed else "⌛"
+        if self.in_progress:
+            status = f"→{self.progress_percentage:.1f}%"
+            
         pickup_ids = [pid[:8] for pid in self.pickup_passengers]
         dropoff_ids = [pid[:8] for pid in self.dropoff_passengers]
         pickup_str = f"+[{','.join(pickup_ids)}]" if pickup_ids else ""
@@ -68,7 +82,14 @@ class RouteStop(ModelBase):
         arr_time = f"|arr={self.planned_arrival_time.strftime('%H:%M:%S')}" if self.planned_arrival_time else ""
         dep_time = f"|dep={self.planned_departure_time.strftime('%H:%M:%S')}" if self.planned_departure_time else ""
         
-        return f"RouteStop[{self.id[:8]}|ActualStopId={self.stop.id}|seq={self.sequence}|load={self.current_load}|{ops_str}{arr_time}{dep_time}|{status}]"
+        # Add travel information
+        travel_info = ""
+        if not self.completed and not self.in_progress:
+            dist = f"{self.estimated_distance_to_stop:.1f}m"
+            dur = f"{self.estimated_duration_to_stop:.1f}s"
+            travel_info = f"|travel={dist},{dur}"
+        
+        return f"RouteStop[{self.id[:8]}|ActualStopId={self.stop.id}|seq={self.sequence}|load={self.current_load}|{ops_str}{arr_time}{dep_time}{travel_info}|{status}]"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert RouteStop to dictionary representation"""
@@ -93,7 +114,16 @@ class RouteStop(ModelBase):
             'wait_start_time': self.wait_start_time.isoformat() if self.wait_start_time else None,
             'wait_timeout_event_id': self.wait_timeout_event_id,
             'initial_sequence': self.initial_sequence,
-            'modification_count': self.modification_count
+            'modification_count': self.modification_count,
+            'origin_location': self.origin_location.to_dict() if self.origin_location else None,
+            'estimated_duration_to_stop': self.estimated_duration_to_stop,
+            'estimated_distance_to_stop': self.estimated_distance_to_stop,
+            'actual_duration_to_stop': self.actual_duration_to_stop,
+            'actual_distance_to_stop': self.actual_distance_to_stop,
+            'movement_start_time': self.movement_start_time.isoformat() if self.movement_start_time else None,
+            'in_progress': self.in_progress,
+            'progress_percentage': self.progress_percentage,
+            'vehicle_current_location': self.vehicle_current_location.to_dict() if self.vehicle_current_location else None
         }
         return base_dict
 
@@ -122,8 +152,25 @@ class RouteStop(ModelBase):
             wait_start_time=datetime.fromisoformat(data['wait_start_time']) if data.get('wait_start_time') else None,
             wait_timeout_event_id=data.get('wait_timeout_event_id'),
             initial_sequence=data.get('initial_sequence'),
-            modification_count=data.get('modification_count', 0)
+            modification_count=data.get('modification_count', 0),
+            estimated_duration_to_stop=data.get('estimated_duration_to_stop', 0.0),
+            estimated_distance_to_stop=data.get('estimated_distance_to_stop', 0.0),
+            actual_duration_to_stop=data.get('actual_duration_to_stop'),
+            actual_distance_to_stop=data.get('actual_distance_to_stop'),
+            in_progress=data.get('in_progress', False),
+            progress_percentage=data.get('progress_percentage', 0.0)
         )
+        
+        # Handle location objects
+        if data.get('origin_location'):
+            route_stop.origin_location = Location.from_dict(data['origin_location'])
+            
+        if data.get('vehicle_current_location'):
+            route_stop.vehicle_current_location = Location.from_dict(data['vehicle_current_location'])
+        
+        # Handle movement_start_time
+        if data.get('movement_start_time'):
+            route_stop.movement_start_time = datetime.fromisoformat(data['movement_start_time'])
         
         # Set the ID and timestamps if they exist
         if 'id' in data:
@@ -134,6 +181,50 @@ class RouteStop(ModelBase):
             route_stop.updated_at = datetime.fromisoformat(data['updated_at'])
             
         return route_stop
+    
+    def register_passenger_arrival(self, request_id: str) -> bool:
+        """Register passenger arrival, return True if boarding should be attempted"""
+        self.arrived_pickup_request_ids.add(request_id)
+        return self.vehicle_is_present
+        
+    def register_vehicle_arrival(self, current_time: datetime) -> Set[str]:
+        """Register vehicle arrival, return passenger IDs ready for boarding"""
+        self.vehicle_is_present = True
+        self.last_vehicle_arrival_time = current_time
+        return self.arrived_pickup_request_ids - set(self.boarded_request_ids)
+        
+    def register_boarding(self, request_id: str) -> None:
+        """Register passenger boarding"""
+        if request_id not in self.boarded_request_ids:
+            self.boarded_request_ids.append(request_id)
+            
+    def register_dropoff(self, request_id: str) -> None:
+        """Register passenger dropoff"""
+        self.completed_dropoff_request_ids.add(request_id)
+        
+    def is_pickup_complete(self) -> bool:
+        """Check if all pickups are complete"""
+        return set(self.boarded_request_ids).issuperset(self.pickup_passengers)
+        
+    def is_dropoff_complete(self) -> bool:
+        """Check if all dropoffs are complete"""
+        return self.completed_dropoff_request_ids.issuperset(self.dropoff_passengers)
+        
+    def is_operation_complete(self) -> bool:
+        """Check if all operations are complete"""
+        return self.is_pickup_complete() and self.is_dropoff_complete()
+        
+    def start_wait_timer(self, event_id: str, current_time: datetime) -> None:
+        """Start wait timer"""
+        self.wait_start_time = current_time
+        self.wait_timeout_event_id = event_id
+        
+    def cancel_wait_timer(self) -> Optional[str]:
+        """Cancel wait timer, return event ID if one was active"""
+        event_id = self.wait_timeout_event_id
+        self.wait_start_time = None
+        self.wait_timeout_event_id = None
+        return event_id
         
     def has_passenger_operation(self) -> bool:
         """Check if this stop has any passenger operations (pickup or dropoff)"""
@@ -156,305 +247,117 @@ class RouteStop(ModelBase):
         if self.completed:
             return False
         return self.has_passenger_operation()
-
-@dataclass
-class RouteSegment(ModelBase):
-    """Represents a segment of a route between two stops or locations"""
-    origin: Optional[RouteStop] = None  # Made optional to handle vehicle's current position
-    destination: Optional[RouteStop] = None  # Made optional to handle return-to-base
-    estimated_duration: float = 0.0  # in seconds
-    estimated_distance: float = 0.0  # in meters
-    completed: bool = False
-    actual_duration: Optional[float] = None
-    actual_distance: Optional[float] = None
-    origin_location: Optional[Location] = None  # Added to handle non-stop origins
-    destination_location: Optional[Location] = None  # Added to handle non-stop destinations
-    waypoints: List[Dict[str, Any]] = field(default_factory=list)  # List of waypoints along the path
-    current_waypoint_index: int = 0  # Index of current waypoint in path
-    last_waypoint_update: Optional[datetime] = None  # Timestamp of last waypoint update
-    movement_start_time: Optional[datetime] = None  # Timestamp of when the segment movement started
-    # New fields for enhanced segment tracking
-    execution_status: SegmentExecutionStatus = SegmentExecutionStatus.PENDING
-    progress_percentage: float = 0.0  # Progress from 0 to 100
-    vehicle_current_location: Optional[Location] = None  # Current location in segment if in progress
-    is_active: bool = False  # Flag to mark active segment being executed
-
-    def __post_init__(self):
-        super().__init__()
-        self._validate()
-        
-    def _validate(self) -> None:
-        """Validate segment has valid origin and destination"""
-        has_origin = bool(self.origin or self.origin_location)
-        has_destination = bool(self.destination or self.destination_location)
-        
-        if not has_origin or not has_destination:
-            raise ValueError("RouteSegment must have either origin/destination stops or locations")
-
-    def __str__(self) -> str:
-        """Provides a concise string representation of the route segment"""
-        status_map = {
-            SegmentExecutionStatus.PENDING: "⌛",
-            SegmentExecutionStatus.IN_PROGRESS: "→",
-            SegmentExecutionStatus.COMPLETED: "✓",
-            SegmentExecutionStatus.SKIPPED: "⨯"
-        }
-        status = status_map.get(self.execution_status, "?")
-        
-        origin_id = self.origin.id[:8] if self.origin else (self.origin_location.id[:8] if self.origin_location else "N/A")
-        dest_id = self.destination.id[:8] if self.destination else (self.destination_location.id[:8] if self.destination_location else "N/A")
-        dist = f"{self.actual_distance:.1f}m" if self.actual_distance else f"{self.estimated_distance:.1f}m"
-        dur = f"{self.actual_duration:.1f}s" if self.actual_duration else f"{self.estimated_duration:.1f}s"
-        waypoint_info = f"|wp={self.current_waypoint_index}/{len(self.waypoints)}" if self.waypoints else ""
-        active_str = "ACTIVE" if self.is_active else ""
-        
-        return f"Segment[{self.id[:8]}|{origin_id}→{dest_id}|{dist}|{dur}{waypoint_info}|{status}|{self.progress_percentage:.1f}%|{active_str}]"
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert RouteSegment to dictionary representation"""
-        base_dict = {
-            'id': self.id,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'origin': self.origin.to_dict() if self.origin else None,
-            'destination': self.destination.to_dict() if self.destination else None,
-            'estimated_duration': self.estimated_duration,
-            'estimated_distance': self.estimated_distance,
-            'completed': self.completed,
-            'actual_duration': self.actual_duration,
-            'actual_distance': self.actual_distance,
-            'origin_location': self.origin_location.to_dict() if self.origin_location else None,
-            'destination_location': self.destination_location.to_dict() if self.destination_location else None,
-            'waypoints': self.waypoints,
-            'current_waypoint_index': self.current_waypoint_index,
-            'last_waypoint_update': self.last_waypoint_update.isoformat() if self.last_waypoint_update else None,
-            'movement_start_time': self.movement_start_time.isoformat() if self.movement_start_time else None,
-            'execution_status': self.execution_status.value,
-            'progress_percentage': self.progress_percentage,
-            'vehicle_current_location': self.vehicle_current_location.to_dict() if self.vehicle_current_location else None,
-            'is_active': self.is_active
-        }
-        return base_dict
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'RouteSegment':
-        """Create RouteSegment from dictionary representation"""
-        try:
-            # Handle origin and destination carefully
-            origin = None
-            if data.get('origin'):
-                origin = RouteStop.from_dict(data['origin'])
-                
-            destination = None
-            if data.get('destination'):
-                destination = RouteStop.from_dict(data['destination'])
-                
-            origin_location = None
-            if data.get('origin_location'):
-                origin_location = Location.from_dict(data['origin_location'])
-                
-            destination_location = None
-            if data.get('destination_location'):
-                destination_location = Location.from_dict(data['destination_location'])
-                
-            vehicle_current_location = None
-            if data.get('vehicle_current_location'):
-                vehicle_current_location = Location.from_dict(data['vehicle_current_location'])
-            
-            # Handle execution status
-            execution_status = SegmentExecutionStatus.PENDING
-            if data.get('execution_status'):
-                execution_status = SegmentExecutionStatus(data['execution_status'])
-            
-            segment = cls(
-                origin=origin,
-                destination=destination,
-                estimated_duration=data.get('estimated_duration', 0.0),
-                estimated_distance=data.get('estimated_distance', 0.0),
-                completed=data.get('completed', False),
-                actual_duration=data.get('actual_duration'),
-                actual_distance=data.get('actual_distance'),
-                origin_location=origin_location,
-                destination_location=destination_location,
-                waypoints=data.get('waypoints', []),
-                current_waypoint_index=data.get('current_waypoint_index', 0),
-                execution_status=execution_status,
-                progress_percentage=data.get('progress_percentage', 0.0),
-                vehicle_current_location=vehicle_current_location,
-                is_active=data.get('is_active', False)
-            )
-            
-            # Handle timestamps
-            if data.get('last_waypoint_update'):
-                segment.last_waypoint_update = datetime.fromisoformat(data['last_waypoint_update'])
-                
-            if data.get('movement_start_time'):
-                segment.movement_start_time = datetime.fromisoformat(data['movement_start_time'])
-            
-            # Set ID and creation timestamps
-            if 'id' in data:
-                segment.id = data['id']
-                
-            if 'created_at' in data and data['created_at']:
-                segment.created_at = datetime.fromisoformat(data['created_at'])
-                
-            if 'updated_at' in data and data['updated_at']:
-                segment.updated_at = datetime.fromisoformat(data['updated_at'])
-                
-            return segment
-            
-        except (ValueError, KeyError) as e:
-            raise ValueError(f"Error creating RouteSegment from dict: {str(e)}")
-
-    def get_current_waypoint(self) -> Optional[Dict[str, Any]]:
-        """Get the current waypoint in the path"""
-        if self.waypoints and 0 <= self.current_waypoint_index < len(self.waypoints):
-            return self.waypoints[self.current_waypoint_index]
-        return None
-
-    def get_next_waypoint(self) -> Optional[Dict[str, Any]]:
-        """Get the next waypoint in the path"""
-        if self.waypoints and self.current_waypoint_index + 1 < len(self.waypoints):
-            return self.waypoints[self.current_waypoint_index + 1]
-        return None
-
-    def advance_waypoint(self) -> bool:
-        """
-        Advance to the next waypoint in the path.
-        Returns True if successfully advanced, False if at end of path.
-        """
-        if not self.waypoints:
-            return False
-            
-        if self.current_waypoint_index + 1 < len(self.waypoints):
-            self.current_waypoint_index += 1
-            self.last_waypoint_update = datetime.now()
-            
-            # Update progress percentage
-            if len(self.waypoints) > 1:
-                self.progress_percentage = (self.current_waypoint_index / (len(self.waypoints) - 1)) * 100
-            else:
-                self.progress_percentage = 100.0
-                
-            return True
-            
-        return False
-
-    def get_progress(self) -> float:
-        """Get progress through the segment as a percentage"""
-        if self.execution_status == SegmentExecutionStatus.COMPLETED:
-            return 100.0
-            
-        if self.execution_status == SegmentExecutionStatus.SKIPPED:
-            return 100.0
-            
-        return self.progress_percentage
-        
-    def get_origin_location(self) -> Optional[Location]:
-        """Get the origin location regardless of whether it's from a stop or direct location"""
-        if self.origin and self.origin.stop:
-            return self.origin.stop.location
-        return self.origin_location
-        
-    def get_destination_location(self) -> Optional[Location]:
-        """Get the destination location regardless of whether it's from a stop or direct location"""
-        if self.destination and self.destination.stop:
-            return self.destination.stop.location
-        return self.destination_location
-        
-    def mark_completed(self, actual_duration: Optional[float] = None, actual_distance: Optional[float] = None) -> None:
-        """Mark this segment as completed with actual metrics"""
-        self.completed = True
-        self.execution_status = SegmentExecutionStatus.COMPLETED
-        self.progress_percentage = 100.0
-        self.is_active = False
-        
-        if actual_duration is not None:
-            self.actual_duration = actual_duration
-            
-        if actual_distance is not None:
-            self.actual_distance = actual_distance
-        
-        # If actual values not provided, use estimates
-        if self.actual_duration is None:
-            self.actual_duration = self.estimated_duration
-            
-        if self.actual_distance is None:
-            self.actual_distance = self.estimated_distance
-            
+    
     def mark_in_progress(self, current_location: Optional[Location] = None) -> None:
-        """Mark this segment as in progress"""
-        self.execution_status = SegmentExecutionStatus.IN_PROGRESS
-        self.is_active = True
+        """Mark this stop as in progress (vehicle is currently moving toward it)"""
+        self.in_progress = True
         
         if current_location:
             self.vehicle_current_location = current_location
             
-    def mark_skipped(self) -> None:
-        """Mark this segment as skipped (due to rerouting)"""
-        self.execution_status = SegmentExecutionStatus.SKIPPED
-        self.completed = True
-        self.progress_percentage = 100.0
-        self.is_active = False
-        
+        # Initialize movement start time if not set
+        if not self.movement_start_time:
+            self.movement_start_time = datetime.now()
+    
     def update_progress(self, percentage: float, current_location: Optional[Location] = None) -> None:
-        """Update progress through the segment"""
+        """Update progress toward this stop"""
         self.progress_percentage = max(0.0, min(100.0, percentage))
         
         if current_location:
             self.vehicle_current_location = current_location
+
+    def mark_completed(self, actual_arrival_time: Optional[datetime] = None, 
+                      actual_departure_time: Optional[datetime] = None,
+                      actual_duration: Optional[float] = None, 
+                      actual_distance: Optional[float] = None) -> None:
+        """Mark this stop as completed with actual metrics"""
+        self.completed = True
+        self.in_progress = False
+        self.progress_percentage = 100.0
+        
+        if actual_arrival_time:
+            self.actual_arrival_time = actual_arrival_time
             
-        # Update waypoint index based on progress if we have waypoints
-        if self.waypoints and len(self.waypoints) > 1:
-            target_index = int((self.progress_percentage / 100.0) * (len(self.waypoints) - 1))
-            self.current_waypoint_index = max(0, min(len(self.waypoints) - 1, target_index))
+        if actual_departure_time:
+            self.actual_departure_time = actual_departure_time
+            
+        if actual_duration is not None:
+            self.actual_duration_to_stop = actual_duration
+            
+        if actual_distance is not None:
+            self.actual_distance_to_stop = actual_distance
+        
+        # If actual values not provided, use estimates
+        if self.actual_duration_to_stop is None:
+            self.actual_duration_to_stop = self.estimated_duration_to_stop
+            
+        if self.actual_distance_to_stop is None:
+            self.actual_distance_to_stop = self.estimated_distance_to_stop
+
+    def register_route_change(self, new_route_id: str, change_time: datetime) -> None:
+        """Register a route change while at stop"""
+        self.pending_route_change = True
+        self.new_route_id = new_route_id
+        self.route_change_time = change_time
+        
+    def clear_route_change(self) -> None:
+        """Clear pending route change"""
+        self.pending_route_change = False
+        self.new_route_id = None
+        self.route_change_time = None
+        
+    def has_pending_route_change(self) -> bool:
+        """Check if there is a pending route change"""
+        return self.pending_route_change and self.new_route_id is not None
 
 @dataclass
 class Route(ModelBase):
-    """Represents a complete vehicle route"""
+    """Represents a complete vehicle route, simplified without segments"""
     vehicle_id: str
     stops: List[RouteStop]
     status: RouteStatus
-    segments: List[RouteSegment] = field(default_factory=list)
-    current_segment_index: int = 0
+    current_stop_index: int = 0  # Index of the current active stop
     scheduled_start_time: Optional[datetime] = None
     scheduled_end_time: Optional[datetime] = None
     actual_start_time: Optional[datetime] = None
     actual_end_time: Optional[datetime] = None
     total_distance: Optional[float] = None
     total_duration: Optional[float] = None
-    # New fields for enhanced route tracking
-    active_segment_id: Optional[str] = None  # ID of the segment currently being executed
+    # Fields for enhanced route tracking
+    active_stop_id: Optional[str] = None  # ID of the stop currently being approached/serviced
     last_modification_time: Optional[datetime] = None
     modification_count: int = 0
     last_validation_time: Optional[datetime] = None
     is_consistent: bool = True  # Flag indicating if route is in a consistent state
+    version: int = 1  # Track route version for dispatch coordination
+    _version: ClassVar[str] = "1.0"
 
     def __post_init__(self):
         super().__init__()
         # Initialize total distance and duration if not set
-        if self.total_distance is None and self.segments:
+        if self.total_distance is None:
             self.recalculate_total_distance()
             
-        if self.total_duration is None and self.segments:
+        if self.total_duration is None:
             self.recalculate_total_duration()
 
     def __str__(self) -> str:
         """Provides a concise string representation of the route"""
         n_completed = sum(1 for stop in self.stops if stop.completed)
         n_stops = len(self.stops)
-        n_active_segments = sum(1 for seg in self.segments if seg.is_active)
-        active_segment_str = f"active_seg={n_active_segments}" if n_active_segments > 0 else ""
         
         # Get list of current passengers
         current_passengers = self.current_passengers
         passengers_str = f"passengers={len(current_passengers)}" if current_passengers else ""
         
-        # Get current active segment info
-        active_segment = self.get_active_segment()
-        active_segment_info = f"curr_seg={active_segment.id[:8]}@{active_segment.progress_percentage:.1f}%" if active_segment else ""
+        # Get current active stop info
+        active_stop = self.get_active_stop()
+        if active_stop and active_stop.in_progress:
+            active_stop_info = f"curr_stop={active_stop.id[:8]}@{active_stop.progress_percentage:.1f}%"
+        else:
+            active_stop_info = f"curr_stop={active_stop.id[:8] if active_stop else 'None'}"
         
-        return f"Route[{self.id[:8]}|v={self.vehicle_id[:8]}|{self.status.value}|stops={n_completed}/{n_stops}|{active_segment_info}|{active_segment_str}|{passengers_str}|mods={self.modification_count}]"
+        return f"Route[{self.id[:8]}|v={self.vehicle_id[:8]}|{self.status.value}|stops={n_completed}/{n_stops}|{active_stop_info}|{passengers_str}|mods={self.modification_count}]"
     
     @property
     def current_passengers(self) -> List[str]:
@@ -479,153 +382,135 @@ class Route(ModelBase):
                 
         return list(current_passengers)
 
-    def get_active_segment(self) -> Optional[RouteSegment]:
-        """Get the active segment that is currently being executed"""
-        if self.active_segment_id:
-            for segment in self.segments:
-                if segment.id == self.active_segment_id:
-                    return segment
+    def get_active_stop(self) -> Optional[RouteStop]:
+        """Get the active stop that is currently being approached or serviced"""
+        if self.active_stop_id:
+            for stop in self.stops:
+                if stop.id == self.active_stop_id:
+                    return stop
                     
-        # Fall back to current segment index if no active segment ID
-        return self.get_current_segment()
+        # Fall back to current stop index if no active stop ID
+        return self.get_current_stop()
 
-    def get_current_segment(self) -> Optional[RouteSegment]:
-        """Get the current segment based on the current_segment_index"""
-        if not self.segments:
+    def get_current_stop(self) -> Optional[RouteStop]:
+        """Get the current stop based on the current_stop_index"""
+        if not self.stops:
             return None
             
-        if 0 <= self.current_segment_index < len(self.segments):
-            return self.segments[self.current_segment_index]
+        if 0 <= self.current_stop_index < len(self.stops):
+            return self.stops[self.current_stop_index]
             
         return None
-    
-    def recalc_current_segment_index(self) -> int:
-        """
-        Recalculates and updates the current_segment_index based on segment execution status.
-        Returns the new current_segment_index.
-        """
-        if not self.segments:
-            self.current_segment_index = 0
-            return 0
-        
-        # First check if we have an active segment
-        for i, segment in enumerate(self.segments):
-            if segment.is_active or segment.execution_status == SegmentExecutionStatus.IN_PROGRESS:
-                self.current_segment_index = i
-                self.active_segment_id = segment.id
-                return i
-                
-        # Otherwise find the first pending segment
-        for i, segment in enumerate(self.segments):
-            if segment.execution_status == SegmentExecutionStatus.PENDING:
-                self.current_segment_index = i
-                return i
-                
-        # If all segments are completed or skipped, set to the last segment
-        self.current_segment_index = len(self.segments) - 1
-        return self.current_segment_index
     
     def get_next_stop(self) -> Optional[RouteStop]:
-        """Get the next stop in the route"""
-        active_segment = self.get_active_segment()
-        if active_segment and active_segment.destination:
-            return active_segment.destination
-            
-        # If no current segment or segment has no destination stop,
-        # find first uncompleted stop
-        for stop in self.stops:
-            if not stop.completed:
-                return stop
-                
+        """Get the next stop in the route after the current active stop"""
+        active_stop = self.get_active_stop()
+        if not active_stop:
+            # Find first uncompleted stop if no active stop
+            for stop in self.stops:
+                if not stop.completed:
+                    return stop
+            return None
+        
+        # Find the next uncompleted stop after the active one
+        for i, stop in enumerate(self.stops):
+            if stop.id == active_stop.id:
+                # Look for the next uncompleted stop
+                for j in range(i + 1, len(self.stops)):
+                    if not self.stops[j].completed:
+                        return self.stops[j]
+                break
+        
+        # If we couldn't find a next stop, return None
         return None
+    
+    def recalc_current_stop_index(self) -> int:
+        """
+        Recalculates and updates the current_stop_index based on stop status.
+        Returns the new current_stop_index.
+        """
+        if not self.stops:
+            self.current_stop_index = 0
+            return 0
+        
+        # First check if we have an active stop
+        for i, stop in enumerate(self.stops):
+            if stop.in_progress:
+                self.current_stop_index = i
+                self.active_stop_id = stop.id
+                return i
+                
+        # Otherwise find the first uncompleted stop
+        for i, stop in enumerate(self.stops):
+            if not stop.completed:
+                self.current_stop_index = i
+                return i
+                
+        # If all stops are completed, set to the last stop
+        self.current_stop_index = len(self.stops) - 1
+        return self.current_stop_index
 
     def is_completed(self) -> bool:
-        """Check if route is completed"""
-        if not self.segments:
-            # Check based on stops if no segments
-            return all(stop.completed for stop in self.stops)
-            
-        # Check if all segments are either completed or skipped
-        for segment in self.segments:
-            if segment.execution_status not in [SegmentExecutionStatus.COMPLETED, SegmentExecutionStatus.SKIPPED]:
-                return False
-                
-        return True
+        """Check if route is completed (all stops are completed)"""
+        return all(stop.completed for stop in self.stops)
         
-    def set_active_segment(self, segment_id: str, current_location: Optional[Location] = None) -> bool:
+    def set_active_stop(self, stop_id: str, current_location: Optional[Location] = None) -> bool:
         """
-        Set a segment as the active segment being executed
+        Set a stop as the active stop being approached
         
         Args:
-            segment_id: ID of segment to mark as active
+            stop_id: ID of stop to mark as active
             current_location: Current vehicle location
             
         Returns:
-            True if successful, False if segment not found
+            True if successful, False if stop not found
         """
-        for i, segment in enumerate(self.segments):
-            # First clear active state on all segments
-            segment.is_active = False
+        for i, stop in enumerate(self.stops):
+            # First clear active state on all stops
+            stop.in_progress = False
             
-            # Then set the specified segment as active
-            if segment.id == segment_id:
-                segment.is_active = True
-                segment.mark_in_progress(current_location)
-                self.current_segment_index = i
-                self.active_segment_id = segment_id
+            # Then set the specified stop as active
+            if stop.id == stop_id:
+                stop.mark_in_progress(current_location)
+                self.current_stop_index = i
+                self.active_stop_id = stop_id
                 return True
                 
         return False
         
-    def mark_segment_completed(self, 
-                               segment_id: Optional[str] = None,
-                               segment_index: Optional[int] = None, 
-                               actual_duration: Optional[float] = None, 
-                               actual_distance: Optional[float] = None) -> bool:
+    def mark_stop_completed(self, stop_id: str, 
+                          actual_arrival_time: Optional[datetime] = None,
+                          actual_departure_time: Optional[datetime] = None,
+                          actual_duration: Optional[float] = None, 
+                          actual_distance: Optional[float] = None) -> bool:
         """
-        Mark a segment as completed.
+        Mark a stop as completed with actual metrics
         
         Args:
-            segment_id: ID of segment to mark completed
-            segment_index: Index of segment to mark completed
-            actual_duration: Actual duration of the segment in seconds
-            actual_distance: Actual distance of the segment in meters
+            stop_id: ID of the stop to mark as completed
+            actual_arrival_time: Actual arrival time at the stop
+            actual_departure_time: Actual departure time from the stop
+            actual_duration: Actual duration of travel to the stop
+            actual_distance: Actual distance traveled to the stop
             
         Returns:
-            True if successfully marked segment as completed, False otherwise
+            True if successful, False if stop not found
         """
-        # First try to find by ID if provided
-        if segment_id:
-            for i, segment in enumerate(self.segments):
-                if segment.id == segment_id:
-                    segment.mark_completed(actual_duration, actual_distance)
-                    
-                    # Clear active segment if this was the active one
-                    if self.active_segment_id == segment_id:
-                        self.active_segment_id = None
-                    
-                    # Recalculate current segment index
-                    self.recalc_current_segment_index()
-                    
-                    # Update total metrics
-                    self.recalculate_total_distance()
-                    self.recalculate_total_duration()
-                    
-                    return True
-        
-        # Otherwise try by index if provided            
-        if segment_index is not None:
-            idx = segment_index
-            if 0 <= idx < len(self.segments):
-                segment = self.segments[idx]
-                segment.mark_completed(actual_duration, actual_distance)
+        for i, stop in enumerate(self.stops):
+            if stop.id == stop_id:
+                stop.mark_completed(
+                    actual_arrival_time=actual_arrival_time,
+                    actual_departure_time=actual_departure_time,
+                    actual_duration=actual_duration,
+                    actual_distance=actual_distance
+                )
                 
-                # Clear active segment if this was the active one
-                if self.active_segment_id == segment.id:
-                    self.active_segment_id = None
+                # Clear active stop if this was the active one
+                if self.active_stop_id == stop_id:
+                    self.active_stop_id = None
                 
-                # Recalculate current segment index
-                self.recalc_current_segment_index()
+                # Recalculate current stop index to point to the next uncompleted stop
+                self.recalc_current_stop_index()
                 
                 # Update total metrics
                 self.recalculate_total_distance()
@@ -633,55 +518,38 @@ class Route(ModelBase):
                 
                 return True
                 
-        # If we get here, we couldn't find the segment
+        # If we get here, we couldn't find the stop
         return False
     
     def recalculate_total_distance(self) -> float:
-        """Recalculate total distance based on segments"""
-        if not self.segments:
-            self.total_distance = 0.0
-            return 0.0
-            
-        # Sum up actual distances for completed segments, estimated for others
+        """Recalculate total distance based on stops"""
         total = 0.0
-        for segment in self.segments:
-            if segment.execution_status == SegmentExecutionStatus.SKIPPED:
-                # Skip distance for skipped segments
-                continue
-                
-            if segment.execution_status == SegmentExecutionStatus.COMPLETED and segment.actual_distance is not None:
-                total += segment.actual_distance
+        for stop in self.stops:
+            if stop.completed and stop.actual_distance_to_stop is not None:
+                total += stop.actual_distance_to_stop
             else:
-                total += segment.estimated_distance
+                total += stop.estimated_distance_to_stop
                 
         self.total_distance = total
         return total
         
     def recalculate_total_duration(self) -> float:
-        """Recalculate total duration based on segments and stop service times"""
-        if not self.segments:
-            self.total_duration = 0.0
-            return 0.0
-            
-        # Sum up segment durations, skipping segments that were skipped due to rerouting
-        segment_duration = 0.0
-        for segment in self.segments:
-            # Skip duration for skipped segments
-            if segment.execution_status == SegmentExecutionStatus.SKIPPED:
-                continue
-                
-            if segment.execution_status == SegmentExecutionStatus.COMPLETED and segment.actual_duration is not None:
-                segment_duration += segment.actual_duration
+        """Recalculate total duration based on stops and service times"""
+        # Sum up stop movement durations
+        movement_duration = 0.0
+        for stop in self.stops:
+            if stop.completed and stop.actual_duration_to_stop is not None:
+                movement_duration += stop.actual_duration_to_stop
             else:
-                segment_duration += segment.estimated_duration
+                movement_duration += stop.estimated_duration_to_stop
         
-        # Add stop service times for stops that haven't been skipped
+        # Add stop service times
         service_duration = 0.0
         for stop in self.stops:
             if stop.has_pending_operations() or stop.completed:
                 service_duration += stop.service_time
         
-        self.total_duration = segment_duration + service_duration
+        self.total_duration = movement_duration + service_duration
         return self.total_duration
 
     def validate_passenger_consistency(self) -> tuple[bool, Optional[str]]:
@@ -845,81 +713,55 @@ class Route(ModelBase):
                 return stop
         return None
         
-    def mark_stop_completed(self, stop_id: str, actual_arrival_time: Optional[datetime] = None, 
-                        actual_departure_time: Optional[datetime] = None) -> bool:
+    def update_for_reroute(self, current_location: Location, 
+                         current_stop_id: Optional[str] = None) -> None:
         """
-        Mark a stop as completed with actual timing information
+        Update route for a rerouting operation
         
         Args:
-            stop_id: ID of the stop to mark as completed
-            actual_arrival_time: When the vehicle actually arrived
-            actual_departure_time: When the vehicle actually departed
-            
-        Returns:
-            True if successful, False if stop not found
+            current_location: Current location of the vehicle
+            current_stop_id: ID of the stop the vehicle is currently approaching (if known)
         """
-        for stop in self.stops:
-            if stop.id == stop_id:
-                stop.completed = True
-                
-                if actual_arrival_time:
-                    stop.actual_arrival_time = actual_arrival_time
-                    
-                if actual_departure_time:
-                    stop.actual_departure_time = actual_departure_time
-                    
-                return True
-                
-        return False
+        # Find the active stop
+        active_stop = None
+        active_stop_index = -1
         
-    def update_segments_for_reroute(self, active_vehicle_location: Location, 
-                                 current_segment_id: Optional[str] = None) -> None:
-        """
-        Update segment states for a rerouting operation
-        
-        Args:
-            active_vehicle_location: Current location of the vehicle
-            current_segment_id: ID of the segment the vehicle is currently on (if known)
-        """
-        # Find the active segment
-        active_segment = None
-        active_segment_index = -1
-        
-        if current_segment_id:
-            for i, segment in enumerate(self.segments):
-                if segment.id == current_segment_id:
-                    active_segment = segment
-                    active_segment_index = i
+        if current_stop_id:
+            for i, stop in enumerate(self.stops):
+                if stop.id == current_stop_id:
+                    active_stop = stop
+                    active_stop_index = i
                     break
         
-        if active_segment is None and self.active_segment_id:
-            for i, segment in enumerate(self.segments):
-                if segment.id == self.active_segment_id:
-                    active_segment = segment
-                    active_segment_index = i
+        if active_stop is None and self.active_stop_id:
+            for i, stop in enumerate(self.stops):
+                if stop.id == self.active_stop_id:
+                    active_stop = stop
+                    active_stop_index = i
                     break
         
-        # If we have an active segment, update its state
-        if active_segment:
-            # Update the vehicle location on the active segment
-            active_segment.vehicle_current_location = active_vehicle_location
+        # If we have an active stop, update its state
+        if active_stop:
+            # Update the vehicle location on the active stop
+            active_stop.vehicle_current_location = current_location
             
-            # Mark segments before the active one as completed if they aren't already
-            for i, segment in enumerate(self.segments):
-                if i < active_segment_index and segment.execution_status == SegmentExecutionStatus.PENDING:
-                    segment.mark_skipped()
+            # Mark stops before the active one as completed if they aren't already
+            for i, stop in enumerate(self.stops):
+                if i < active_stop_index and not stop.completed:
+                    logger.warning(f"Marking stop {stop.id} (seq={stop.sequence}) as completed during reroute")
+                    stop.mark_completed()
         
-        # Update the active segment ID and recalculate current segment index
-        if active_segment:
-            self.active_segment_id = active_segment.id
-            self.current_segment_index = active_segment_index
+        # Update the active stop ID and recalculate current stop index
+        if active_stop:
+            self.active_stop_id = active_stop.id
+            self.current_stop_index = active_stop_index
         else:
-            # If we can't find the active segment, just recalculate
-            self.recalc_current_segment_index()
+            # If we can't find the active stop, just recalculate
+            self.recalc_current_stop_index()
     
-    def remove_stop_and_related_segments(self, stop_id: str) -> bool:
+    def remove_stop(self, stop_id: str) -> bool:
         """
-        Remove a stop and its related segments from the route
+        Remove a stop from the route
         Used during route modifications when rejecting a stop
         
         Args:
@@ -944,27 +786,14 @@ class Route(ModelBase):
             logger.warning(f"Cannot remove completed stop {stop_id}")
             return False
             
-        # Find segments that involve this stop
-        segments_to_remove = []
-        for i, segment in enumerate(self.segments):
-            origin_is_target = segment.origin and segment.origin.id == stop_id
-            dest_is_target = segment.destination and segment.destination.id == stop_id
-            
-            if origin_is_target or dest_is_target:
-                segments_to_remove.append(i)
-        
-        # Remove segments (in reverse order to avoid index issues)
-        for i in sorted(segments_to_remove, reverse=True):
-            del self.segments[i]
-            
         # Remove the stop
         del self.stops[stop_index]
         
         # Update stop sequences
         self.update_stop_sequences()
         
-        # Recalculate segment indices and route metrics
-        self.recalc_current_segment_index()
+        # Recalculate indices and route metrics
+        self.recalc_current_stop_index()
         self.recalculate_total_distance()
         self.recalculate_total_duration()
         
@@ -980,6 +809,8 @@ class Route(ModelBase):
         self.status = RouteStatus.MODIFIED
         self.last_modification_time = datetime.now()
         self.modification_count += 1
+        self.version += 1  # Increment version number when route is modified
+        logger.info(f"Route {self.id} modified: version incremented to {self.version}")
         
     def validate_route_integrity(self) -> tuple[bool, Optional[str]]:
         """
@@ -998,34 +829,10 @@ class Route(ModelBase):
         if not is_valid:
             return False, error_msg
             
-        # Check segment consistency - each segment must connect consecutive stops
-        for i, segment in enumerate(self.segments):
-            # Skip segments without proper stops
-            if not segment.origin or not segment.destination:
-                continue
-                
-            # Find the stops in the route
-            origin_idx = -1
-            dest_idx = -1
-            
-            for j, stop in enumerate(self.stops):
-                if stop.id == segment.origin.id:
-                    origin_idx = j
-                if stop.id == segment.destination.id:
-                    dest_idx = j
-            
-            # Check that the stops exist and are in the right order
-            if origin_idx == -1 or dest_idx == -1:
-                return False, f"Segment {i} connects stops that don't exist in the route"
-                
-            if dest_idx <= origin_idx:
-                return False, f"Segment {i} connects stops in the wrong order (origin index: {origin_idx}, destination index: {dest_idx})"
-                
-            # Check for gaps in segments
-            if i > 0 and dest_idx - origin_idx > 1:
-                # There might be stops between the origin and destination
-                # that don't have connecting segments
-                return False, f"Segment {i} skips intermediate stops"
+        # Check stop sequencing
+        for i in range(len(self.stops) - 1):
+            if self.stops[i].sequence >= self.stops[i+1].sequence:
+                return False, f"Stops are not in sequential order at position {i}"
         
         # Set the route as consistent
         self.is_consistent = True
@@ -1042,19 +849,20 @@ class Route(ModelBase):
             'vehicle_id': self.vehicle_id,
             'status': self.status.value,
             'stops': [stop.to_dict() for stop in self.stops],
-            'segments': [segment.to_dict() for segment in self.segments],
-            'current_segment_index': self.current_segment_index,
+            'current_stop_index': self.current_stop_index,
             'scheduled_start_time': self.scheduled_start_time.isoformat() if self.scheduled_start_time else None,
             'scheduled_end_time': self.scheduled_end_time.isoformat() if self.scheduled_end_time else None,
             'actual_start_time': self.actual_start_time.isoformat() if self.actual_start_time else None,
             'actual_end_time': self.actual_end_time.isoformat() if self.actual_end_time else None,
             'total_distance': self.total_distance,
             'total_duration': self.total_duration,
-            'active_segment_id': self.active_segment_id,
+            'active_stop_id': self.active_stop_id,
             'last_modification_time': self.last_modification_time.isoformat() if self.last_modification_time else None,
             'modification_count': self.modification_count,
             'last_validation_time': self.last_validation_time.isoformat() if self.last_validation_time else None,
-            'is_consistent': self.is_consistent
+            'is_consistent': self.is_consistent,
+            'version': self.version,
+            '_version': self._version
         }
 
     @classmethod
@@ -1066,12 +874,13 @@ class Route(ModelBase):
                 vehicle_id=data['vehicle_id'],
                 stops=[RouteStop.from_dict(s) for s in data.get('stops', [])],
                 status=RouteStatus(data['status']),
-                current_segment_index=data.get('current_segment_index', 0),
+                current_stop_index=data.get('current_stop_index', 0),
                 total_distance=data.get('total_distance'),
                 total_duration=data.get('total_duration'),
-                active_segment_id=data.get('active_segment_id'),
+                active_stop_id=data.get('active_stop_id'),
                 modification_count=data.get('modification_count', 0),
-                is_consistent=data.get('is_consistent', True)
+                is_consistent=data.get('is_consistent', True),
+                version=data.get('version', 1)
             )
             
             # Handle optional datetime fields
@@ -1089,10 +898,6 @@ class Route(ModelBase):
                 
             if 'updated_at' in data and data['updated_at']:
                 route.updated_at = datetime.fromisoformat(data['updated_at'])
-            
-            # Add segments if provided
-            if 'segments' in data:
-                route.segments = [RouteSegment.from_dict(s) for s in data['segments']]
             
             return route
             

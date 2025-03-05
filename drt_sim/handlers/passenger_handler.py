@@ -12,7 +12,6 @@ from drt_sim.models.request import Request
 from drt_sim.config.config import ParameterSet
 from drt_sim.models.matching import Assignment
 from drt_sim.models.stop import StopAssignment
-from drt_sim.core.coordination.stop_coordinator import StopCoordinator
 import logging
 logger = logging.getLogger(__name__)
 
@@ -26,13 +25,11 @@ class PassengerHandler:
         self,
         config: ParameterSet,
         context: SimulationContext,
-        state_manager: StateManager,
-        stop_coordinator: StopCoordinator
+        state_manager: StateManager
     ):
         self.config = config
         self.context = context
         self.state_manager = state_manager
-        self.stop_coordinator = stop_coordinator
         self.service_thresholds = self._setup_service_thresholds()
         self.initialized = True
         
@@ -58,18 +55,6 @@ class PassengerHandler:
             assignment: Assignment = event.data['assignment']
             stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
             request = self.state_manager.request_worker.get_request(assignment.request_id)
-            if request.id == "R7" and request.passenger_id == "P8":
-                logger.info(f"Found problematic request R7/passenger P8! Assignment details: "
-                            f"stop_assignment_id={assignment.stop_assignment_id}, "
-                            f"vehicle_id={assignment.vehicle_id}")
-                
-                # Verify the stop_assignment exists
-                stop_assignment_exists = self.state_manager.stop_assignment_worker.get_assignment(
-                    assignment.stop_assignment_id) is not None
-                logger.info(f"Stop assignment {assignment.stop_assignment_id} exists: {stop_assignment_exists}")
-                
-                # Check transaction status
-                logger.info(f"Transaction active: {self.state_manager.is_transaction_active()}")
             if not request:
                 raise ValueError(f"Request {assignment.request_id} not found")
             
@@ -130,7 +115,15 @@ class PassengerHandler:
             self._handle_passenger_error(event, str(e))
 
     def handle_passenger_arrived_pickup(self, event: Event) -> None:
-        """Handle passenger arrival at pickup location"""
+        """
+        Handle passenger arrival at pickup location
+        
+        This method:
+        1. Updates the passenger state
+        2. Finds the appropriate route stop
+        3. Registers the passenger arrival with the route stop
+        4. If a vehicle is present, creates a PASSENGER_READY_FOR_BOARDING event
+        """
         try:
             self.state_manager.begin_transaction()
             
@@ -144,16 +137,76 @@ class PassengerHandler:
                     'current_location': event.data.get('location')
                 }
             )
-
-            # Register arrival with coordinator
-            self.stop_coordinator.register_passenger_arrival(
-                stop_id=passenger_state.assigned_origin_stop.id,
-                passenger_id=passenger_state.id,
-                request_id=passenger_state.request_id,
-                arrival_time=self.context.current_time,
-                location=event.data.get('location')
+            
+            # Get stop assignment
+            stop_assignment = self.state_manager.stop_assignment_worker.get_assignment_for_request(passenger_state.request_id)
+            if not stop_assignment:
+                raise ValueError(f"No stop assignment found for request {passenger_state.request_id}")
+            
+            self.context.metrics_collector.log(
+                MetricName.PASSENGER_WALK_TIME_TO_ORIGIN_STOP,
+                stop_assignment.walking_time_origin,
+                self.context.current_time,
+                {
+                    'passenger_id': passenger_state.id,
+                    'request_id': passenger_state.request_id,
+                    'origin': passenger_state.current_location.to_dict(),
+                    'origin_stop': stop_assignment.origin_stop.location.to_dict()
+                }
             )
             
+                
+            # Get the vehicle to access its current route ID
+            vehicle = self.state_manager.vehicle_worker.get_vehicle(passenger_state.assigned_vehicle_id)
+            if not vehicle or not vehicle.current_state.current_route_id:
+                logger.warning(f"Vehicle {passenger_state.assigned_vehicle_id} not found or has no active route")
+                self.state_manager.commit_transaction()
+                return
+                
+            # Get the route using the vehicle's current route ID
+            route = self.state_manager.route_worker.get_route(vehicle.current_state.current_route_id)
+            if not route:
+                logger.warning(f"Route {vehicle.current_state.current_route_id} not found for vehicle {passenger_state.assigned_vehicle_id}")
+                self.state_manager.commit_transaction()
+                return
+                
+            # Find the route stop for this passenger
+            route_stop = None
+            for rs in route.stops:
+                if (rs.stop.id == stop_assignment.origin_stop.id and 
+                    passenger_state.request_id in rs.pickup_passengers):
+                    route_stop = rs
+                    break
+                    
+            if not route_stop:
+                logger.warning(f"No route stop found for passenger {passenger_state.id} at stop {stop_assignment.origin_stop.id}")
+                self.state_manager.commit_transaction()
+                return
+                
+            # Register passenger arrival with the route stop
+            vehicle_is_present = route_stop.register_passenger_arrival(passenger_state.request_id)
+            
+            # Update the route to persist changes
+            self.state_manager.route_worker.update_route(route)
+            
+            # If vehicle is already at the stop, create a boarding event
+            if vehicle_is_present:
+                # Create PASSENGER_READY_FOR_BOARDING event
+                ready_event = Event(
+                    event_type=EventType.PASSENGER_READY_FOR_BOARDING,
+                    priority=EventPriority.HIGH,
+                    timestamp=self.context.current_time,
+                    vehicle_id=route.vehicle_id,
+                    passenger_id=passenger_state.id,
+                    request_id=passenger_state.request_id,
+                    data={
+                        'route_stop_id': route_stop.id,
+                        'stop_id': stop_assignment.origin_stop.id,
+                        'location': event.data.get('location')
+                    }
+                )
+                self.context.event_manager.publish_event(ready_event)
+                logger.info(f"Created PASSENGER_READY_FOR_BOARDING event for passenger {passenger_state.id} at stop {stop_assignment.origin_stop.id}")
             self.state_manager.commit_transaction()
             
         except Exception as e:
@@ -184,6 +237,20 @@ class PassengerHandler:
                 {
                     'boarding_end_time': self.context.current_time,
                     'in_vehicle_start_time': self.context.current_time
+                }
+            )
+
+            wait_time = (self.context.current_time - passenger_state.waiting_start_time).total_seconds()
+
+            self.context.metrics_collector.log(
+                MetricName.PASSENGER_WAIT_TIME,
+                wait_time,
+                self.context.current_time,
+                {
+                    'passenger_id': passenger_id,
+                    'vehicle_id': vehicle_id,
+                    'request_id': request_id,
+                    'stop_id': passenger_state.assigned_origin_stop.id
                 }
             )
             

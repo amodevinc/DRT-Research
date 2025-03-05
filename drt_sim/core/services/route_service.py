@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import traceback
 import logging
 
-from drt_sim.models.route import Route, RouteStop, RouteStatus, RouteSegment, SegmentExecutionStatus
+from drt_sim.models.route import Route, RouteStop, RouteStatus
 from drt_sim.models.vehicle import Vehicle, VehicleStatus
 from drt_sim.models.stop import Stop, StopAssignment
 from drt_sim.models.location import Location
@@ -15,7 +15,7 @@ from drt_sim.config.config import ParameterSet, MatchingAssignmentConfig, Vehicl
 logger = logging.getLogger(__name__)
 
 class RouteService:
-    """Service layer for route operations and business logic"""
+    """Service layer for route operations and business logic, simplified to work without segments"""
     
     def __init__(
         self,
@@ -27,7 +27,7 @@ class RouteService:
         self.sim_context = sim_context
         self.config = config
 
-    async def _get_segment_with_waypoints(
+    async def _get_path_with_waypoints(
         self,
         origin: Location,
         destination: Location
@@ -62,7 +62,7 @@ class RouteService:
                 'path': path_info.get('path', [])
             }
         except Exception as e:
-            logger.error(f"Error getting segment with waypoints: {traceback.format_exc()}")
+            logger.error(f"Error getting path with waypoints: {traceback.format_exc()}")
             return None
         
     async def create_new_route(
@@ -71,7 +71,8 @@ class RouteService:
         stop_assignment: StopAssignment
     ) -> Optional[Route]:
         """
-        Creates a new route for a vehicle with initial pickup and dropoff stops
+        Creates a new route for a vehicle with initial pickup and dropoff stops.
+        Simplified to work without segments.
         
         Args:
             vehicle: Vehicle to create route for
@@ -83,8 +84,8 @@ class RouteService:
         try:
             logger.info(f"Starting new route creation for vehicle {vehicle.id} with stop assignment {stop_assignment.id}")
             
-            # Get path info for initial segment (vehicle to pickup)
-            initial_path_info = await self._get_segment_with_waypoints(
+            # Get path info from vehicle to pickup location
+            initial_path_info = await self._get_path_with_waypoints(
                 vehicle.current_state.current_location,
                 stop_assignment.origin_stop.location
             )
@@ -98,8 +99,8 @@ class RouteService:
                 seconds=initial_path_info['duration']
             )
             
-            # Get path info for service segment (pickup to dropoff)
-            service_path_info = await self._get_segment_with_waypoints(
+            # Get path info from pickup to dropoff
+            service_path_info = await self._get_path_with_waypoints(
                 stop_assignment.origin_stop.location,
                 stop_assignment.destination_stop.location
             )
@@ -114,7 +115,7 @@ class RouteService:
 
             logger.debug(f"Creating route stops with pickup arrival at {pickup_arrival_time} and dropoff at {dropoff_arrival_time}")
 
-            # Create route stops
+            # Create pickup stop with travel information
             pickup_stop = RouteStop(
                 stop=stop_assignment.origin_stop,
                 sequence=0,
@@ -122,12 +123,14 @@ class RouteService:
                 pickup_passengers=[stop_assignment.request_id],
                 dropoff_passengers=[],
                 planned_arrival_time=pickup_arrival_time,
-                planned_departure_time=pickup_arrival_time + timedelta(
-                    seconds=vehicle.config.boarding_time
-                ),
-                service_time=vehicle.config.boarding_time
+                planned_departure_time=pickup_arrival_time + timedelta(seconds=vehicle.config.boarding_time),
+                service_time=vehicle.config.boarding_time,
+                origin_location=vehicle.current_state.current_location,
+                estimated_duration_to_stop=initial_path_info['duration'],
+                estimated_distance_to_stop=initial_path_info['distance']
             )
 
+            # Create dropoff stop with travel information
             dropoff_stop = RouteStop(
                 stop=stop_assignment.destination_stop,
                 sequence=1,
@@ -135,45 +138,19 @@ class RouteService:
                 pickup_passengers=[],
                 dropoff_passengers=[stop_assignment.request_id],
                 planned_arrival_time=dropoff_arrival_time,
-                planned_departure_time=dropoff_arrival_time + timedelta(
-                    seconds=vehicle.config.alighting_time
-                ),
-                service_time=vehicle.config.alighting_time
-            )
-
-            logger.debug("Creating route segments")
-            # Create segments with waypoints
-            segments: List[RouteSegment] = []
-            
-            initial_segment = RouteSegment(
-                origin=None,  # No RouteStop for vehicle's current position
-                destination=pickup_stop,
-                estimated_duration=initial_path_info['duration'],
-                estimated_distance=initial_path_info['distance'],
-                origin_location=vehicle.current_state.current_location,
-                destination_location=stop_assignment.origin_stop.location,
-                waypoints=initial_path_info['waypoints']
-            )
-            segments.append(initial_segment)
-
-            service_segment = RouteSegment(
-                origin=pickup_stop,
-                destination=dropoff_stop,
-                estimated_duration=service_path_info['duration'],
-                estimated_distance=service_path_info['distance'],
+                planned_departure_time=dropoff_arrival_time + timedelta(seconds=vehicle.config.alighting_time),
+                service_time=vehicle.config.alighting_time,
                 origin_location=stop_assignment.origin_stop.location,
-                destination_location=stop_assignment.destination_stop.location,
-                waypoints=service_path_info['waypoints']
+                estimated_duration_to_stop=service_path_info['duration'],
+                estimated_distance_to_stop=service_path_info['distance']
             )
-            segments.append(service_segment)
 
-            # Create the route
+            # Create the route with just stops
             route = Route(
                 vehicle_id=vehicle.id,
                 stops=[pickup_stop, dropoff_stop],
-                segments=segments,
                 status=RouteStatus.CREATED,
-                current_segment_index=0
+                current_stop_index=0
             )
             
             # Calculate totals
@@ -202,7 +179,8 @@ class RouteService:
         vehicle: Vehicle
     ) -> Optional[Route]:
         """
-        Creates new route with stops inserted at specified positions
+        Creates new route with stops inserted at specified positions.
+        Simplified to work without segments.
         
         Args:
             current_route: Existing route to modify
@@ -221,10 +199,10 @@ class RouteService:
             # Create a deep copy of the route to modify
             new_route = deepcopy(current_route)
             
-            # Store current vehicle location and active segment for proper state transition
-            active_segment = new_route.get_active_segment()
+            # Store current vehicle location and active stop for proper state transition
+            active_stop = new_route.get_active_stop()
             vehicle_location = vehicle.current_state.current_location
-            active_segment_id = new_route.active_segment_id
+            active_stop_id = new_route.active_stop_id
             
             # Process stops first
             new_stops = await self._process_stops_for_assignment(
@@ -245,41 +223,20 @@ class RouteService:
             # Update occupancies
             self._update_occupancies(new_stops)
             
-            # Update stop timings
-            await self._update_stop_timings(new_stops, vehicle)
+            # Update stop timings and travel information
+            await self._update_stop_timings_and_travel(new_stops, vehicle)
             
-            # Save current segment state before recreating segments
-            if active_segment:
-                current_segment_progress = active_segment.progress_percentage
-                vehicle_current_location = active_segment.vehicle_current_location or vehicle_location
-            else:
-                current_segment_progress = 0.0
-                vehicle_current_location = vehicle_location
-            
-            # Create new segments for the route, preserving progress
-            new_segments = await self._create_segments_for_stops(
-                new_stops, 
-                vehicle,
-                new_route,
-                vehicle_current_location
-            )
-            
-            if not new_segments:
-                logger.warning("Failed to create segments for the modified route")
-                return None
-                
             # Update route properties
-            new_route.segments = new_segments
             new_route.recalculate_total_distance()
             new_route.recalculate_total_duration()
             
-            # Update segment processing state
-            if active_segment_id:
-                # Transfer state from old active segment to new one
-                new_route.update_segments_for_reroute(vehicle_current_location, active_segment_id)
+            # Update route processing state
+            if active_stop_id:
+                # Transfer state from old active stop to new one
+                new_route.update_for_reroute(vehicle_location, active_stop_id)
             else:
-                # Just recalculate current segment index if no active segment
-                new_route.recalc_current_segment_index()
+                # Just recalculate current stop index if no active stop
+                new_route.recalc_current_stop_index()
             
             # Mark the route as modified
             new_route.mark_as_modified()
@@ -446,273 +403,16 @@ class RouteService:
             logger.error(f"Error processing stops for assignment: {traceback.format_exc()}")
             return None
 
-    async def _create_segments_for_stops(
-        self,
-        stops: List[RouteStop],
-        vehicle: Vehicle,
-        current_route: Optional[Route] = None,
-        vehicle_current_location: Optional[Location] = None
-    ) -> Optional[List[RouteSegment]]:
-        """
-        Create route segments for a list of stops, preserving vehicle progress
-        
-        Args:
-            stops: List of route stops
-            vehicle: Vehicle operating the route
-            current_route: Current route (for current segment info)
-            vehicle_current_location: Current location of vehicle if known
-            
-        Returns:
-            List of RouteSegments or None if creation failed
-        """
-        try:
-            new_segments: List[RouteSegment] = []
-            
-            # Determine vehicle's current position
-            origin_location = vehicle_current_location or vehicle.current_state.current_location
-            
-            # Get current active segment if vehicle is en route
-            active_segment = None
-            if current_route:
-                active_segment = current_route.get_active_segment()
-            
-            # Find the first uncompleted stop - this is our first destination
-            first_pending_stop = None
-            for stop in stops:
-                if not stop.completed:
-                    first_pending_stop = stop
-                    break
-            
-            # Handle case where all stops are completed
-            if not first_pending_stop:
-                logger.info("All stops are completed, no more segments needed")
-                return []
-            
-            # Handle initial segment from vehicle's current position to first uncompleted stop
-            initial_path_info = await self._get_segment_with_waypoints(
-                origin_location,
-                first_pending_stop.stop.location
-            )
-            
-            if not initial_path_info or initial_path_info['distance'] == float('inf'):
-                logger.warning(f"Could not calculate path to first stop for vehicle {vehicle.id}")
-                # Try with a fallback strategy instead of failing
-                initial_path_info = self._create_fallback_path_info(
-                    origin_location, 
-                    first_pending_stop.stop.location
-                )
-            
-            # Create initial segment
-            initial_segment = RouteSegment(
-                origin=None,  # No RouteStop for vehicle's current position
-                destination=first_pending_stop,
-                estimated_duration=initial_path_info['duration'],
-                estimated_distance=initial_path_info['distance'],
-                origin_location=origin_location,
-                destination_location=first_pending_stop.stop.location,
-                waypoints=initial_path_info['waypoints']
-            )
-            
-            # If we have an active segment, transfer its state
-            if active_segment and active_segment.is_active:
-                initial_segment.execution_status = SegmentExecutionStatus.IN_PROGRESS
-                initial_segment.is_active = True
-                initial_segment.progress_percentage = active_segment.progress_percentage
-                initial_segment.vehicle_current_location = origin_location
-            
-            new_segments.append(initial_segment)
-            
-            # Add segments between consecutive uncompleted stops
-            last_uncompleted_idx = -1
-            for i in range(len(stops) - 1):
-                origin_stop = stops[i]
-                destination_stop = stops[i + 1]
-                
-                # Skip if both stops are completed
-                if origin_stop.completed and destination_stop.completed:
-                    logger.debug(f"Skipping completed segment between stops {i} and {i+1}")
-                    continue
-                
-                # Keep track of the last uncompleted stop
-                if not origin_stop.completed:
-                    last_uncompleted_idx = i
-                if not destination_stop.completed:
-                    last_uncompleted_idx = i + 1
-                
-                # Get path info with waypoints
-                path_info = await self._get_segment_with_waypoints(
-                    origin_stop.stop.location,
-                    destination_stop.stop.location
-                )
-                
-                if not path_info or path_info['distance'] == float('inf'):
-                    logger.warning(f"Could not calculate path between stops {i} and {i+1}")
-                    # Use fallback strategy instead of failing
-                    path_info = self._create_fallback_path_info(
-                        origin_stop.stop.location,
-                        destination_stop.stop.location
-                    )
-                
-                logger.debug(f"Segment {i}: distance={path_info['distance']}m, "
-                          f"duration={path_info['duration']}s, "
-                          f"waypoints={len(path_info['waypoints'])}")
-                
-                # Create the segment
-                segment = RouteSegment(
-                    origin=origin_stop,
-                    destination=destination_stop,
-                    estimated_duration=path_info['duration'],
-                    estimated_distance=path_info['distance'],
-                    origin_location=origin_stop.stop.location,
-                    destination_location=destination_stop.stop.location,
-                    completed=origin_stop.completed and destination_stop.completed,
-                    waypoints=path_info['waypoints']
-                )
-                
-                # Mark completed segments
-                if segment.completed:
-                    segment.execution_status = SegmentExecutionStatus.COMPLETED
-                    segment.progress_percentage = 100.0
-                
-                new_segments.append(segment)
-            
-            return new_segments
-        
-        except Exception as e:
-            logger.error(f"Error creating segments for stops: {traceback.format_exc()}")
-            return None
-
-    def _create_fallback_path_info(self, origin: Location, destination: Location) -> Dict[str, Any]:
-        """
-        Create a fallback path info when actual path calculation fails
-        
-        Args:
-            origin: Origin location
-            destination: Destination location
-            
-        Returns:
-            Dictionary with fallback path info
-        """
-        # Calculate straight-line distance
-        distance = self._calculate_haversine_distance(
-            origin.lat, origin.lon,
-            destination.lat, destination.lon
-        )
-        
-        # Estimate duration based on straight-line distance
-        # Assume average speed of 30 km/h (8.33 m/s)
-        estimated_speed = 8.33  # m/s
-        duration = distance / estimated_speed
-        
-        # Create simplified waypoints
-        waypoints = [
-            {'location': origin},
-            {'location': destination}
-        ]
-        
-        return {
-            'distance': distance,
-            'duration': duration,
-            'waypoints': waypoints,
-            'path': []
-        }
-    
-    def _calculate_haversine_distance(self, lat1, lon1, lat2, lon2):
-        """Calculate the great circle distance between two points in meters"""
-        import math
-        
-        R = 6371000  # Earth radius in meters
-        
-        # Convert latitude and longitude from degrees to radians
-        lat1_rad = math.radians(lat1)
-        lon1_rad = math.radians(lon1)
-        lat2_rad = math.radians(lat2)
-        lon2_rad = math.radians(lon2)
-        
-        # Haversine formula
-        dlon = lon2_rad - lon1_rad
-        dlat = lat2_rad - lat1_rad
-        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        distance = R * c
-        
-        return distance
-
-    def _find_compatible_stop(
-        self,
-        stops: List[RouteStop],
-        target_stop: Stop,
-        preferred_idx: int,
-        request_id: str,
-        is_pickup: bool,
-        expected_passenger_origin_stop_arrival_time: Optional[datetime] = None
-    ) -> Tuple[Optional[RouteStop], int]:
-        """
-        Finds existing compatible stop or determines insertion point.
-        Enhanced to handle route modifications better.
-        
-        Args:
-            stops: List of route stops
-            target_stop: Stop to find/insert
-            preferred_idx: Preferred insertion index
-            request_id: Request ID being processed
-            is_pickup: Whether this is a pickup stop
-            expected_passenger_origin_stop_arrival_time: Expected passenger arrival time
-            
-        Returns:
-            Tuple of (compatible stop if found, actual insertion index)
-        """
-        # First ensure preferred_idx is within bounds and not inserting before a completed stop
-        max_idx = len(stops)
-        min_idx = 0
-        
-        # Find last completed stop index to avoid inserting before completed stops
-        last_completed_idx = -1
-        for i, stop in enumerate(stops):
-            if stop.completed:
-                last_completed_idx = i
-                
-        # Adjust minimum index to be after the last completed stop
-        min_idx = max(min_idx, last_completed_idx + 1)
-        
-        # Clamp preferred index to valid range
-        preferred_idx = max(min_idx, min(preferred_idx, max_idx))
-        
-        # Look for existing compatible stop
-        compatible_stops = []
-        for i, stop in enumerate(stops):
-            if (
-                stop.stop.id == target_stop.id and
-                not stop.completed and
-                i >= min_idx and
-                self._is_stop_time_compatible(stop, is_pickup, expected_passenger_origin_stop_arrival_time)
-            ):
-                compatible_stops.append((stop, i))
-                
-        # If we found compatible stops, select the best one
-        if compatible_stops:
-            # Choose the one closest to the preferred index
-            best_stop, best_idx = min(
-                compatible_stops,
-                key=lambda x: abs(x[1] - preferred_idx)
-            )
-            logger.debug(f"Found compatible {'pickup' if is_pickup else 'dropoff'} stop at index {best_idx}")
-            return best_stop, best_idx
-                
-        logger.debug(f"No compatible {'pickup' if is_pickup else 'dropoff'} stop found, will insert at index {preferred_idx}")
-        return None, preferred_idx
-
-    async def _update_stop_timings(
+    async def _update_stop_timings_and_travel(
         self,
         stops: List[RouteStop],
         vehicle: Vehicle
     ) -> None:
         """
-        Updates arrival and departure times for all stops in route sequence.
-        Enhanced to handle completed stops and maintain consistency.
+        Updates arrival/departure times and travel information for all stops.
         
         Args:
-            stops: List of stops to update timings for
+            stops: List of stops to update
             vehicle: Vehicle operating the route
         """
         try:
@@ -746,14 +446,19 @@ class RouteService:
                     # Preserve timing for completed stops
                     continue
                     
-                # Calculate travel time from previous location
+                # Calculate travel time and distance from previous location
                 travel_time = await self.network_manager.calculate_travel_time(
                     last_location,
                     stop.stop.location
                 )
                 
-                if travel_time == float('inf'):
-                    logger.warning(f"Unable to calculate travel time to stop {stop.stop.id}")
+                travel_distance = await self.network_manager.calculate_distance(
+                    last_location,
+                    stop.stop.location
+                )
+                
+                if travel_time == float('inf') or travel_distance == float('inf'):
+                    logger.warning(f"Unable to calculate travel time/distance to stop {stop.stop.id}")
                     # Use a fallback estimate based on straight-line distance
                     distance = self._calculate_haversine_distance(
                         last_location.lat, last_location.lon,
@@ -761,6 +466,12 @@ class RouteService:
                     )
                     # Assume average speed of 30 km/h (8.33 m/s)
                     travel_time = distance / 8.33
+                    travel_distance = distance
+                
+                # Update stop travel metrics
+                stop.origin_location = last_location
+                stop.estimated_duration_to_stop = travel_time
+                stop.estimated_distance_to_stop = travel_distance
                 
                 # Update arrival time based on previous departure
                 stop.planned_arrival_time = last_departure_time + timedelta(seconds=travel_time)
@@ -779,7 +490,7 @@ class RouteService:
                 last_location = stop.stop.location
 
         except Exception as e:
-            logger.error(f"Error updating stop timings: {traceback.format_exc()}")
+            logger.error(f"Error updating stop timings and travel info: {traceback.format_exc()}")
             raise
 
     def _update_occupancies(self, stops: List[RouteStop]) -> None:
@@ -846,6 +557,126 @@ class RouteService:
         
         # Apply minimum service time
         return max(boarding_time + alighting_time, vehicle_config.min_dwell_time)
+
+    def _find_compatible_stop(
+        self,
+        stops: List[RouteStop],
+        target_stop: Stop,
+        preferred_idx: int,
+        request_id: str,
+        is_pickup: bool,
+        expected_passenger_origin_stop_arrival_time: Optional[datetime] = None
+    ) -> Tuple[Optional[RouteStop], int]:
+        """
+        Finds existing compatible stop or determines insertion point.
+        Enhanced to handle route modifications better.
+        
+        Args:
+            stops: List of route stops
+            target_stop: Stop to find/insert
+            preferred_idx: Preferred insertion index
+            request_id: Request ID being processed
+            is_pickup: Whether this is a pickup stop
+            expected_passenger_origin_stop_arrival_time: Expected passenger arrival time
+            
+        Returns:
+            Tuple of (compatible stop if found, actual insertion index)
+        """
+        # First ensure preferred_idx is within bounds and not inserting before a completed stop
+        max_idx = len(stops)
+        min_idx = 0
+        
+        # Find last completed stop index to avoid inserting before completed stops
+        last_completed_idx = -1
+        for i, stop in enumerate(stops):
+            if stop.completed:
+                last_completed_idx = i
+                
+        # Adjust minimum index to be after the last completed stop
+        min_idx = max(min_idx, last_completed_idx + 1)
+        
+        # Clamp preferred index to valid range
+        preferred_idx = max(min_idx, min(preferred_idx, max_idx))
+        
+        # Look for existing compatible stop
+        compatible_stops = []
+        for i, stop in enumerate(stops):
+            if (
+                stop.stop.id == target_stop.id and
+                not stop.completed and
+                i >= min_idx and
+                self._is_stop_time_compatible(stop, is_pickup, expected_passenger_origin_stop_arrival_time)
+            ):
+                compatible_stops.append((stop, i))
+                
+        # If we found compatible stops, select the best one
+        if compatible_stops:
+            # Choose the one closest to the preferred index
+            best_stop, best_idx = min(
+                compatible_stops,
+                key=lambda x: abs(x[1] - preferred_idx)
+            )
+            logger.debug(f"Found compatible {'pickup' if is_pickup else 'dropoff'} stop at index {best_idx}")
+            return best_stop, best_idx
+                
+        logger.debug(f"No compatible {'pickup' if is_pickup else 'dropoff'} stop found, will insert at index {preferred_idx}")
+        return None, preferred_idx
+
+    def _create_fallback_path_info(self, origin: Location, destination: Location) -> Dict[str, Any]:
+        """
+        Create a fallback path info when actual path calculation fails
+        
+        Args:
+            origin: Origin location
+            destination: Destination location
+            
+        Returns:
+            Dictionary with fallback path info
+        """
+        # Calculate straight-line distance
+        distance = self._calculate_haversine_distance(
+            origin.lat, origin.lon,
+            destination.lat, destination.lon
+        )
+        
+        # Estimate duration based on straight-line distance
+        # Assume average speed of 30 km/h (8.33 m/s)
+        estimated_speed = 8.33  # m/s
+        duration = distance / estimated_speed
+        
+        # Create simplified waypoints
+        waypoints = [
+            {'location': origin},
+            {'location': destination}
+        ]
+        
+        return {
+            'distance': distance,
+            'duration': duration,
+            'waypoints': waypoints,
+            'path': []
+        }
+    
+    def _calculate_haversine_distance(self, lat1, lon1, lat2, lon2):
+        """Calculate the great circle distance between two points in meters"""
+        import math
+        
+        R = 6371000  # Earth radius in meters
+        
+        # Convert latitude and longitude from degrees to radians
+        lat1_rad = math.radians(lat1)
+        lon1_rad = math.radians(lon1)
+        lat2_rad = math.radians(lat2)
+        lon2_rad = math.radians(lon2)
+        
+        # Haversine formula
+        dlon = lon2_rad - lon1_rad
+        dlat = lat2_rad - lat1_rad
+        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        distance = R * c
+        
+        return distance
 
     def validate_route_constraints(
         self,

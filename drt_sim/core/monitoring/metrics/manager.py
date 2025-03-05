@@ -459,7 +459,8 @@ class MetricsManager:
             index='vehicle_id',
             columns='metric_name',
             values='value',
-            aggfunc='sum'
+            aggfunc='sum',
+            fill_value=0  # Fill missing values with 0
         ).reset_index()
 
         print("Distance metrics shape:", distance_metrics.shape)
@@ -467,17 +468,27 @@ class MetricsManager:
         print("Distance metrics contents:\n", distance_metrics)
         
         if not distance_metrics.empty:
-            fig = px.bar(distance_metrics,
-                        x='vehicle_id',
-                        y=['vehicle.occupied_distance', 'vehicle.empty_distance'],
-                        title='Vehicle Distance Breakdown',
-                        barmode='stack',
-                        labels={
-                            'value': 'Distance (meters)',
-                            'vehicle_id': 'Vehicle ID',
-                            'variable': 'Distance Type'
-                        })
-            self.save_figure(fig, "vehicle_distance_breakdown", "vehicle_analysis")
+            # Check if any distance metrics exist in the dataframe
+            required_columns = ['vehicle.occupied_distance', 'vehicle.empty_distance']
+            available_columns = [col for col in required_columns if col in distance_metrics.columns]
+            
+            if len(available_columns) > 0:
+                try:
+                    fig = px.bar(distance_metrics,
+                                x='vehicle_id',
+                                y=available_columns,
+                                title='Vehicle Distance Breakdown',
+                                barmode='stack',
+                                labels={
+                                    'value': 'Distance (meters)',
+                                    'vehicle_id': 'Vehicle ID',
+                                    'variable': 'Distance Type'
+                                })
+                    self.save_figure(fig, "vehicle_distance_breakdown", "vehicle_analysis")
+                except ValueError as e:
+                    logger.warning(f"Could not create vehicle distance breakdown visualization: {e}")
+            else:
+                logger.warning("No distance metrics available for visualization")
 
     def analyze_passenger_experience(self, metrics_df: pd.DataFrame) -> None:
         """Analyze passenger experience metrics."""
