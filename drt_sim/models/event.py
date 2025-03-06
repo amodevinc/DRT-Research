@@ -118,7 +118,6 @@ class EventType(Enum):
     ROUTE_ACTIVATION = "route.activation"
     ROUTE_SEGMENT_STARTED = "route.segment.started"
     ROUTE_SEGMENT_COMPLETED = "route.segment.completed"
-    ROUTE_UPDATE_REQUEST = "route.update.request"
     ROUTE_UPDATED = "route.updated"
     ROUTE_COMPLETED = "route.completed"
     ROUTE_SEGMENT_READY_FOR_COMPLETION = "route.segment.ready.for.completion"

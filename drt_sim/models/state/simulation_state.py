@@ -1,10 +1,4 @@
 from .status import SimulationStatus
-from .vehicle_system_state import VehicleSystemState
-from .request_system_state import RequestSystemState
-from .passenger_system_state import PassengerSystemState
-from .route_system_state import RouteSystemState
-from .stop_system_state import StopSystemState, StopAssignmentSystemState
-from .assignment_system_state import AssignmentSystemState
 from ..base import ModelBase
 from dataclasses import dataclass, field
 from typing import Dict, List, Any
@@ -24,7 +18,6 @@ class SimulationState(ModelBase):
     stops: Dict[str, Any] = field(default_factory=dict)
     stop_assignments: Dict[str, Any] = field(default_factory=dict)
     assignments: Dict[str, Any] = field(default_factory=dict)
-    stop_coordination_states: Dict[str, Any] = field(default_factory=dict)
     metrics: Dict[str, float] = field(default_factory=dict)
     events: List[Dict[str, Any]] = field(default_factory=list)
     
@@ -40,7 +33,6 @@ class SimulationState(ModelBase):
             "stops": self.stops,
             "stop_assignments": self.stop_assignments,
             "assignments": self.assignments,
-            "stop_coordination_states": self.stop_coordination_states,
             "metrics": self.metrics,
             "events": self.events
         }
@@ -58,7 +50,6 @@ class SimulationState(ModelBase):
             stops=data.get("stops", {}),
             stop_assignments=data.get("stop_assignments", {}),
             assignments=data.get("assignments", {}),
-            stop_coordination_states=data.get("stop_coordination_states", {}),
             metrics=data.get("metrics", {}),
             events=data.get("events", [])
         )

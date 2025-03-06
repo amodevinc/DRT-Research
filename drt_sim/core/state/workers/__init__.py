@@ -1,4 +1,3 @@
-from .stop_coordination_worker import StopCoordinationStateWorker
 from .vehicle_state_worker import VehicleStateWorker
 from .request_state_worker import RequestStateWorker
 from .route_state_worker import RouteStateWorker
@@ -15,5 +14,4 @@ __all__ = [
     'StopStateWorker',
     'StopAssignmentStateWorker',
     'AssignmentStateWorker',
-    'StopCoordinationStateWorker'
 ]

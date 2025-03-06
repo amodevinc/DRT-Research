@@ -242,9 +242,6 @@ class SimulationOrchestrator:
             EventType.SERVICE_LEVEL_VIOLATION: self.passenger_handler.handle_service_level_violation,
             EventType.PASSENGER_READY_FOR_BOARDING: self.vehicle_handler.handle_passenger_ready_for_boarding,
             
-            # Route Events
-            EventType.ROUTE_UPDATE_REQUEST: self.route_handler.handle_route_update_request,
-            
             # Stop Events
             EventType.DETERMINE_VIRTUAL_STOPS: self.stop_handler.handle_determine_virtual_stops,
             EventType.STOP_SELECTION_TICK: self.stop_handler.handle_stop_selection_tick,

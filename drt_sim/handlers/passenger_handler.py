@@ -45,8 +45,7 @@ class PassengerHandler:
     def handle_start_passenger_journey(self, event: Event) -> None:
         """Initial handler when a request is assigned to a vehicle"""
         try:
-            logger.debug(f"Entering handle_start_passenger_journey for event {event.id}, "
-             f"data: {event.data}")
+            logger.debug(f"Entering handle_start_passenger_journey for event {event.id}")
             self.state_manager.begin_transaction()
             if 'assignment' not in event.data:
                 logger.error(f"No assignment found in event data for event {event.id}. "
@@ -126,7 +125,7 @@ class PassengerHandler:
         """
         try:
             self.state_manager.begin_transaction()
-            
+            logger.info(f"Entering handle_passenger_arrived_pickup for event {event.id}")
             # Update passenger state
             passenger_state = self.state_manager.passenger_worker.update_passenger_status(
                 event.passenger_id,
@@ -137,7 +136,7 @@ class PassengerHandler:
                     'current_location': event.data.get('location')
                 }
             )
-            
+            logger.info(f"Passenger {passenger_state.id} arrived at pickup location at {self.context.current_time}.\n They are assigned to vehicle {passenger_state.assigned_vehicle_id} and have a pickup time of {passenger_state.estimated_pickup_time}")
             # Get stop assignment
             stop_assignment = self.state_manager.stop_assignment_worker.get_assignment_for_request(passenger_state.request_id)
             if not stop_assignment:
@@ -169,6 +168,8 @@ class PassengerHandler:
                 logger.warning(f"Route {vehicle.current_state.current_route_id} not found for vehicle {passenger_state.assigned_vehicle_id}")
                 self.state_manager.commit_transaction()
                 return
+            
+            logger.info(f"The Route Stops for the vehicle picking up this passenger are: {[str(rs) for rs in route.stops]}")
                 
             # Find the route stop for this passenger
             route_stop = None
@@ -182,9 +183,13 @@ class PassengerHandler:
                 logger.warning(f"No route stop found for passenger {passenger_state.id} at stop {stop_assignment.origin_stop.id}")
                 self.state_manager.commit_transaction()
                 return
-                
+            
+            logger.info(f"Route stop found for passenger {passenger_state.id} at stop {stop_assignment.origin_stop.id}")
+            logger.info(f"The Route Stop is: {str(route_stop)}")
             # Register passenger arrival with the route stop
             vehicle_is_present = route_stop.register_passenger_arrival(passenger_state.request_id)
+
+            logger.info(f"Is vehicle present at route stop {route_stop.id} ???: {vehicle_is_present}")
             
             # Update the route to persist changes
             self.state_manager.route_worker.update_route(route)
@@ -531,7 +536,6 @@ class PassengerHandler:
     ) -> None:
         """Create event for passenger arrival at pickup location"""
         passenger_state = self.state_manager.passenger_worker.get_passenger(passenger_id)
-        
         event = Event(
             event_type=EventType.PASSENGER_ARRIVED_PICKUP,
             priority=EventPriority.HIGH,

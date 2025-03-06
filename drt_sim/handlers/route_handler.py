@@ -16,7 +16,6 @@ class RouteHandler:
     """
     Handles route lifecycle and operations in the DRT system.
     Manages route creation, modifications, and coordinates with VehicleHandler.
-    Simplified to work without segments.
     """
     
     def __init__(
@@ -30,63 +29,6 @@ class RouteHandler:
         self.context = context
         self.state_manager = state_manager
         self.network_manager = network_manager
-
-    async def handle_route_update_request(self, event: Event) -> None:
-        """Handle route update request"""
-        try:
-            logger.info(f"Handling route update request for event: {event.id}")
-            self.state_manager.begin_transaction()
-            
-            assignment = event.data['assignment']
-            if not assignment:
-                raise ValueError(f"Assignment not found")
-                
-            vehicle: Vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
-            if not vehicle:
-                raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
-
-            logger.info(f"Processing route update for vehicle {vehicle.id}: status={vehicle.current_state.status}, "
-                     f"location={vehicle.current_state.current_location}")
-                
-            # Update or create route
-            route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
-            logger.info(f"Route {assignment.route.id} exists: {route_exists}")
-            
-            if not route_exists:
-                logger.debug(f"Creating new route: stops={len(assignment.route.stops)}, "
-                          f"total_distance={assignment.route.total_distance:.2f}m, "
-                          f"total_duration={assignment.route.total_duration:.2f}s")
-                logger.debug(f"Route stops sequence: {[str(stop) for stop in assignment.route.stops]}")
-                assignment.route.status = RouteStatus.CREATED
-                self.state_manager.route_worker.add_route(assignment.route)
-                logger.info(f"Created new route {assignment.route.id} for vehicle {vehicle.id}")
-            else:
-                existing_route = self.state_manager.route_worker.get_route(assignment.route.id)
-                logger.debug(f"Updating existing route {existing_route.id}:")
-                logger.debug(f"Old route: {str(existing_route)}")
-                logger.debug(f"New route: {str(assignment.route)}")
-                logger.debug(f"New route stops sequence: {[str(stop) for stop in assignment.route.stops]}")
-                
-                # Keep existing status if route exists
-                assignment.route.status = existing_route.status
-                self.state_manager.route_worker.update_route(assignment.route)
-                logger.info(f"Updated existing route {assignment.route.id} for vehicle {vehicle.id}")
-            
-            # Check vehicle's current status to determine appropriate dispatch
-            if vehicle.current_state.status == VehicleStatus.IDLE:
-                logger.debug(f"Vehicle {vehicle.id} is idle, creating initial dispatch")
-                self._create_initial_dispatch_event(assignment.vehicle_id, assignment.route.id)
-            else:
-                logger.debug(f"Vehicle {vehicle.id} is in service, creating reroute dispatch")
-                self._create_reroute_dispatch_event(assignment.vehicle_id, assignment.route.id)
-                
-            self.state_manager.commit_transaction()
-            logger.info(f"Successfully created/updated route for vehicle {vehicle.id}")
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling route update request: {str(e)}")
-            await self._handle_route_error(event, str(e))
 
     def _create_route_completed_event(self, route: Route) -> None:
         """Create event for route completion."""

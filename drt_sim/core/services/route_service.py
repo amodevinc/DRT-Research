@@ -244,19 +244,16 @@ class RouteService:
             # Validate route consistency
             is_valid, error_msg = new_route.validate_passenger_consistency()
             if not is_valid:
-                logger.warning(f"Invalid passenger consistency in modified route: {error_msg}")
                 return None
                 
             # Validate capacity
             is_valid, error_msg = new_route.validate_capacity(vehicle.capacity)
             if not is_valid:
-                logger.warning(f"Vehicle capacity exceeded in modified route: {error_msg}")
                 return None
                 
             # Final route integrity validation
             is_valid, error_msg = new_route.validate_route_integrity()
             if not is_valid:
-                logger.warning(f"Route integrity validation failed: {error_msg}")
                 return None
                 
             logger.debug(f"Successfully modified route for vehicle {vehicle.id}: total_distance={new_route.total_distance}m, total_duration={new_route.total_duration}s")
@@ -518,14 +515,6 @@ class RouteService:
         
         # Now update occupancies for all stops
         for stop in stops:
-            if stop.completed:
-                # For completed stops, just verify consistency
-                expected_load = current_occupancy
-                if stop.current_load != expected_load:
-                    logger.warning(f"Occupancy inconsistency at completed stop {stop.id}: "
-                                 f"current_load={stop.current_load}, expected={expected_load}")
-                continue
-                
             # For uncompleted stops, update the current load
             stop.current_load = current_occupancy
             

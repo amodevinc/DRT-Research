@@ -182,6 +182,19 @@ class VehicleStateWorker(StateWorker):
             logger.error(f"Failed to update vehicle {vehicle_id} active route: {str(e)}")
             raise
 
+    def clear_vehicle_active_route(self, vehicle_id: str) -> None:
+        """Clear the active route ID from the vehicle's current state"""
+        vehicle = self.get_vehicle(vehicle_id)
+        if not vehicle:
+            logger.warning(f"Vehicle {vehicle_id} not found when trying to clear active route")
+            return
+        
+        new_state = vehicle.current_state.clone()
+        new_state.current_route_id = None
+        vehicle.current_state = new_state
+        self.vehicles.update(vehicle_id, vehicle)
+        logger.info(f"Cleared active route for vehicle {vehicle_id}")
+
     def get_vehicle_active_route_id(self, vehicle_id: str) -> Optional[str]:
         """Get the active route ID from the vehicle's current state"""
         vehicle = self.get_vehicle(vehicle_id)

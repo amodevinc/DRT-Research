@@ -31,7 +31,7 @@ simulation:
   start_time: "2024-10-24 07:00:00"
   end_time: "2024-10-24 23:00:00"
   warm_up_duration: 1800
-  time_step: 30
+  time_step: 1
   time_scale_factor: 1.0
   random_seed: 42
 
@@ -57,7 +57,7 @@ base_config:
   
   demand:
     generator_type: "csv"
-    num_requests: 20
+    num_requests: 700
     csv_config:
       files:
         - file_path: "data/demands/base_real_time.csv"

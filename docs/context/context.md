@@ -148,12 +148,6 @@ The simulation follows an event-driven architecture with the following key compo
    - Processes assignments
    - Manages matching failures
 
-6. **Route Handler**
-   - Processes route updates
-   - Manages route completion
-   - Handles route optimization
-   - Coordinates vehicle dispatching
-
 ### Service Components
 
 #### Demand Management
@@ -303,30 +297,45 @@ The simulation follows an event-driven architecture with the following key compo
 ## Directory Structure
 
 ```
-core/
-├── demand/
-│   ├── generators.py
-│   └── manager.py
-├── events/
-│   └── manager.py
-├── monitoring/
-│   ├── metric_extractors.py
-│   ├── metrics_collector.py
-│   └── resource_monitor.py
-├── services/
-│   └── route_service.py
-├── simulation/
-│   ├── context.py
-│   ├── engine.py
-│   └── orchestrator.py
-└── state/
-    ├── base.py
-    ├── manager.py
-    └── workers/
-        ├── assignment_state_worker.py
-        ├── passenger_state_worker.py
-        ├── request_state_worker.py
-        ├── route_state_worker.py
-        ├── stop_state_worker.py
-        └── stop_assignment_state_worker.py
+drt_sim/
+├── User_preference_weight_calculation/  # User preference modeling
+├── algorithms/                          # Core algorithms
+├── analysis/                            # Analysis tools
+├── config/                              # Configuration management
+├── core/                                # Core simulation components
+│   ├── coordination/                    # Component coordination
+│   ├── demand/                          # Demand management
+│   ├── events/                          # Event system
+│   ├── monitoring/                      # Metrics and monitoring
+│   ├── processors/                      # Data processors
+│   ├── services/                        # Core services
+│   ├── simulation/                      # Simulation engine
+│   ├── state/                           # State management
+│   └── user/                            # User management
+├── handlers/                            # Event handlers
+│   ├── matching_handler.py              # Request-vehicle matching
+│   ├── passenger_handler.py             # Passenger events
+│   ├── request_handler.py               # Request processing
+│   ├── route_handler.py                 # Route management
+│   ├── stop_handler.py                  # Stop management
+│   └── vehicle_handler.py               # Vehicle operations
+├── integration/                         # External system integration
+├── models/                              # Data models
+│   ├── matching/                        # Matching models
+│   ├── state/                           # State models
+│   ├── base.py                          # Base model classes
+│   ├── event.py                         # Event models
+│   ├── location.py                      # Location models
+│   ├── metrics.py                       # Metrics models
+│   ├── passenger.py                     # Passenger models
+│   ├── rejection.py                     # Rejection models
+│   ├── request.py                       # Request models
+│   ├── route.py                         # Route models
+│   ├── simulation.py                    # Simulation models
+│   ├── stop.py                          # Stop models
+│   ├── user.py                          # User models
+│   └── vehicle.py                       # Vehicle models
+├── network/                             # Network management
+├── runners/                             # Execution runners
+└── utils/                               # Utility functions
 ```

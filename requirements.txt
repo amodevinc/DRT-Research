@@ -27,3 +27,6 @@ osmnx>=1.2.0  # For OpenStreetMap data
 # Note: SUMO itself should be installed separately following the instructions in docs/sumo_integration.md
 traci>=1.15.0  # TraCI interface for SUMO
 sumolib>=1.15.0  # SUMO Python library
+
+tabulate
+ipython

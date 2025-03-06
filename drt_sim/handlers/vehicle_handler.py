@@ -225,43 +225,175 @@ class VehicleHandler:
                 # Cancel any pending movement events for this vehicle
                 self._cancel_pending_vehicle_events(vehicle_id)
                 
-                # If vehicle is at a stop, let it complete operations before following new route
+                # Special handling for vehicles at a stop
                 if is_at_stop_waiting:
-                    # Get current stop ID
+                    # Get current stop ID and route stop
                     current_stop_id = vehicle.current_state.current_stop_id
-                    logger.info(f"Vehicle {vehicle_id} is at stop {current_stop_id}. " 
-                            f"Updating route assignment to {route_id}, but operations at current stop "
-                            f"will complete before following new route.")
                     
-                    # Store current stop related info that needs to be preserved
-                    current_waiting_state = vehicle.current_state.waiting_for_passengers
+                    if not current_stop_id:
+                        logger.warning(f"Vehicle {vehicle_id} is at stop but has no current_stop_id")
+                        # Treat as normal rerouting
+                        is_at_stop_waiting = False
+                    else:
+                        # Get the current route stop from the current route
+                        current_route_stop = None
+                        
+                        # First try to find the stop in the current route
+                        if current_route:
+                            for stop in current_route.stops:
+                                if stop.id == current_stop_id:
+                                    current_route_stop = stop
+                                    break
+                        
+                        # If not found in current route, it might be that the vehicle's current_stop_id
+                        # has already been updated to a stop in the new route
+                        if not current_route_stop and new_route:
+                            logger.debug(f"Could not find route stop {current_stop_id} in current route {current_route_id}, checking new route {route_id}")
+                            for stop in new_route.stops:
+                                if stop.id == current_stop_id:
+                                    # We found the stop in the new route - this means the vehicle's state
+                                    # has already been partially updated to the new route
+                                    logger.info(f"Found route stop {current_stop_id} in new route {route_id} - vehicle state already partially updated")
+                                    current_route_stop = stop
+                                    
+                                    # Since we're already at this stop in the new route, we just need to
+                                    # update the vehicle's route ID and continue waiting
+                                    self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle_id, route_id)
+                                    current_route_stop.vehicle_is_present = True
+                                    self.state_manager.route_worker.update_route(new_route)
+                                    self.state_manager.commit_transaction()
+                                    logger.debug(f"=== END VEHICLE REROUTE HANDLING (ALREADY AT STOP IN NEW ROUTE) ===")
+                                    return
+                                    
+                        if not current_route_stop:
+                            logger.warning(f"Could not find route stop {current_stop_id} in either current route {current_route_id} or new route {route_id}")
+                            # Treat as normal rerouting
+                            is_at_stop_waiting = False
+                
+                if is_at_stop_waiting and current_route_stop:
+                    # SPECIAL CASE: Vehicle is at a stop waiting for passengers
                     
-                    # Update vehicle's active route ID to new route
-                    self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle_id, route_id)
+                    # 1. Determine if the current stop exists in the new route
+                    # We need to find a stop in the new route that has the same physical stop ID
+                    current_stop_in_new_route = False
+                    new_route_stop = None
+                    physical_stop_id = current_route_stop.stop.id  # Get the physical stop ID
                     
-                    # Preserve the vehicle's at-stop state to ensure stop operations complete properly
-                    vehicle.current_state.waiting_for_passengers = current_waiting_state
-                    vehicle.current_state.status = VehicleStatus.AT_STOP
-                    self.state_manager.vehicle_worker.update_vehicle(vehicle)
+                    # First check if there's a direct match on route stop ID
+                    for stop in new_route.stops:
+                        if stop.id == current_route_stop.id:  # Direct match on route stop ID
+                            current_stop_in_new_route = True
+                            new_route_stop = stop
+                            logger.debug(f"Found direct match on route stop ID {stop.id} in new route")
+                            break
                     
-                    logger.debug(f"Preserved vehicle at-stop state: StopID={current_stop_id}, Waiting={current_waiting_state}")
+                    # If no direct match on route stop ID, try to match on physical stop ID
+                    if not current_stop_in_new_route:
+                        for stop in new_route.stops:
+                            if stop.stop.id == physical_stop_id:  # Match on physical stop ID
+                                current_stop_in_new_route = True
+                                new_route_stop = stop
+                                logger.debug(f"Found match on physical stop ID {physical_stop_id} in new route (route stop ID: {stop.id})")
+                                break
                     
-                    # Mark the route as modified
-                    new_route.mark_as_modified()
+                    if not current_stop_in_new_route:
+                        logger.info(f"Current physical stop {physical_stop_id} not found in new route {route_id}")
+                        
+                    # 2. Check if we need to continue waiting at this stop
+                    need_to_continue_waiting = False
                     
-                    # Update route in state
-                    self.state_manager.route_worker.update_route(new_route)
+                    if current_stop_in_new_route:
+                        # Check if there are passengers we're waiting for that are still in the new route
+                        waiting_for_passengers = set(current_route_stop.pickup_passengers) - current_route_stop.arrived_pickup_request_ids
+                        
+                        if waiting_for_passengers:
+                            # Check if these passengers are still in the new route stop
+                            for request_id in waiting_for_passengers:
+                                if request_id in new_route_stop.pickup_passengers:
+                                    need_to_continue_waiting = True
+                                    break
                     
-                    # Handle route change at stop if needed
-                    if current_stop_id:
-                        logger.debug(f"Registering route change at stop {current_stop_id}")
-                        self.handle_route_change_at_stop(vehicle_id, current_stop_id, route_id)
-                    
-                    # Operations at the stop will continue, and handle_stop_operations_completed
-                    # will pick up the new route when stop operations finish
-                    self.state_manager.commit_transaction()
-                    logger.debug(f"=== END VEHICLE REROUTE HANDLING (AT STOP) ===")
-                    return
+                    # 3. Handle the two cases: continue waiting or move on
+                    if need_to_continue_waiting:
+                        # We need to continue waiting at this stop
+                        logger.info(f"Vehicle {vehicle_id} will continue waiting at stop {current_stop_id} after reroute to {route_id}")
+                        
+                        # Update vehicle's active route ID
+                        self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle_id, route_id)
+                        
+                        # Transfer the waiting state to the new route stop
+                        new_route_stop.vehicle_is_present = True
+                        new_route_stop.last_vehicle_arrival_time = current_route_stop.last_vehicle_arrival_time
+                        
+                        # Transfer wait timer if it exists
+                        if current_route_stop.wait_timeout_event_id:
+                            new_route_stop.wait_timeout_event_id = current_route_stop.wait_timeout_event_id
+                            new_route_stop.wait_start_time = current_route_stop.wait_start_time
+                        
+                        # Transfer arrived passengers information
+                        for request_id in current_route_stop.arrived_pickup_request_ids:
+                            if request_id in new_route_stop.pickup_passengers:
+                                new_route_stop.register_passenger_arrival(request_id, self.context.current_time)
+                        
+                        # Update route in state
+                        self.state_manager.route_worker.update_route(new_route)
+                        
+                        # Update vehicle's current_stop_id to the new route stop ID
+                        vehicle.current_state.current_stop_id = new_route_stop.id
+                        self.state_manager.vehicle_worker.update_vehicle(vehicle)
+                        
+                        # Keep vehicle status as AT_STOP
+                        # No need to change vehicle status or create new events
+                        
+                        self.state_manager.commit_transaction()
+                        logger.debug(f"=== END VEHICLE REROUTE HANDLING (CONTINUING AT STOP) ===")
+                        return
+                    else:
+                        # We don't need to continue waiting, move on to next stop in new route
+                        logger.info(f"Vehicle {vehicle_id} will stop waiting at {current_stop_id} and proceed with new route {route_id}")
+                        
+                        # Cancel any wait timer
+                        if current_route_stop.wait_timeout_event_id:
+                            self._cancel_wait_timer(current_route_stop)
+                        
+                        # Update vehicle status to IN_SERVICE
+                        self.state_manager.vehicle_worker.update_vehicle_status(
+                            vehicle_id,
+                            VehicleStatus.IN_SERVICE,
+                            self.context.current_time
+                        )
+                        
+                        # Clear stop-related state
+                        vehicle.current_state.current_stop_id = None
+                        vehicle.current_state.waiting_for_passengers = False
+                        
+                        # Update vehicle's active route ID
+                        self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle_id, route_id)
+                        self.state_manager.vehicle_worker.update_vehicle(vehicle)
+                        
+                        # Find first uncompleted stop in new route
+                        first_uncompleted_stop = None
+                        for stop in new_route.stops:
+                            if not stop.completed:
+                                first_uncompleted_stop = stop
+                                break
+                        
+                        if first_uncompleted_stop:
+                            # Create movement event to first uncompleted stop
+                            self._create_vehicle_movement_event(
+                                vehicle_id=vehicle_id,
+                                route_stop=first_uncompleted_stop,
+                                current_time=self.context.current_time
+                            )
+                        else:
+                            logger.warning(f"No uncompleted stops found in new route {route_id}")
+                        
+                        # Update route in state
+                        self.state_manager.route_worker.update_route(new_route)
+                        
+                        self.state_manager.commit_transaction()
+                        logger.debug(f"=== END VEHICLE REROUTE HANDLING (LEAVING STOP) ===")
+                        return
                 
                 # For vehicles not at a stop, proceed with normal rerouting
                 
@@ -588,6 +720,9 @@ class VehicleHandler:
                 
                 # 12. Update route to persist state
                 self.state_manager.route_worker.update_route(route)
+                logger.info(f"Route Updated after step #12 in handle_vehicle_arrived_stop")
+
+                logger.info(f"The Route Stops for the vehicle are: {[str(rs) for rs in route.stops]}")
                 
                 # 13. Update metrics
                 if self.context.metrics_collector:
@@ -739,7 +874,7 @@ class VehicleHandler:
                     }
                 )
                 self.context.event_manager.publish_event(no_show_event)
-                logger.info(f"Created no-show event {no_show_event.id} for passenger {request.passenger_id} (request {request_id}) at stop {route_stop.stop.id}")
+                logger.info(f"Created no-show event {no_show_event.id} for passenger {request.passenger_id} (request {request_id}) at route stop {route_stop.id}")
             
             # Clear wait timer
             logger.debug(f"Cancelling wait timer for stop {route_stop.id}")
@@ -906,6 +1041,7 @@ class VehicleHandler:
                             VehicleStatus.IDLE,
                             self.context.current_time
                         )
+                        self.state_manager.vehicle_worker.clear_vehicle_active_route(vehicle_id)
                         
                         logger.debug(f"Updated vehicle {vehicle_id} status to IDLE, cleared route and stop IDs")
                         logger.info(f"Vehicle {vehicle_id} completed route {route.id}")
@@ -1031,7 +1167,7 @@ class VehicleHandler:
         """
         logger.debug(f"=== START MOVEMENT EVENT CREATION ===")
         logger.debug(f"Vehicle {vehicle_id} - Creating movement events at time: {current_time}")
-        logger.debug(f"Movement destination: Stop ID={route_stop.stop.id}, Location=({route_stop.stop.location.lat}, {route_stop.stop.location.lon})")
+        logger.debug(f"Movement destination: Route Stop ID={route_stop.id}, Location=({route_stop.stop.location.lat}, {route_stop.stop.location.lon})")
         
         if not route_stop:
             logger.error(f"[Movement Event] Vehicle {vehicle_id} - RouteStop is None")
@@ -1277,7 +1413,7 @@ class VehicleHandler:
             logger.debug(f"No request IDs provided for boarding")
             return
             
-        logger.debug(f"Processing boarding for {len(request_ids)} passengers at stop {route_stop.stop.id}")
+        logger.debug(f"Processing boarding for {len(request_ids)} passengers at route stop {route_stop.id}")
 
         # Create boarding events for each passenger
         for request_id in request_ids:
@@ -1309,7 +1445,7 @@ class VehicleHandler:
                 }
             )
             self.context.event_manager.publish_event(boarding_event)
-            logger.info(f"Created boarding event {boarding_event.id} for passenger {request.passenger_id} (request {request_id}) at stop {route_stop.stop.id}")
+            logger.info(f"Created boarding event {boarding_event.id} for passenger {request.passenger_id} (request {request_id}) at route stop {route_stop.id}")
             
         # Check if all pickups are complete
         pickup_complete = route_stop.is_pickup_complete()
@@ -1320,7 +1456,7 @@ class VehicleHandler:
                 f"CompletedDropoffs={len(route_stop.completed_dropoff_request_ids)}/{len(route_stop.dropoff_passengers)}")
         
         if pickup_complete and dropoff_complete:
-            logger.debug(f"All operations complete at stop {route_stop.stop.id}, cancelling any wait timer")
+            logger.debug(f"All operations complete at route stop {route_stop.id}, cancelling any wait timer")
             
             # If all operations are complete, cancel any wait timer
             if route_stop.wait_timeout_event_id:
@@ -1338,14 +1474,14 @@ class VehicleHandler:
         """
         # Only start timer if not already waiting
         if route_stop.wait_start_time is not None:
-            logger.debug(f"Wait timer already started for vehicle {vehicle_id} at stop {route_stop.stop.id} at {route_stop.wait_start_time}")
+            logger.debug(f"Wait timer already started for vehicle {vehicle_id} at route stop {route_stop.id} at {route_stop.wait_start_time}")
             return
             
         # Calculate wait timeout
         wait_duration = self.config.vehicle.max_dwell_time
         wait_end_time = self.context.current_time + timedelta(seconds=wait_duration)
         
-        logger.debug(f"Creating wait timer for vehicle {vehicle_id} at stop {route_stop.stop.id}")
+        logger.debug(f"Creating wait timer for vehicle {vehicle_id} at route stop {route_stop.id}")
         logger.debug(f"Wait duration: {wait_duration}s, End time: {wait_end_time}")
         
         # Create wait timeout event
@@ -1366,7 +1502,7 @@ class VehicleHandler:
         
         # Add event to queue
         self.context.event_manager.publish_event(wait_event)
-        logger.debug(f"Started wait timer for vehicle {vehicle_id} at stop {route_stop.stop.id}: EventID={wait_event.id}, Until={wait_end_time}")
+        logger.debug(f"Started wait timer for vehicle {vehicle_id} at stop {route_stop.id}: EventID={wait_event.id}, Until={wait_end_time}")
         
     def _cancel_wait_timer(self, route_stop: RouteStop) -> None:
         """
@@ -1379,13 +1515,13 @@ class VehicleHandler:
         event_id = route_stop.cancel_wait_timer()
         
         if event_id:
-            logger.debug(f"Cancelling wait timer {event_id} at stop {route_stop.stop.id}")
+            logger.debug(f"Cancelling wait timer {event_id} at stop {route_stop.id}")
             # Cancel the event in the queue
             success = self.context.event_manager.cancel_event(event_id)
             if success:
-                logger.info(f"Successfully cancelled wait timer {event_id} at stop {route_stop.stop.id}")
+                logger.info(f"Successfully cancelled wait timer {event_id} at stop {route_stop.id}")
             else:
-                logger.warning(f"Failed to cancel wait timer {event_id} at stop {route_stop.stop.id}")
+                logger.warning(f"Failed to cancel wait timer {event_id} at stop {route_stop.id}")
 
     def _cancel_pending_vehicle_events(self, vehicle_id: str) -> int:
         """
@@ -1462,11 +1598,11 @@ class VehicleHandler:
             vehicle_id: ID of the vehicle
         """
         if not route_stop.dropoff_passengers:
-            logger.debug(f"No dropoff passengers at stop {route_stop.stop.id}")
+            logger.debug(f"No dropoff passengers at route stop {route_stop.id}")
             return
             
         logger.debug(f"=== START PASSENGER ALIGHTING ===")
-        logger.debug(f"Processing {len(route_stop.dropoff_passengers)} dropoffs at stop {route_stop.stop.id}")
+        logger.debug(f"Processing {len(route_stop.dropoff_passengers)} dropoffs at route stop {route_stop.id}")
             
         # Process each dropoff
         for request_id in route_stop.dropoff_passengers:
@@ -1480,6 +1616,7 @@ class VehicleHandler:
                 
             # Register dropoff with route stop
             route_stop.register_dropoff(request_id)
+            self.state_manager.vehicle_worker.decrement_vehicle_occupancy(vehicle_id)
             
             # Create alighting completed event
             alighting_event = Event(
@@ -1496,7 +1633,7 @@ class VehicleHandler:
                 }
             )
             self.context.event_manager.publish_event(alighting_event)
-            logger.info(f"Created alighting event {alighting_event.id} for passenger {request.passenger_id} (request {request_id}) at stop {route_stop.stop.id}")
+            logger.info(f"Created alighting event {alighting_event.id} for passenger {request.passenger_id} (request {request_id}) at route stop {route_stop.id}")
         
         # Check if dropoffs are complete
         dropoff_complete = route_stop.is_dropoff_complete()
@@ -1515,95 +1652,19 @@ class VehicleHandler:
         """
         # Skip if no planned arrival time
         if not route_stop.planned_arrival_time:
-            logger.debug(f"No planned arrival time for stop {route_stop.stop.id}, skipping delay check")
+            logger.debug(f"No planned arrival time for route stop {route_stop.id}, skipping delay check")
             return
             
         # Calculate delay
         delay = (arrival_time - route_stop.planned_arrival_time).total_seconds()
         
-        logger.debug(f"Checking delay at stop {route_stop.stop.id}: PlannedArrival={route_stop.planned_arrival_time}, "
+        logger.debug(f"Checking delay at route stop {route_stop.id}: PlannedArrival={route_stop.planned_arrival_time}, "
                 f"ActualArrival={arrival_time}, Delay={delay:.1f}s, MaxThreshold={self.vehicle_thresholds['max_pickup_delay']}s")
         
         # Check if delay exceeds threshold
         if delay > self.vehicle_thresholds['max_pickup_delay']:
             # Log violation
-            logger.warning(f"DELAY VIOLATION: Vehicle {vehicle_id} arrived at stop {route_stop.stop.id} with delay of {delay:.1f} seconds (exceeds threshold of {self.vehicle_thresholds['max_pickup_delay']}s)")
+            logger.warning(f"DELAY VIOLATION: Vehicle {vehicle_id} arrived at route stop {route_stop.id} with delay of {delay:.1f} seconds (exceeds threshold of {self.vehicle_thresholds['max_pickup_delay']}s)")
         else:
             logger.debug(f"Delay is within acceptable limits")
             
-
-    def handle_route_change_at_stop(self, vehicle_id: str, stop_id: str, new_route_id: str) -> None:
-        """
-        Handle route change while vehicle is at a stop
-        
-        Args:
-            vehicle_id: ID of the vehicle
-            stop_id: ID of the physical stop where the vehicle is
-            new_route_id: ID of the new route
-        """
-        try:
-            logger.debug(f"=== START ROUTE CHANGE AT STOP HANDLING ===")
-            logger.debug(f"Vehicle {vehicle_id} - Processing route change at stop {stop_id} to route {new_route_id}")
-            
-            self.state_manager.begin_transaction()
-            
-            # Get the vehicle to access its current route ID
-            vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
-            if not vehicle or not vehicle.current_state.current_route_id:
-                logger.warning(f"Vehicle {vehicle_id} not found or has no active route")
-                self.state_manager.rollback_transaction()
-                return
-                
-            logger.debug(f"Vehicle state: Status={vehicle.current_state.status}, "
-                    f"RouteID={vehicle.current_state.current_route_id}, "
-                    f"StopID={vehicle.current_state.current_stop_id}")
-                
-            # Get the current route using the vehicle's current route ID
-            current_route = self.state_manager.route_worker.get_route(vehicle.current_state.current_route_id)
-            if not current_route:
-                logger.warning(f"Route {vehicle.current_state.current_route_id} not found for vehicle {vehicle_id}")
-                self.state_manager.rollback_transaction()
-                return
-            
-            # Find the current route stop
-            current_route_stop = None
-            for rs in current_route.stops:
-                if rs.stop.id == stop_id and rs.vehicle_is_present:
-                    current_route_stop = rs
-                    break
-            
-            if not current_route_stop:
-                logger.warning(f"No active route stop found for vehicle {vehicle_id} at stop {stop_id}")
-                self.state_manager.rollback_transaction()
-                return
-                
-            logger.debug(f"Found route stop: ID={current_route_stop.id}, Sequence={current_route_stop.sequence}")
-                
-            # Get the new route
-            new_route = self.state_manager.route_worker.get_route(new_route_id)
-            if not new_route:
-                logger.error(f"New route {new_route_id} not found")
-                self.state_manager.rollback_transaction()
-                return
-                
-            logger.debug(f"New route details: ID={new_route.id}, Status={new_route.status}, StopCount={len(new_route.stops)}")
-                
-            # Register route change with the route stop
-            current_route_stop.register_route_change(new_route_id, self.context.current_time)
-            
-            logger.debug(f"Registered route change in stop {current_route_stop.id}: NewRouteID={new_route_id}, Time={self.context.current_time}")
-            
-            # Update the current route to persist changes
-            self.state_manager.route_worker.update_route(current_route)
-            
-            # Update the new route status to ACTIVE
-            self.state_manager.route_worker.update_route_status(new_route_id, RouteStatus.ACTIVE)
-            
-            logger.info(f"Registered route change for vehicle {vehicle_id} at stop {stop_id} from route {current_route.id} to {new_route_id}")
-            logger.debug(f"=== END ROUTE CHANGE AT STOP HANDLING ===")
-            
-            self.state_manager.commit_transaction()
-            
-        except Exception as e:
-            self.state_manager.rollback_transaction()
-            logger.error(f"Error handling route change at stop: {traceback.format_exc()}")

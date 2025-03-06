@@ -13,8 +13,7 @@ from drt_sim.core.state.workers import (
     PassengerStateWorker,
     StopStateWorker,
     StopAssignmentStateWorker,
-    AssignmentStateWorker,
-    StopCoordinationStateWorker
+    AssignmentStateWorker
 )
 from drt_sim.models.state import (
     SimulationState, 
@@ -37,7 +36,6 @@ class StateManager:
         self.passenger_worker = PassengerStateWorker()
         self.stop_assignment_worker = StopAssignmentStateWorker()
         self.assignment_worker = AssignmentStateWorker()
-        self.stop_coordination_worker = StopCoordinationStateWorker()
         
         self.workers: List[StateWorker] = [
             self.vehicle_worker,
@@ -47,7 +45,6 @@ class StateManager:
             self.stop_worker,
             self.stop_assignment_worker,
             self.assignment_worker,
-            self.stop_coordination_worker
         ]
         
         self.metrics: Dict[str, float] = {}
@@ -63,7 +60,6 @@ class StateManager:
             stops={},
             stop_assignments={},
             assignments={},
-            stop_coordination_states={}
         )
         
         # Initialize workers with their configs
@@ -83,7 +79,6 @@ class StateManager:
             self.passenger_worker.initialize()
             self.stop_assignment_worker.initialize()
             self.assignment_worker.initialize()
-            self.stop_coordination_worker.initialize()
             logger.info("State manager initialized successfully")
         except Exception as e:
             logger.error(f"State initialization failed: {str(e)}")
@@ -112,7 +107,6 @@ class StateManager:
             self.stop_worker.update_state(state.stops)
             self.stop_assignment_worker.update_state(state.stop_assignments)
             self.assignment_worker.update_state(state.assignments)
-            self.stop_coordination_worker.update_state(state.stop_coordination_states)
             logger.debug(f"State updated successfully: {state.status}")
         except Exception as e:
             logger.error(f"Failed to set state: {str(e)}")
@@ -140,7 +134,6 @@ class StateManager:
         stop_state = self.stop_worker.get_state()
         stop_assignment_state = self.stop_assignment_worker.get_state()
         assignment_state = self.assignment_worker.get_state()
-        stop_coordination_state = self.stop_coordination_worker.get_state()
         
         return SimulationState(
             current_time=self.state.current_time,
@@ -152,7 +145,6 @@ class StateManager:
             stops=stop_state,
             stop_assignments=stop_assignment_state,
             assignments=assignment_state,
-            stop_coordination_states=stop_coordination_state
         )
             
     def begin_transaction(self) -> None:

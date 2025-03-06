@@ -450,16 +450,3 @@ class RequestHandler:
             self.state_manager.rollback_transaction()
             logger.error(f"Error handling no vehicle available: {str(e)}")
             self._handle_request_error(event, str(e))
-
-    def _create_update_route_request_event(self, assignment: Assignment) -> None:
-        """Create event to update vehicle route after request assignment."""
-        event = Event(
-            event_type=EventType.ROUTE_UPDATE_REQUEST,
-            priority=EventPriority.HIGH,
-            timestamp=self.context.current_time,
-            request_id=assignment.request_id,
-            data={
-                'assignment': assignment
-            }
-        )
-        self.context.event_manager.publish_event(event)
