@@ -81,7 +81,12 @@ class Request(ModelBase):
         assigned = f"|asgn={self.assignment_id[:8]}" if self.assignment_id else ""
         price = f"|price={self.estimated_price:.2f}" if self.estimated_price else ""
         return f"Req[{self.id[:8]}|{self.type.value}|{self.status.value}|pass={self.passenger_id[:8]}{assigned}{price}]"
-
+    
+    def to_json(self) -> str:
+        """Convert request to JSON string representation."""
+        import json
+        return json.dumps(self.to_dict())
+    
     def to_dict(self) -> Dict[str, Any]:
         return {
             'type': self.type.value,

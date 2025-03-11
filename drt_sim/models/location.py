@@ -46,6 +46,11 @@ class Location(ModelBase):
             'lon': self.lon,
         }
         return {**location_dict}
+    
+    def to_json(self) -> str:
+        """Convert Location to JSON string representation."""
+        import json
+        return json.dumps(self.to_dict())
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Location':

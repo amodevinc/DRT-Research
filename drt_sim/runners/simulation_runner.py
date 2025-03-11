@@ -143,7 +143,7 @@ class SimulationRunner:
                 )
 
                 # Analyze all metrics
-                metrics_manager.generate_all_analysis()
+                metrics_manager.generate_essential_analysis()
 
                 # Log results.
                 self._log_results(results)

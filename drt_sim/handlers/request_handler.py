@@ -62,7 +62,7 @@ class RequestHandler:
                 1,
                 self.context.current_time,
                 {
-                    'request': request.to_dict(),
+                    'request': request.to_json(),
                 }
             )
             # Add request to state management
@@ -177,10 +177,10 @@ class RequestHandler:
                         'request_id': assignment.request_id,
                         'vehicle_id': assignment.vehicle_id,
                         'assignment_time': self.context.current_time.isoformat(),
-                        'request_origin': stop_assignment.origin_stop.location.to_dict(),
-                        'request_destination': stop_assignment.destination_stop.location.to_dict(),
-                        'origin_stop': stop_assignment.origin_stop.location.to_dict(),
-                        'destination_stop': stop_assignment.destination_stop.location.to_dict(),
+                        'request_origin': stop_assignment.origin_stop.location.to_json(),
+                        'request_destination': stop_assignment.destination_stop.location.to_json(),
+                        'origin_stop': stop_assignment.origin_stop.location.to_json(),
+                        'destination_stop': stop_assignment.destination_stop.location.to_json(),
                         'estimated_pickup_time': assignment.estimated_pickup_time.isoformat(),
                         'estimated_dropoff_time': assignment.estimated_dropoff_time.isoformat(),
                         'waiting_time_mins': assignment.waiting_time_mins,

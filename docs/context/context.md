@@ -295,47 +295,194 @@ The simulation follows an event-driven architecture with the following key compo
    - Network provider adapters
 
 ## Directory Structure
-
 ```
-drt_sim/
-├── User_preference_weight_calculation/  # User preference modeling
-├── algorithms/                          # Core algorithms
-├── analysis/                            # Analysis tools
-├── config/                              # Configuration management
-├── core/                                # Core simulation components
-│   ├── coordination/                    # Component coordination
-│   ├── demand/                          # Demand management
-│   ├── events/                          # Event system
-│   ├── monitoring/                      # Metrics and monitoring
-│   ├── processors/                      # Data processors
-│   ├── services/                        # Core services
-│   ├── simulation/                      # Simulation engine
-│   ├── state/                           # State management
-│   └── user/                            # User management
-├── handlers/                            # Event handlers
-│   ├── matching_handler.py              # Request-vehicle matching
-│   ├── passenger_handler.py             # Passenger events
-│   ├── request_handler.py               # Request processing
-│   ├── route_handler.py                 # Route management
-│   ├── stop_handler.py                  # Stop management
-│   └── vehicle_handler.py               # Vehicle operations
-├── integration/                         # External system integration
-├── models/                              # Data models
-│   ├── matching/                        # Matching models
-│   ├── state/                           # State models
-│   ├── base.py                          # Base model classes
-│   ├── event.py                         # Event models
-│   ├── location.py                      # Location models
-│   ├── metrics.py                       # Metrics models
-│   ├── passenger.py                     # Passenger models
-│   ├── rejection.py                     # Rejection models
-│   ├── request.py                       # Request models
-│   ├── route.py                         # Route models
-│   ├── simulation.py                    # Simulation models
-│   ├── stop.py                          # Stop models
-│   ├── user.py                          # User models
-│   └── vehicle.py                       # Vehicle models
-├── network/                             # Network management
-├── runners/                             # Execution runners
-└── utils/                               # Utility functions
+- data/
+    - candidate_stops/
+        - hwaseong.csv
+        - hwaseong_candidate_virtual_stops.csv
+        - knut.csv
+    - demands/
+        - S1_real_time.csv
+        - S2_real_time.csv
+        - S3_real_time.csv
+        - base_real_time.csv
+        - cleaned_knut_passenger_requests.csv
+        - knut_passenger_requests.csv
+        - knut_weekend_data_1.csv
+        - knut_weekend_data_2.csv
+        - knut_weekend_data_3.csv
+        - preprocessed_base_real_time.csv
+        - valid_requests_S1_real_time.csv
+        - valid_requests_S2_real_time.csv
+        - valid_requests_S3_real_time.csv
+        - valid_requests_base_real_time.csv
+    - networks/
+        - hwaseong_drive.edg.xml
+        - hwaseong_drive.graphml
+        - hwaseong_drive.net.xml
+        - hwaseong_drive.nod.xml
+        - hwaseong_walk.edg.xml
+        - hwaseong_walk.graphml
+        - hwaseong_walk.net.xml
+        - hwaseong_walk.nod.xml
+        - knut_drive.graphml
+        - knut_walk.graphml
+        - nyc_network.geojson
+- drt_sim/
+    - User_preference_weight_calculation/
+        - RL.py
+        - RL_documented.py
+        - features.csv
+        - user_history.csv
+        - weights.csv
+    - __init__.py
+    - algorithms/
+        - __init__.py
+        - base_interfaces/
+            - __init__.py
+            - demand_predictor_base.py
+            - matching_base.py
+            - routing_base.py
+            - stop_assigner_base.py
+            - stop_selector_base.py
+            - user_acceptance_base.py
+        - matching/
+            - __init__.py
+            - assignment/
+                - auction.py
+                - insertion.py
+            - batch_matching.py
+            - exact_optimizer.py
+            - heuristic_matching.py
+        - optimization/
+            - global_optimizer.py
+        - routing/
+            - __init__.py
+            - dijkstra_routing.py
+            - genetic_routing.py
+            - time_dependent_routing.py
+        - stop/
+            - assigner/
+                - accessibility.py
+                - multi_objective.py
+                - nearest.py
+            - selector/
+                - coverage_based.py
+                - demand_based.py
+        - user_acceptance_models/ #to be implemented
+            - __init__.py
+    - config/
+        - __init__.py
+        - config.py
+    - core/
+        - __init__.py
+        - coordination/
+        - demand/
+            - __init__.py
+            - generators.py
+            - manager.py
+            - user_acceptance.py
+            - user_profiles.py
+        - events/
+            - manager.py
+        - logging_config.py
+        - monitoring/
+            - metrics/
+                - aggregator.py
+                - collector.py
+                - manager.py
+                - metrics.yaml
+                - mlflow_adapter.py
+                - registry.py
+                - storage.py
+            - types/
+                - metrics.py
+            - visualization/
+                - manager.py
+        - paths.py
+        - processors/
+        - services/
+            - route_service.py
+        - simulation/
+            - context.py
+            - engine.py
+            - orchestrator.py
+        - simulation_context.py
+        - state/
+            - base.py
+            - manager.py
+            - workers/
+                - __init__.py
+                - assignment_state_worker.py
+                - passenger_state_worker.py
+                - request_state_worker.py
+                - route_state_worker.py
+                - stop_assignment_state_worker.py
+                - stop_state_worker.py
+                - vehicle_state_worker.py
+        - user/
+            - manager.py
+    - handlers/
+        - __init__.py
+        - matching_handler.py
+        - passenger_handler.py
+        - request_handler.py
+        - route_handler.py
+        - stop_handler.py
+        - vehicle_handler.py
+    - integration/
+        - __init__.py
+        - external_solvers.py
+        - traffic_sim_integration.py
+    - models/
+        - base.py
+        - event.py
+        - location.py
+        - matching/
+            - __init__.py
+            - enums.py
+            - types.py
+        - metrics.py
+        - passenger.py
+        - rejection.py
+        - request.py
+        - route.py
+        - simulation.py
+        - state/
+            - __init__.py
+            - assignment_system_state.py
+            - passenger_system_state.py
+            - request_system_state.py
+            - route_system_state.py
+            - simulation_state.py
+            - status.py
+            - stop_system_state.py
+            - vehicle_system_state.py
+        - stop.py
+        - user.py
+        - vehicle.py
+    - network/
+        - __init__.py
+        - manager.py
+    - runners/
+        - __init__.py
+        - simulation_runner.py
+    - utils/
+        - __init__.py
+        - caching.py
+        - geometry.py
+- requirements.txt
+- setup.py
+- studies/
+    - artifacts/
+        - DRT Fleet Optimization/
+    - configs/
+        - dispatch_comparison.yaml
+        - fleet_optimization.yaml
+        - stop_assigner_test.yaml
+        - sumo_integration_example.yaml
+        - test.yaml
+        - user_behavior.yaml
+    - mlflow.db
+
 ```

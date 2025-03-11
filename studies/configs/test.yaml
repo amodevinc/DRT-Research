@@ -57,7 +57,7 @@ base_config:
   
   demand:
     generator_type: "csv"
-    num_requests: 700
+    num_requests: 50
     csv_config:
       files:
         - file_path: "data/demands/base_real_time.csv"
@@ -126,10 +126,10 @@ parameter_sets:
     tags:
       - "small_fleet"
     vehicle:
-      fleet_size: 10
-      capacity: 4
-      boarding_time: 5
-      alighting_time: 5
+      fleet_size: 3
+      capacity: 7
+      boarding_time: 7
+      alighting_time: 7
       depot_locations:
         - [126.81736515, 37.209416]
         - [126.82221158, 37.20090886]
@@ -141,7 +141,39 @@ parameter_sets:
       optimization_method: "none"
       assignment_config:
         constraints:
-          max_waiting_time_secs: 300
+          max_waiting_time_secs: 600
+          max_in_vehicle_time_secs: 900
+          max_vehicle_access_time_secs: 600
+          max_existing_passenger_delay_secs: 420
+          max_distance_meters: 10000.0
+        weights:
+          passenger_waiting_time: 0.20
+          passenger_in_vehicle_time: 0.40
+          existing_passenger_delay: 0.30
+          distance: 0.10
+  medium_fleet:
+    name: "medium_fleet"
+    description: "Medium fleet configuration with varying capacities"
+    replications: 1
+    tags:
+      - "medium_fleet"
+    vehicle:
+      fleet_size: 7
+      capacity: 7
+      boarding_time: 7
+      alighting_time: 7
+      depot_locations:
+        - [126.81736515, 37.209416]
+        - [126.82221158, 37.20090886]
+        - [126.83461236, 37.20602126]
+        - [126.8299617, 37.20062122]
+        - [126.83069764999999, 37.21154885]
+    matching:
+      assignment_method: "insertion"
+      optimization_method: "none"
+      assignment_config:
+        constraints:
+          max_waiting_time_secs: 600
           max_in_vehicle_time_secs: 900
           max_vehicle_access_time_secs: 600
           max_existing_passenger_delay_secs: 420

@@ -149,8 +149,8 @@ class PassengerHandler:
                 {
                     'passenger_id': passenger_state.id,
                     'request_id': passenger_state.request_id,
-                    'origin': passenger_state.current_location.to_dict(),
-                    'origin_stop': stop_assignment.origin_stop.location.to_dict()
+                    'origin': passenger_state.current_location.to_json(),
+                    'origin_stop': stop_assignment.origin_stop.location.to_json()
                 }
             )
             
@@ -367,8 +367,8 @@ class PassengerHandler:
                     self.context.current_time,
                     {
                         'passenger_id': event.passenger_id,
-                        'destination': request.destination.to_dict(),
-                        'destination_stop': passenger_state.assigned_destination_stop.location.to_dict(),
+                        'destination': request.destination.to_json(),
+                        'destination_stop': passenger_state.assigned_destination_stop.location.to_json(),
                     }
                 )
             

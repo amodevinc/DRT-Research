@@ -87,5 +87,8 @@ site/
 studies/artifacts/*
 
 # Results
-studies/results/*
+studies/results
 studies/mlflow.db
+
+# Alain's Documents
+alain_docs/
