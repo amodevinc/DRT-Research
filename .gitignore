@@ -48,14 +48,6 @@ htmlcov/
 nosetests.xml
 coverage.xml
 
-# Project specific
-data/*
-!data/networks/
-research/results/*/
-!research/results/.gitkeep
-drt_sim/experiments/results/*/
-!drt_sim/experiments/results/.gitkeep
-
 # Logs and temporary files
 *.log
 logs/

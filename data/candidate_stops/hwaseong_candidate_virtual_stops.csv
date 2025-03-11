@@ -1,0 +1,78 @@
+id,x,y,road_name,road_direction,side_of_road,pair_id,accessibility_note
+VS0001,126.81822,37.209478,Unknown Road,southbound,west,P0001,Modified manually
+VS0002,126.81837094148187,37.20978052560105,Unknown Road,southbound,east,P0001,Directly generated from drive network
+VS0003,126.81975342295414,37.21061679162536,Unknown Road,westbound,north,P0002,Directly generated from drive network
+VS0004,126.81988367704588,37.21042751837464,Unknown Road,westbound,south,P0002,Directly generated from drive network
+VS0005,126.82230769014149,37.211562375730416,Unknown Road,westbound,north,P0003,Directly generated from drive network
+VS0006,126.8224269098585,37.21136854426958,Unknown Road,westbound,south,P0003,Directly generated from drive network
+VS0007,126.8249926828591,37.212700893908426,Unknown Road,westbound,north,P0004,Directly generated from drive network
+VS0008,126.82511381714089,37.212507816091566,Unknown Road,westbound,south,P0004,Directly generated from drive network
+VS0009,126.826718,37.213412,Unknown Road,westbound,north,P0005,Modified manually
+VS0010,126.82670002514834,37.21320259732613,Unknown Road,westbound,south,P0005,Directly generated from drive network
+VS0011,126.82812883494455,37.21410575810982,Unknown Road,westbound,north,P0006,Directly generated from drive network
+VS0012,126.82826716505545,37.213920151890186,Unknown Road,westbound,south,P0006,Directly generated from drive network
+VS0013,126.83032653783239,37.21519754964819,Unknown Road,westbound,north,P0007,Directly generated from drive network
+VS0014,126.8304710621676,37.2150149603518,Unknown Road,westbound,south,P0007,Directly generated from drive network
+VS0015,126.83202186793291,37.21497740444787,Unknown Road,southbound,west,P0008,Directly generated from drive network
+VS0017,126.83213941206917,37.21362926924592,Unknown Road,southbound,west,P0009,Directly generated from drive network
+VS0018,126.832631,37.213722,Unknown Road,southbound,east,P0009,Modified manually
+VS0019,126.832295,37.212573,Unknown Road,southbound,west,P0010,Modfiied manually
+VS0020,126.832747,37.211742,Unknown Road,southbound,east,P0010,Modified manually
+VS0021,126.83250027292524,37.21077342717304,Unknown Road,southbound,west,P0011,Directly generated from drive network
+VS0022,126.83277092707476,37.21078449282696,Unknown Road,southbound,east,P0011,Directly generated from drive network
+VS0023,126.81874260197417,37.2083731456423,Unknown Road,southbound,west,P0012,Directly generated from drive network
+VS0024,126.81899909802583,37.20844281435771,Unknown Road,southbound,east,P0012,Directly generated from drive network
+VS0025,126.81936942540726,37.20710714695246,Unknown Road,southbound,west,P0013,Directly generated from drive network
+VS0026,126.81961487459274,37.20719863304755,Unknown Road,southbound,east,P0013,Directly generated from drive network
+VS0027,126.82031805217554,37.205857269310364,Unknown Road,southbound,west,P0014,Directly generated from drive network
+VS0028,126.82053244782446,37.20598928068964,Unknown Road,southbound,east,P0014,Directly generated from drive network
+VS0029,126.82146023891539,37.20473582745783,Unknown Road,southbound,west,P0015,Directly generated from drive network
+VS0030,126.82166616108461,37.204876132542175,Unknown Road,southbound,east,P0015,Directly generated from drive network
+VS0031,126.82299157303444,37.20424455633113,Unknown Road,westbound,north,P0016,Directly generated from drive network
+VS0032,126.82315952696555,37.204075173668855,Unknown Road,westbound,south,P0016,Directly generated from drive network
+VS0033,126.82484595611548,37.20541728479163,Unknown Road,westbound,north,P0017,Directly generated from drive network
+VS0034,126.82501624388452,37.20524938520838,Unknown Road,westbound,south,P0017,Directly generated from drive network
+VS0035,126.82624644932109,37.206323151872645,Unknown Road,westbound,north,P0018,Directly generated from drive network
+VS0036,126.82641855067892,37.20615642812735,Unknown Road,westbound,south,P0018,Directly generated from drive network
+VS0037,126.82789488141489,37.207879718201546,Unknown Road,northbound,east,P0019,Directly generated from drive network
+VS0038,126.82768071858513,37.207747461798455,Unknown Road,northbound,west,P0019,Directly generated from drive network
+VS0039,126.82686540840672,37.208949876498714,Unknown Road,northbound,east,P0020,Directly generated from drive network
+VS0040,126.82664939159326,37.2088195435013,Unknown Road,northbound,west,P0020,Directly generated from drive network
+VS0041,126.82605169358824,37.21019930224391,Unknown Road,northbound,east,P0021,Directly generated from drive network
+VS0042,126.82580380641177,37.2101120677561,Unknown Road,northbound,west,P0021,Directly generated from drive network
+VS0043,126.82351297687723,37.20276005050746,Unknown Road,southbound,west,P0022,Directly generated from drive network
+VS0044,126.82372272312278,37.20289670949254,Unknown Road,southbound,east,P0022,Directly generated from drive network
+VS0045,126.82524175395022,37.20109436233326,Unknown Road,southbound,west,P0023,Directly generated from drive network
+VS0046,126.82544724604978,37.20123505766674,Unknown Road,southbound,east,P0023,Directly generated from drive network
+VS0047,126.826552,37.199810,Unknown Road,southbound,west,P0024,Modified manually
+VS0048,126.826819,37.199990,Unknown Road,southbound,east,P0024,Modified manually
+VS0049,126.82932500357167,37.20838439328608,Unknown Road,westbound,north,P0025,Directly generated from drive network
+VS0050,126.82949789642835,37.20821818671392,Unknown Road,westbound,south,P0025,Directly generated from drive network
+VS0051,126.83172274794143,37.20923109059447,Unknown Road,westbound,north,P0026,Directly generated from drive network
+VS0052,126.83177035205856,37.20901860940552,Unknown Road,westbound,south,P0026,Directly generated from drive network
+VS0053,126.82792455078061,37.19942961948412,Unknown Road,westbound,north,P0027,Directly generated from drive network
+VS0054,126.82809344921941,37.199260840515876,Unknown Road,westbound,south,P0027,Directly generated from drive network
+VS0061,126.833235830403,37.20323901456809,Unknown Road,southbound,west,P0031,Directly generated from drive network
+VS0062,126.83347186959699,37.20313299543191,Unknown Road,southbound,east,P0031,Directly generated from drive network
+VS0063,126.83363805378707,37.20456409804055,Unknown Road,southbound,west,P0032,Directly generated from drive network
+VS0064,126.83390884621292,37.204572301959445,Unknown Road,southbound,east,P0032,Directly generated from drive network
+VS0065,126.83335565827237,37.20624610017801,Unknown Road,southbound,west,P0033,Directly generated from drive network
+VS0066,126.83362284172766,37.20628216982199,Unknown Road,southbound,east,P0033,Directly generated from drive network
+VS0067,126.83307142521139,37.20757824473547,Unknown Road,southbound,west,P0034,Directly generated from drive network
+VS0068,126.8333385747886,37.20761449526454,Unknown Road,southbound,east,P0034,Directly generated from drive network
+VS0069,126.83395306486504,37.2095526971826,Unknown Road,westbound,north,P0035,Directly generated from drive network
+VS0070,126.83400043513497,37.2093401828174,Unknown Road,westbound,south,P0035,Directly generated from drive network
+VS0071,126.83579074544602,37.20937649247754,Unknown Road,westbound,north,P0036,Directly generated from drive network
+VS0072,126.83565825455398,37.20918820752245,Unknown Road,westbound,south,P0036,Directly generated from drive network
+VS0073,126.83693518634617,37.20820859498698,Unknown Road,northbound,east,P0037,Directly generated from drive network
+VS0074,126.83667711365383,37.208142725013026,Unknown Road,northbound,west,P0037,Directly generated from drive network
+VS0075,126.83741535369872,37.20690950277109,Unknown Road,northbound,east,P0038,Directly generated from drive network
+VS0076,126.83715494630128,37.206849757228916,Unknown Road,northbound,west,P0038,Directly generated from drive network
+VS0077,126.83791389382054,37.205621799533496,Unknown Road,northbound,east,P0039,Directly generated from drive network
+VS0078,126.83765590617946,37.2055557404665,Unknown Road,northbound,west,P0039,Directly generated from drive network
+VS0079,126.83871327813979,37.2044146684045,Unknown Road,westbound,north,P0040,Directly generated from drive network
+VS0080,126.83852832186021,37.20425692159551,Unknown Road,westbound,south,P0040,Directly generated from drive network
+VS0081,126.84028802644872,37.203954178038266,Unknown Road,westbound,north,P0041,Directly generated from drive network
+VS0082,126.8402666735513,37.20373901196174,Unknown Road,westbound,south,P0041,Directly generated from drive network
+VS0083,126.84190998014401,37.20326112702955,Unknown Road,northbound,east,P0042,Directly generated from drive network
+VS0084,126.84169161985596,37.20313331297045,Unknown Road,northbound,west,P0042,Directly generated from drive network
