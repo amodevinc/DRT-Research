@@ -125,7 +125,6 @@ parameter_sets:
       capacity: 4
       boarding_time: 30
       alighting_time: 30
-      rebalancing_enabled: true
     matching:
       assignment_method: "insertion"
       optimization_method: "none"
@@ -154,7 +153,6 @@ parameter_sets:
       capacity: 6
       boarding_time: 30
       alighting_time: 30
-      rebalancing_enabled: true
     matching:
       assignment_method: "insertion"
       optimization_method: "none"
@@ -183,7 +181,6 @@ parameter_sets:
       capacity: 8
       boarding_time: 30
       alighting_time: 30
-      rebalancing_enabled: true
     matching:
       assignment_method: "insertion"
       optimization_method: "none"

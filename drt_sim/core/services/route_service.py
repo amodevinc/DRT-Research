@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import traceback
 import logging
 
-from drt_sim.models.route import Route, RouteStop, RouteStatus
+from drt_sim.models.route import Route, RouteStop, RouteStatus, RouteType
 from drt_sim.models.vehicle import Vehicle, VehicleStatus
 from drt_sim.models.stop import Stop, StopAssignment
 from drt_sim.models.location import Location
@@ -762,3 +762,112 @@ class RouteService:
             # For dropoffs, be more lenient with timing since we've already
             # enforced pickup-before-dropoff order in _process_dropoff_stop
             return True
+
+    async def create_route(
+        self,
+        route_id: str,
+        vehicle: Vehicle,
+        stops: List[Stop],
+        start_time: datetime,
+        route_type: RouteType = RouteType.REGULAR,
+    ) -> Route:
+        """
+        Creates a simple route with the given stops.
+        This is primarily used for rebalancing and other non-passenger routes.
+        
+        Args:
+            route_id: Unique identifier for the route
+            vehicle: Vehicle assigned to this route
+            stops: List of stops to visit (in order)
+            start_time: Time when the route should start
+            route_type: Type of route (default: REGULAR)
+            
+        Returns:
+            A new Route object
+        """
+        try:
+            logger.info(f"Creating {route_type.value} route {route_id} for vehicle {vehicle.id} with {len(stops)} stops")
+            
+            # Create RouteStop objects for each stop
+            route_stops = []
+            # Track the current location and time for calculating travel times
+            current_location = vehicle.current_state.current_location
+            current_time = start_time
+            
+            for i, stop in enumerate(stops):
+                # Calculate travel time and distance from previous location if available
+                travel_time = 0
+                travel_distance = 0
+                path_info = None
+                
+                if current_location:
+                    # Use _get_path_with_waypoints for detailed path information
+                    path_info = await self._get_path_with_waypoints(
+                        current_location,
+                        stop.location
+                    )
+                    
+                    if path_info:
+                        travel_time = path_info['duration']
+                        travel_distance = path_info['distance']
+                    else:
+                        logger.warning(f"Unable to get path info to stop {stop.id}, using fallback calculation")
+                        # Use a fallback estimate based on straight-line distance
+                        distance = self._calculate_haversine_distance(
+                            current_location.lat, current_location.lon,
+                            stop.location.lat, stop.location.lon
+                        )
+                        # Assume average speed of 30 km/h (8.33 m/s)
+                        travel_time = distance / 8.33
+                        travel_distance = distance
+                
+                # Calculate arrival and departure times
+                planned_arrival_time = current_time + timedelta(seconds=travel_time) if current_location else None
+                planned_departure_time = planned_arrival_time if planned_arrival_time else None
+                
+                logger.info(f"Creating Route Stop with estimated duration {travel_time}s and distance {travel_distance}m")
+                # Create a simple route stop with no passenger operations
+                route_stop = RouteStop(
+                    stop=stop,
+                    sequence=i,
+                    current_load=0,  # No passengers for rebalancing
+                    pickup_passengers=[],
+                    dropoff_passengers=[],
+                    service_time=0,  # No service time for rebalancing stops
+                    origin_location=current_location,
+                    estimated_duration_to_stop=travel_time,
+                    estimated_distance_to_stop=travel_distance,
+                    planned_arrival_time=planned_arrival_time,
+                    planned_departure_time=planned_departure_time
+                )
+                
+                route_stops.append(route_stop)
+                
+                # Update current location and time for next stop
+                current_location = stop.location
+                if planned_departure_time:
+                    current_time = planned_departure_time
+            
+            # Create the route
+            route = Route(
+                vehicle_id=vehicle.id,
+                stops=route_stops,
+                status=RouteStatus.CREATED,
+                current_stop_index=0,
+                scheduled_start_time=start_time
+            )
+            
+            # Set the route ID if provided
+            if route_id:
+                route.id = route_id
+            
+            # Calculate totals
+            route.recalculate_total_distance()
+            route.recalculate_total_duration()
+            
+            logger.info(f"Created {route_type.value} route {route.id} for vehicle {vehicle.id} with total distance {route.total_distance}m and duration {route.total_duration}s")
+            return route
+            
+        except Exception as e:
+            logger.error(f"Error creating route for vehicle {vehicle.id}: {traceback.format_exc()}")
+            raise

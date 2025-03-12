@@ -87,10 +87,16 @@ base_config:
     max_journey_time: 1800
   
   algorithm:
+    rebalancing_algorithm: "naive"
+    rebalancing_params:
+      strategy: "naive"
+      min_battery_level: 20.0
+      weights:
+        distance: 1.0
+        demand: 0.0
     routing_algorithm: "time_dependent"
     cost_function: "multi_objective"
     user_acceptance_model: "logit"
-    rebalancing_interval: 300
     stop_selector: "coverage_based"
     stop_selector_params:
       strategy: "coverage_based"

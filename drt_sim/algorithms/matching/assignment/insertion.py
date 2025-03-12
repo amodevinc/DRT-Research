@@ -96,18 +96,12 @@ class InsertionAssigner:
             logger.debug(f"Stop assignment details: pickup={stop_assignment.origin_stop.location}, dropoff={stop_assignment.destination_stop.location}, "
                       f"expected_arrival={stop_assignment.expected_passenger_origin_stop_arrival_time}")
             
-            # Filter compatible vehicles
-            compatible_vehicles = [
-                vehicle for vehicle in available_vehicles
-                if self._is_vehicle_compatible(vehicle)
-            ]
-            
-            logger.info(f"Found {len(compatible_vehicles)} compatible vehicles out of {len(available_vehicles)} available")
-            for vehicle in compatible_vehicles:
+            logger.info(f"Found {len(available_vehicles)} compatible vehicles out of {len(available_vehicles)} available")
+            for vehicle in available_vehicles:
                 logger.debug(f"Compatible vehicle {vehicle.id}: status={vehicle.current_state.status}, "
                           f"location={vehicle.current_state.current_location}, occupancy={vehicle.current_state.current_occupancy}")
             
-            if not compatible_vehicles:
+            if not available_vehicles:
                 return None, RejectionMetadata(
                     reason=RejectionReason.NO_VEHICLES_AVAILABLE,
                     timestamp=self.sim_context.current_time.isoformat(),
@@ -121,7 +115,7 @@ class InsertionAssigner:
             # Create tasks for parallel evaluation
             insertion_tasks = [
                 self._evaluate_vehicle_insertion(stop_assignment, vehicle)
-                for vehicle in compatible_vehicles
+                for vehicle in available_vehicles
             ]
             
             # Evaluate all vehicles in parallel
@@ -152,7 +146,7 @@ class InsertionAssigner:
                 
                 # Aggregate rejection details
                 aggregated_details = {
-                    "evaluated_vehicles": len(compatible_vehicles),
+                    "evaluated_vehicles": len(available_vehicles),
                     "rejection_counts": {
                         reason.value: rejection_reasons.count(reason)
                         for reason in set(rejection_reasons)
@@ -208,6 +202,11 @@ class InsertionAssigner:
             logger.debug(f"Vehicle state: location={vehicle.current_state.current_location}, "
                       f"occupancy={vehicle.current_state.current_occupancy}/{vehicle.capacity}")
             
+            # If vehicle is rebalancing, we can consider a new route from its current location
+            if vehicle.current_state.status == VehicleStatus.REBALANCING:
+                return await self._evaluate_new_route(stop_assignment, vehicle)
+            
+            # If vehicle is not rebalancing, we can evaluate the current route
             active_route_id = self.state_manager.vehicle_worker.get_vehicle_active_route_id(vehicle.id)
             current_route = self.state_manager.route_worker.get_route(active_route_id)
             
@@ -848,12 +847,6 @@ class InsertionAssigner:
                     return i + 1
         return first_non_completed_idx
 
-    def _is_vehicle_compatible(self, vehicle: Vehicle) -> bool:
-        """Checks if vehicle is available for assignment"""
-        return vehicle.current_state.status not in [
-            VehicleStatus.OFF_DUTY,
-            VehicleStatus.INACTIVE
-        ]
 
     def _is_stop_time_compatible(
         self,

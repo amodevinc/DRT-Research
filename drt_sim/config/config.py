@@ -205,7 +205,6 @@ class VehicleConfig(DataclassYAMLMixin):
     max_dwell_time: int = 300
     max_pickup_delay: int = 10
     max_dropoff_delay: int = 10
-    rebalancing_enabled: bool = False
     depot_locations: List[Tuple[float, float]] = field(default_factory=lambda: [(37.5666, 127.0000)])
     battery_capacity: Optional[float] = None
     charging_rate: Optional[float] = None
@@ -379,29 +378,23 @@ class AlgorithmConfig(DataclassYAMLMixin):
     routing_algorithm: str = "dijkstra"
     cost_function: str = "simple"
     user_acceptance_model: str = "logit"
-    rebalancing_interval: int = 300
     stop_selector: str = "coverage_based"
     stop_assigner: str = "nearest"
+    rebalancing_algorithm: str = "naive"
 
     routing_params: Optional[Dict[str, Any]] = None
     cost_function_params: Optional[Dict[str, Any]] = None
     user_acceptance_params: Optional[Dict[str, Any]] = None
     stop_selector_params: Optional[Dict[str, Any]] = None
     stop_assigner_params: Optional[Dict[str, Any]] = None
-
+    rebalancing_params: Optional[Dict[str, Any]] = None
     def __post_init__(self):
         """Initialize nested configurations"""
-        logger.info("Initializing AlgorithmConfig")
-        logger.info(f"Initial stop_selector_params: {self.stop_selector_params}")
-        logger.info(f"Initial stop_assigner_params: {self.stop_assigner_params}")
-        
         # Convert dictionary parameters if they're provided
         if isinstance(self.stop_selector_params, dict):
-            logger.info("Converting stop_selector_params from dict")
             self.stop_selector_params = deepcopy(self.stop_selector_params)
             
         if isinstance(self.stop_assigner_params, dict):
-            logger.info("Converting stop_assigner_params from dict")
             self.stop_assigner_params = deepcopy(self.stop_assigner_params)
             
         logger.info(f"Final stop_selector_params: {self.stop_selector_params}")

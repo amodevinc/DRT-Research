@@ -10,6 +10,7 @@ import traceback
 from enum import Enum
 import numpy as np
 import json
+from collections import defaultdict
 
 # Set up logging
 logging.basicConfig(
@@ -172,6 +173,174 @@ class MetricPlotter:
             )
         return fig
 
+class DashboardGenerator:
+    """Generates consolidated dashboards with multiple visualizations."""
+    
+    def __init__(self, output_dir):
+        """Initialize dashboard generator.
+        
+        Args:
+            output_dir: Directory to save output dashboards
+        """
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize dashboard containers
+        self.dashboards = {
+            "passenger": defaultdict(list),  # Sections as keys, figures as values
+            "vehicle": defaultdict(list),
+            "service": defaultdict(list),
+            "demand_spatial": defaultdict(list)
+        }
+    
+    def add_figure(self, fig, dashboard_name, section_name):
+        """Add a figure to a specific dashboard and section.
+        
+        Args:
+            fig: The plotly figure to add
+            dashboard_name: Name of the dashboard (passenger, vehicle, service, demand_spatial)
+            section_name: Name of the section within the dashboard
+        """
+        if dashboard_name in self.dashboards:
+            self.dashboards[dashboard_name][section_name].append(fig)
+        else:
+            logger.warning(f"Dashboard '{dashboard_name}' not found. Figure not added.")
+    
+    def _create_report_header(self, title, description=None):
+        """Create HTML header for a dashboard."""
+        header = f"""
+        <div style="text-align: center; padding: 20px 0; background-color: #f8f9fa; margin-bottom: 20px;">
+            <h1 style="color: #333;">{title}</h1>
+        """
+        
+        if description:
+            header += f'<p style="color: #666;">{description}</p>'
+            
+        header += "</div>"
+        return header
+    
+    def _create_section_header(self, title):
+        """Create HTML section header."""
+        return f"""
+        <div style="padding: 10px 0; margin: 20px 0 10px 0; border-bottom: 1px solid #eee;">
+            <h2 style="color: #444;">{title}</h2>
+        </div>
+        """
+    
+    def _create_responsive_grid(self, figures, cols=2):
+        """Create a responsive grid layout for multiple figures."""
+        grid = '<div style="display: flex; flex-wrap: wrap; justify-content: space-around;">'
+        
+        for fig in figures:
+            # Set the fig's layout properties for better display in the dashboard
+            fig.update_layout(
+                autosize=True,
+                margin=dict(l=20, r=20, t=40, b=20),
+                height=450
+            )
+            
+            # Create a div for each figure, with responsive width
+            grid += f'<div style="width: calc({100/cols}% - 20px); min-width: 300px; margin: 10px 0;">'
+            grid += fig.to_html(full_html=False, include_plotlyjs=False)
+            grid += '</div>'
+            
+        grid += '</div>'
+        return grid
+    
+    def generate_dashboard(self, dashboard_name, title=None, description=None):
+        """Generate a complete dashboard HTML with all added figures.
+        
+        Args:
+            dashboard_name: Name of the dashboard to generate
+            title: Title for the dashboard (defaults to dashboard name if not provided)
+            description: Optional description to show under the title
+            
+        Returns:
+            Path to the generated HTML file
+        """
+        if dashboard_name not in self.dashboards:
+            logger.warning(f"Dashboard '{dashboard_name}' not found. Cannot generate.")
+            return None
+            
+        if not title:
+            title = f"{dashboard_name.replace('_', ' ').title()} Dashboard"
+            
+        # Start building the HTML
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{title}</title>
+            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    color: #333;
+                }
+                .container {
+                    max-width: 1400px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                @media (max-width: 768px) {
+                    .container {
+                        padding: 10px;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+        """
+        
+        # Add the header
+        html += self._create_report_header(title, description)
+        
+        # Add each section with its figures
+        for section_name, figures in self.dashboards[dashboard_name].items():
+            if figures:  # Only add sections that have figures
+                html += self._create_section_header(section_name)
+                html += self._create_responsive_grid(figures)
+        
+        # Close the HTML
+        html += """
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Replace {title} with the actual title
+        html = html.replace("{title}", title)
+        
+        # Save the dashboard
+        output_path = self.output_dir / f"{dashboard_name}_dashboard.html"
+        with open(output_path, 'w') as f:
+            f.write(html)
+            
+        logger.info(f"Generated dashboard: {output_path}")
+        return output_path
+    
+    def generate_all_dashboards(self):
+        """Generate all dashboards at once."""
+        dashboards = {
+            "passenger": "Passenger Experience Dashboard",
+            "vehicle": "Vehicle Performance Dashboard",
+            "service": "Service Efficiency Dashboard",
+            "demand_spatial": "Demand & Spatial Analysis Dashboard"
+        }
+        
+        generated_files = []
+        for dashboard_name, title in dashboards.items():
+            file_path = self.generate_dashboard(dashboard_name, title)
+            if file_path:
+                generated_files.append(file_path)
+                
+        return generated_files
+
 class StandaloneMetricsAnalyzer:
     """Standalone metrics analyzer that mimics MetricsManager functionality."""
     
@@ -189,32 +358,7 @@ class StandaloneMetricsAnalyzer:
         # Initialize components
         self.plotter = MetricPlotter()
         self.metric_registry = MetricRegistry()
-        
-        # Create subdirectories for different analysis types
-        self.vehicle_dir = self.output_dir / "vehicle_analysis"
-        self.passenger_dir = self.output_dir / "passenger_analysis"
-        self.service_dir = self.output_dir / "service_analysis"
-        self.system_dir = self.output_dir / "system_analysis"
-        
-        for directory in [self.vehicle_dir, self.passenger_dir, self.service_dir, self.system_dir]:
-            directory.mkdir(parents=True, exist_ok=True)
-    
-    def save_figure(self, fig, filename, subdir=None):
-        """Save a plotly figure to HTML.
-        
-        Args:
-            fig: The plotly figure to save
-            filename: Name of the file without extension
-            subdir: Optional subdirectory within output_dir
-        """
-        save_dir = self.output_dir
-        if subdir:
-            save_dir = self.output_dir / subdir
-            save_dir.mkdir(parents=True, exist_ok=True)
-            
-        filepath = save_dir / f"{filename}.html"
-        fig.write_html(str(filepath))
-        logger.info(f"Saved figure to {filepath}")
+        self.dashboard_generator = DashboardGenerator(output_dir)
     
     def add_derived_metrics(self):
         """Add derived metrics to the DataFrame."""
@@ -395,7 +539,7 @@ class StandaloneMetricsAnalyzer:
         self.metrics_df = df
         return df
     
-    def create_visualizations_for_metric(self, df, metric_name, subdir, group_by=None):
+    def create_visualizations_for_metric(self, df, metric_name, dashboard, section, group_by=None):
         """Create visualizations for a metric based on its definition."""
         if df.empty:
             return
@@ -426,7 +570,7 @@ class StandaloneMetricsAnalyzer:
                 f'{definition.description} ({definition.unit})',
                 group_by=group_by
             )
-            self.save_figure(fig, f"{metric_name.replace('.', '_')}_time", subdir)
+            self.dashboard_generator.add_figure(fig, dashboard, section)
             
         # Distribution plot if enabled
         if definition.visualizations.get('distribution', True):
@@ -437,7 +581,7 @@ class StandaloneMetricsAnalyzer:
                 'Count',
                 group_by=group_by
             )
-            self.save_figure(fig, f"{metric_name.replace('.', '_')}_dist", subdir)
+            self.dashboard_generator.add_figure(fig, dashboard, section)
             
         # Box plot if distribution is enabled and we have a group_by
         if definition.visualizations.get('distribution', True) and group_by and group_by in metric_data.columns:
@@ -448,7 +592,7 @@ class StandaloneMetricsAnalyzer:
                 f'Value ({definition.unit})',
                 group_by=group_by
             )
-            self.save_figure(fig, f"{metric_name.replace('.', '_')}_box", subdir)
+            self.dashboard_generator.add_figure(fig, dashboard, section)
     
     def analyze_vehicle_performance(self):
         """Analyze vehicle performance metrics."""
@@ -475,7 +619,8 @@ class StandaloneMetricsAnalyzer:
             self.create_visualizations_for_metric(
                 vehicle_metrics,
                 metric_name,
-                "vehicle_analysis",
+                "vehicle",
+                "Vehicle Operation Metrics",
                 group_by='vehicle_id'
             )
             
@@ -501,7 +646,7 @@ class StandaloneMetricsAnalyzer:
                             'value': 'Occupancy Ratio',
                             'vehicle_id': 'Vehicle ID'
                         })
-            self.save_figure(fig, "fleet_occupancy_ratio_dist", "vehicle_analysis")
+            self.dashboard_generator.add_figure(fig, "vehicle", "Fleet Efficiency")
             
             # Fleet-wide summary
             fleet_summary = occupancy_data.groupby('vehicle_id')['value'].agg(['mean', 'std']).reset_index()
@@ -514,7 +659,7 @@ class StandaloneMetricsAnalyzer:
                             'mean': 'Average Occupancy Ratio',
                             'vehicle_id': 'Vehicle ID'
                         })
-            self.save_figure(fig, "fleet_occupancy_ratio_summary", "vehicle_analysis")
+            self.dashboard_generator.add_figure(fig, "vehicle", "Fleet Efficiency")
             
         # 2. Passengers per KM Analysis
         passengers_per_km = vehicle_metrics[
@@ -531,7 +676,7 @@ class StandaloneMetricsAnalyzer:
                             'value': 'Passengers per KM',
                             'vehicle_id': 'Vehicle ID'
                         })
-            self.save_figure(fig, "fleet_passengers_per_km_dist", "vehicle_analysis")
+            self.dashboard_generator.add_figure(fig, "vehicle", "Fleet Efficiency")
             
             # Fleet efficiency comparison
             fleet_efficiency = passengers_per_km.groupby('vehicle_id')['value'].agg(['mean', 'std']).reset_index()
@@ -544,7 +689,7 @@ class StandaloneMetricsAnalyzer:
                             'mean': 'Average Passengers per KM',
                             'vehicle_id': 'Vehicle ID'
                         })
-            self.save_figure(fig, "fleet_passenger_efficiency", "vehicle_analysis")
+            self.dashboard_generator.add_figure(fig, "vehicle", "Fleet Efficiency")
             
         # 3. Distance Breakdown (Combined Visualization)
         try:
@@ -577,7 +722,7 @@ class StandaloneMetricsAnalyzer:
                                     'vehicle_id': 'Vehicle ID',
                                     'variable': 'Distance Type'
                                 })
-                    self.save_figure(fig, "vehicle_distance_breakdown", "vehicle_analysis")
+                    self.dashboard_generator.add_figure(fig, "vehicle", "Distance Analysis")
                 else:
                     logger.warning("No distance metrics available for visualization")
         except Exception as e:
@@ -605,7 +750,8 @@ class StandaloneMetricsAnalyzer:
             self.create_visualizations_for_metric(
                 passenger_metrics,
                 metric_name,
-                "passenger_analysis",
+                "passenger",
+                "Passenger Time Metrics",
                 group_by=None
             )
             
@@ -635,7 +781,7 @@ class StandaloneMetricsAnalyzer:
                                          title='Distribution of Total Journey Times',
                                          labels={'value': 'Journey Time (seconds)'},
                                          nbins=30)
-                        self.save_figure(fig, "total_journey_time_dist", "passenger_analysis")
+                        self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
                     else:
                         logger.warning("No valid numeric journey time values found")
                 except Exception as e:
@@ -712,7 +858,7 @@ class StandaloneMetricsAnalyzer:
                                        'passenger_id': 'Passenger ID',
                                        'variable': 'Component'
                                    })
-                        self.save_figure(fig, "journey_components_breakdown", "passenger_analysis")
+                        self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
                     except Exception as e:
                         logger.error(f"Error creating journey components breakdown: {str(e)}")
                     
@@ -725,7 +871,7 @@ class StandaloneMetricsAnalyzer:
                             fig = px.pie(values=avg_composition.values,
                                        names=avg_composition.index,
                                        title='Average Journey Time Composition')
-                            self.save_figure(fig, "journey_composition", "passenger_analysis")
+                            self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
                         else:
                             logger.warning("No valid data for journey composition pie chart")
                     except Exception as e:
@@ -766,7 +912,8 @@ class StandaloneMetricsAnalyzer:
             self.create_visualizations_for_metric(
                 service_metrics,
                 metric_name,
-                "service_analysis"
+                "service",
+                "Service Performance Metrics"
             )
             
         # Handle derived metrics separately
@@ -791,7 +938,7 @@ class StandaloneMetricsAnalyzer:
                              'value': 'Success Rate',
                              'timestamp': 'Time'
                          })
-            self.save_figure(fig, "request_success_rate", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "service", "Request Performance")
             
         # 2. On-time Performance Analysis
         on_time_rate = service_metrics[
@@ -808,7 +955,7 @@ class StandaloneMetricsAnalyzer:
                              'value': 'On-time Rate',
                              'timestamp': 'Time'
                          })
-            self.save_figure(fig, "on_time_rate", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "service", "On-time Performance")
             
         # 3. Service Violations Analysis
         violations = service_metrics[
@@ -833,7 +980,7 @@ class StandaloneMetricsAnalyzer:
                                     'value': 'Count',
                                     'violation_type': 'Violation Type'
                                 })
-                    self.save_figure(fig, "violations_breakdown", "service_analysis")
+                    self.dashboard_generator.add_figure(fig, "service", "Service Violations")
                 
                 # Violations over time
                 violations_timeline = violations.groupby('timestamp')['value'].count().reset_index()
@@ -845,7 +992,7 @@ class StandaloneMetricsAnalyzer:
                                  'value': 'Number of Violations',
                                  'timestamp': 'Time'
                              })
-                self.save_figure(fig, "violations_timeline", "service_analysis")
+                self.dashboard_generator.add_figure(fig, "service", "Service Violations")
             except Exception as e:
                 logger.error(f"Error creating service violations visualizations: {str(e)}")
     
@@ -937,7 +1084,7 @@ class StandaloneMetricsAnalyzer:
                     'category': 'Category'
                 }
             )
-            self.save_figure(fig, "rejection_reasons", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "service", "Request Rejections")
             
             # Create pie chart of rejection categories
             category_counts = rejection_counts.groupby('category')['count'].sum().reset_index()
@@ -947,7 +1094,7 @@ class StandaloneMetricsAnalyzer:
                 names='category',
                 title='Rejection Categories Distribution'
             )
-            self.save_figure(fig, "rejection_categories", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "service", "Request Rejections")
             
             # Try to create sunburst chart for hierarchical view
             try:
@@ -957,7 +1104,7 @@ class StandaloneMetricsAnalyzer:
                     values='count',
                     title='Hierarchical View of Rejection Reasons'
                 )
-                self.save_figure(fig, "rejection_reasons_hierarchy", "service_analysis")
+                self.dashboard_generator.add_figure(fig, "service", "Request Rejections")
             except Exception as e:
                 logger.warning(f"Could not create sunburst chart: {str(e)}")
             
@@ -1016,7 +1163,7 @@ class StandaloneMetricsAnalyzer:
                                                 line_color="red",
                                                 annotation_text="Max Allowed")
                                     
-                                    self.save_figure(fig, f"{violation_type}_distribution", "service_analysis")
+                                    self.dashboard_generator.add_figure(fig, "service", "Constraint Violations")
                                 except Exception as e:
                                     logger.warning(f"Could not create histogram for {violation_type}: {str(e)}")
                 except Exception as e:
@@ -1132,7 +1279,7 @@ class StandaloneMetricsAnalyzer:
             # Set x-axis title
             fig.update_xaxes(title_text="Time")
             
-            self.save_figure(fig, "request_density_vs_acceptance_rate", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "demand_spatial", "Request Density")
             
             # 3. Create heatmap showing request density by hour of day and day of week (if data spans multiple days)
             try:
@@ -1169,7 +1316,7 @@ class StandaloneMetricsAnalyzer:
                         color_continuous_scale="blues"
                     )
                     
-                    self.save_figure(fig, "request_density_heatmap", "service_analysis")
+                    self.dashboard_generator.add_figure(fig, "demand_spatial", "Temporal Patterns")
                 else:
                     # If only one day, create hourly distribution
                     hourly_requests = pivot_df.groupby('hour')['request.received'].sum().reset_index()
@@ -1188,7 +1335,7 @@ class StandaloneMetricsAnalyzer:
                     # Set x-axis to show all hours
                     fig.update_xaxes(tickvals=list(range(24)))
                     
-                    self.save_figure(fig, "hourly_request_distribution", "service_analysis")
+                    self.dashboard_generator.add_figure(fig, "demand_spatial", "Temporal Patterns")
             
             except Exception as e:
                 logger.warning(f"Could not create time-based request density visualizations: {str(e)}")
@@ -1216,9 +1363,9 @@ class StandaloneMetricsAnalyzer:
             for _, row in request_data.iterrows():
                 try:
                     # Handle both string and dict request formats
-                    if isinstance(row['request'], str):
+                    if isinstance(row.get('request'), str):
                         request_dict = json.loads(row['request'])
-                    elif isinstance(row['request'], dict):
+                    elif isinstance(row.get('request'), dict):
                         request_dict = row['request']
                     else:
                         continue
@@ -1308,7 +1455,7 @@ class StandaloneMetricsAnalyzer:
                 margin=dict(l=0, r=0, t=30, b=0)
             )
             
-            self.save_figure(fig, "request_origins_destinations_map", "spatial_analysis")
+            self.dashboard_generator.add_figure(fig, "demand_spatial", "Spatial Patterns")
             
             # 2. Create a heatmap of request origins
             fig = go.Figure()
@@ -1332,7 +1479,7 @@ class StandaloneMetricsAnalyzer:
                 margin=dict(l=0, r=0, t=30, b=0)
             )
             
-            self.save_figure(fig, "request_origins_heatmap", "spatial_analysis")
+            self.dashboard_generator.add_figure(fig, "demand_spatial", "Spatial Patterns")
             
             # 3. Create a heatmap of request destinations
             fig = go.Figure()
@@ -1356,7 +1503,7 @@ class StandaloneMetricsAnalyzer:
                 margin=dict(l=0, r=0, t=30, b=0)
             )
             
-            self.save_figure(fig, "request_destinations_heatmap", "spatial_analysis")
+            self.dashboard_generator.add_figure(fig, "demand_spatial", "Spatial Patterns")
             
             # 4. Create a visualization of request flows (lines connecting origins to destinations)
             fig = go.Figure()
@@ -1425,9 +1572,9 @@ class StandaloneMetricsAnalyzer:
                 margin=dict(l=0, r=0, t=30, b=0)
             )
             
-            self.save_figure(fig, "request_flows", "spatial_analysis")
+            self.dashboard_generator.add_figure(fig, "demand_spatial", "Trip Flows")
             
-            # 5. Create a hexbin map of trip distances
+            # 5. Create a histogram of trip distances
             # Calculate trip distances (Haversine formula)
             def haversine(lat1, lon1, lat2, lon2):
                 R = 6371  # Earth radius in kilometers
@@ -1460,11 +1607,7 @@ class StandaloneMetricsAnalyzer:
                 nbins=30
             )
             
-            self.save_figure(fig, "trip_distance_distribution", "spatial_analysis")
-            
-            # Make sure spatial_analysis directory exists
-            spatial_dir = self.output_dir / "spatial_analysis"
-            spatial_dir.mkdir(parents=True, exist_ok=True)
+            self.dashboard_generator.add_figure(fig, "demand_spatial", "Trip Analysis")
             
         except Exception as e:
             logger.error(f"Error analyzing request spatial patterns: {str(e)}\n{traceback.format_exc()}")
@@ -1526,7 +1669,7 @@ class StandaloneMetricsAnalyzer:
                         'variable': 'Metric'
                     }
                 )
-                self.save_figure(fig, "request_acceptance_rejection_ratio", "service_analysis")
+                self.dashboard_generator.add_figure(fig, "service", "Request Acceptance")
             else:
                 # If not enough data for resampling, calculate ratios directly
                 pivot_counts['acceptance_ratio'] = pivot_counts['request.assigned'] / pivot_counts['request.received'].replace(0, 1)
@@ -1543,7 +1686,7 @@ class StandaloneMetricsAnalyzer:
                         'variable': 'Metric'
                     }
                 )
-                self.save_figure(fig, "request_acceptance_rejection_ratio", "service_analysis")
+                self.dashboard_generator.add_figure(fig, "service", "Request Acceptance")
             
             # Method 2: Pie chart for overall acceptance vs rejection
             # Calculate total counts for the entire simulation
@@ -1586,7 +1729,7 @@ class StandaloneMetricsAnalyzer:
                 textposition='inside'
             )
             
-            self.save_figure(fig, "overall_acceptance_rejection_pie", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "service", "Request Acceptance")
             
             # Method 3: Stacked area chart showing accepted vs rejected requests
             fig = px.area(
@@ -1600,7 +1743,7 @@ class StandaloneMetricsAnalyzer:
                     'variable': 'Request Status'
                 }
             )
-            self.save_figure(fig, "accepted_rejected_requests", "service_analysis")
+            self.dashboard_generator.add_figure(fig, "service", "Request Acceptance")
             
         except Exception as e:
             logger.error(f"Error analyzing request acceptance ratio: {str(e)}\n{traceback.format_exc()}")
@@ -1625,7 +1768,8 @@ class StandaloneMetricsAnalyzer:
             self.create_visualizations_for_metric(
                 system_metrics,
                 metric_name,
-                "system_analysis"
+                "service",
+                "System Performance"
             )
             
         # Handle derived metrics separately
@@ -1681,7 +1825,7 @@ class StandaloneMetricsAnalyzer:
                         yaxis_title='Count',
                         hovermode='x unified'
                     )
-                    self.save_figure(fig, "system_load", "system_analysis")
+                    self.dashboard_generator.add_figure(fig, "service", "System Load")
                     
                     # Calculate and plot request/vehicle ratio
                     pivot_load['request_vehicle_ratio'] = (
@@ -1697,7 +1841,7 @@ class StandaloneMetricsAnalyzer:
                                     'request_vehicle_ratio': 'Requests per Vehicle',
                                     'timestamp': 'Time'
                                 })
-                    self.save_figure(fig, "request_vehicle_ratio", "system_analysis")
+                    self.dashboard_generator.add_figure(fig, "service", "System Load")
                 else:
                     # Create individual plots for each metric if both aren't available
                     for metric in required_cols:
@@ -1711,7 +1855,7 @@ class StandaloneMetricsAnalyzer:
                                             'timestamp': 'Time'
                                         })
                             metric_name = metric.split('.')[-1]
-                            self.save_figure(fig, f"{metric_name}_timeline", "system_analysis")
+                            self.dashboard_generator.add_figure(fig, "service", "System Load")
             except Exception as e:
                 logger.error(f"Error creating system load visualizations: {str(e)}")
     
@@ -1731,11 +1875,142 @@ class StandaloneMetricsAnalyzer:
         self.analyze_passenger_experience()
         self.analyze_service_efficiency()
         self.analyze_system_performance()
-
         self.analyze_request_density()
         self.analyze_request_spatial_patterns()
         
-        logger.info("Completed comprehensive metrics analysis")
+        # Generate all dashboards
+        dashboard_files = self.dashboard_generator.generate_all_dashboards()
+        
+        # Create an index page that links to all dashboards
+        self.create_index_page(dashboard_files)
+        
+        logger.info("Completed comprehensive metrics analysis and dashboard generation")
+    
+    def create_index_page(self, dashboard_files):
+        """Create an index HTML page that links to all dashboards."""
+        index_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Transit Metrics Analysis Dashboards</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                    color: #333;
+                }
+                .container {
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    background-color: white;
+                    padding: 30px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                }
+                h1 {
+                    color: #2c3e50;
+                    text-align: center;
+                    margin-bottom: 30px;
+                }
+                .dashboard-card {
+                    background-color: #f8f9fa;
+                    border-radius: 6px;
+                    padding: 20px;
+                    margin-bottom: 20px;
+                    transition: transform 0.2s;
+                    border-left: 5px solid #3498db;
+                }
+                .dashboard-card:hover {
+                    transform: translateY(-5px);
+                    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+                }
+                .dashboard-card h2 {
+                    margin-top: 0;
+                    color: #3498db;
+                }
+                .dashboard-card p {
+                    color: #666;
+                    margin-bottom: 15px;
+                }
+                .dashboard-link {
+                    display: inline-block;
+                    background-color: #3498db;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    text-decoration: none;
+                    font-weight: bold;
+                }
+                .dashboard-link:hover {
+                    background-color: #2980b9;
+                }
+                footer {
+                    text-align: center;
+                    margin-top: 30px;
+                    color: #777;
+                    font-size: 0.9em;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Transit Metrics Analysis Dashboards</h1>
+        """
+        
+        # Dashboard descriptions
+        dashboard_info = {
+            "passenger_dashboard.html": {
+                "title": "Passenger Experience Dashboard",
+                "description": "Analyze passenger waiting times, ride times, and overall journey metrics."
+            },
+            "vehicle_dashboard.html": {
+                "title": "Vehicle Performance Dashboard",
+                "description": "Monitor vehicle utilization, efficiency, and distance metrics across the fleet."
+            },
+            "service_dashboard.html": {
+                "title": "Service Efficiency Dashboard",
+                "description": "Evaluate service quality, request processing, and system performance."
+            },
+            "demand_spatial_dashboard.html": {
+                "title": "Demand & Spatial Analysis Dashboard",
+                "description": "Visualize spatial patterns, request density, and trip flows across the service area."
+            }
+        }
+        
+        # Add cards for each dashboard
+        for file_path in dashboard_files:
+            file_name = file_path.name
+            if file_name in dashboard_info:
+                info = dashboard_info[file_name]
+                index_html += f"""
+                <div class="dashboard-card">
+                    <h2>{info["title"]}</h2>
+                    <p>{info["description"]}</p>
+                    <a href="{file_name}" class="dashboard-link">View Dashboard</a>
+                </div>
+                """
+        
+        # Add footer and close HTML
+        index_html += """
+                <footer>
+                    Generated by Transit Metrics Analysis Tool
+                </footer>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Save the index page
+        index_path = self.output_dir / "index.html"
+        with open(index_path, 'w') as f:
+            f.write(index_html)
+            
+        logger.info(f"Created index page at {index_path}")
+        return index_path
 
 def load_data(parquet_path):
     """Load metrics data from Parquet file and save as CSV."""
@@ -1771,10 +2046,10 @@ def load_data(parquet_path):
 
 def main():
     """Main function to run the metrics analysis."""
-    parser = argparse.ArgumentParser(description='Analyze metrics data from a CSV file')
+    parser = argparse.ArgumentParser(description='Analyze metrics data and generate dashboards')
     parser.add_argument('parquet_file', help='Path to the Parquet file containing metrics data')
-    parser.add_argument('--output-dir', '-o', default='./metrics_analysis', 
-                        help='Directory to save analysis output (default: ./metrics_analysis)')
+    parser.add_argument('--output-dir', '-o', default='./metrics_dashboards', 
+                        help='Directory to save dashboards (default: ./metrics_dashboards)')
     
     args = parser.parse_args()
     
@@ -1794,6 +2069,7 @@ def main():
     analyzer.run_all_analysis()
     
     logger.info(f"Analysis complete. Results saved to {output_dir}")
+    logger.info(f"Open {output_dir}/index.html in your browser to view the dashboards")
 
 if __name__ == "__main__":
     main()

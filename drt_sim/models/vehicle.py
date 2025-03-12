@@ -5,6 +5,7 @@ from enum import Enum
 from .base import ModelBase
 from .location import Location
 from .route import Route
+from .stop import Stop
 from ..config.config import VehicleConfig
 import logging
 logger = logging.getLogger(__name__)
@@ -130,13 +131,15 @@ class Vehicle(ModelBase):
     accessibility_options: List[str]
     max_range_km: float
     current_state: VehicleState
+    depot_stop: Optional[Stop] = None  # The vehicle's home depot
     route_history: List[Route] = field(default_factory=list)  # Added route history
     _version: ClassVar[str] = "1.0"
 
     def __str__(self) -> str:
         """Provides a concise string representation of the vehicle"""
         active_route = f"|route={len(self.route_history)}" if self.route_history else ""
-        return f"Vehicle[{self.id[:8]}|{self.type.value}|cap={self.capacity}|{self.current_state}{active_route}]"
+        depot = f"|depot={self.depot_stop.id[:8]}" if self.depot_stop else ""
+        return f"Vehicle[{self.id[:8]}|{self.type.value}|cap={self.capacity}|{self.current_state}{active_route}{depot}]"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -154,6 +157,7 @@ class Vehicle(ModelBase):
             'accessibility_options': self.accessibility_options,
             'max_range_km': self.max_range_km,
             'current_state': self.current_state.to_dict(),
+            'depot_stop': self.depot_stop.to_dict() if self.depot_stop else None,
             'route_history': [route.to_dict() for route in self.route_history],
             '_version': self._version
         }
@@ -175,6 +179,7 @@ class Vehicle(ModelBase):
             accessibility_options=data['accessibility_options'],
             max_range_km=data['max_range_km'],
             current_state=VehicleState.from_dict(data['current_state']),
+            depot_stop=Stop.from_dict(data['depot_stop']) if data.get('depot_stop') else None,
             route_history=[Route.from_dict(route) for route in data.get('route_history', [])]
         )
 

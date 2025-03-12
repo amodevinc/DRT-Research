@@ -275,7 +275,7 @@ class MatchingHandler:
                 assignment.route.id
             )
             
-            if vehicle.current_state.status == VehicleStatus.IDLE:
+            if vehicle.current_state.status == VehicleStatus.IDLE or vehicle.current_state.status == VehicleStatus.REBALANCING:
                 # Create dispatch event for idle vehicle
                 dispatch_event = Event(
                     event_type=EventType.VEHICLE_DISPATCH_REQUEST,

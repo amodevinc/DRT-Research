@@ -26,6 +26,8 @@ from drt_sim.models.event import EventType
 from drt_sim.network.manager import NetworkManager
 from drt_sim.models.base import SimulationEncoder
 from drt_sim.integration.traffic_sim_integration import SUMOIntegration
+from drt_sim.algorithms.base_interfaces.rebalancing_base import RebalancingAlgorithm
+from drt_sim.algorithms.rebalancing.naive import NaiveRebalancingAlgorithm
 import traceback
 import json
 import logging
@@ -74,6 +76,7 @@ class SimulationOrchestrator:
         self.route_service: Optional[RouteService] = None
         self.visualization_manager: Optional[VisualizationManager] = None
         self.sumo_integration: Optional[SUMOIntegration] = None
+        self.rebalancer: Optional[RebalancingAlgorithm] = None
         
         # Tracking
         self.initialized: bool = False
@@ -87,7 +90,6 @@ class SimulationOrchestrator:
             
         try:
             logger.info("Initializing simulation components")
-            
             # Initialize visualization manager if output directory is provided
             if self.output_dir:
                 self.visualization_manager = VisualizationManager(self.output_dir)
@@ -136,7 +138,9 @@ class SimulationOrchestrator:
                 sim_context=self.context,
                 config=self.cfg,
             )
+            logger.info(f"Initializing rebalancer: {self.cfg.algorithm.rebalancing_algorithm} with params: {self.cfg.algorithm.rebalancing_params}")
 
+            self.rebalancer = self._init_rebalancer()
             
             # Initialize handlers
             self._initialize_handlers()
@@ -159,6 +163,13 @@ class SimulationOrchestrator:
             self.cleanup()
             raise
             
+    def _init_rebalancer(self) -> RebalancingAlgorithm:
+        """Initialize the rebalancer based on the config"""
+        if self.cfg.algorithm.rebalancing_algorithm == "naive":
+            return NaiveRebalancingAlgorithm(self.context, self.cfg.algorithm.rebalancing_params, self.network_manager, self.state_manager, self.route_service)
+        else:
+            raise ValueError(f"Unsupported rebalancing algorithm: {self.cfg.algorithm.rebalancing_algorithm}")
+        
     def _initialize_handlers(self) -> None:
         """Initialize event handlers."""
         self.request_handler = RequestHandler(
@@ -172,6 +183,7 @@ class SimulationOrchestrator:
             config=self.cfg,
             context=self.context,
             state_manager=self.state_manager,
+            rebalancer=self.rebalancer
         )
         
         self.passenger_handler = PassengerHandler(
@@ -230,6 +242,7 @@ class SimulationOrchestrator:
             EventType.VEHICLE_REBALANCING_REQUIRED: self.vehicle_handler.handle_vehicle_rebalancing_required,
             EventType.VEHICLE_WAIT_TIMEOUT: self.vehicle_handler.handle_vehicle_wait_timeout,
             EventType.VEHICLE_STOP_OPERATIONS_COMPLETED: self.vehicle_handler.handle_stop_operations_completed,
+            EventType.VEHICLE_REBALANCING_DISPATCH: self.vehicle_handler.handle_vehicle_rebalancing_dispatch,
             
             # Passenger Events
             EventType.START_PASSENGER_JOURNEY: self.passenger_handler.handle_start_passenger_journey,
