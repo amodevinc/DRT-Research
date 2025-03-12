@@ -112,6 +112,7 @@ class EventType(Enum):
     VEHICLE_SERVICE_KPI_VIOLATION = "vehicle.service.kpi.violation"
     VEHICLE_POSITION_UPDATE = "vehicle.position.update"
     VEHICLE_STOP_OPERATIONS_COMPLETED = "vehicle.stop.operations.completed"
+    VEHICLE_REBALANCING_DISPATCH = "vehicle.rebalancing.dispatch"
     
     # Route Management
     ROUTE_CREATED = "route.created"

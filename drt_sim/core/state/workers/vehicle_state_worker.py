@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from drt_sim.core.state.base import StateWorker, StateContainer
 from drt_sim.models.vehicle import Vehicle, VehicleStatus, VehicleType, VehicleState
+from drt_sim.models.stop import Stop, StopType, StopStatus
 from drt_sim.config.config import VehicleConfig
 from drt_sim.models.location import Location
 from collections import defaultdict
@@ -37,13 +38,28 @@ class VehicleStateWorker(StateWorker):
             vehicles_per_depot = self.config.fleet_size // num_depots
             remaining_vehicles = self.config.fleet_size % num_depots
             
+            # Create depot stops first
+            depot_stops = []
+            for depot_idx, depot_coords in enumerate(self.config.depot_locations):
+                # Create a depot stop
+                depot_location = Location(lat=depot_coords[1], lon=depot_coords[0])
+                depot_stop = Stop(
+                    id=f"depot_{depot_idx}",
+                    location=depot_location,
+                    type=StopType.DEPOT,
+                    status=StopStatus.ACTIVE,
+                    capacity=self.config.fleet_size  # Depot can hold all vehicles
+                )
+                depot_stops.append(depot_stop)
+                logger.info(f"Created depot stop {depot_stop.id} at location ({depot_location.lat}, {depot_location.lon})")
+            
             vehicle_id = 0
-            for depot_idx, depot in enumerate(self.config.depot_locations):
+            for depot_idx, depot_stop in enumerate(depot_stops):
                 # Determine the number of vehicles for this depot
                 num_vehicles = vehicles_per_depot + (1 if depot_idx < remaining_vehicles else 0)
                 
                 for _ in range(num_vehicles):
-                    depot_location = Location(lat=depot[1], lon=depot[0])
+                    depot_location = depot_stop.location
                     
                     vehicle = Vehicle(
                         id=f"vehicle_{vehicle_id}",
@@ -62,7 +78,8 @@ class VehicleStateWorker(StateWorker):
                         maintenance_schedule={},
                         features=[],
                         accessibility_options=[],
-                        max_range_km=500.0
+                        max_range_km=500.0,
+                        depot_stop=depot_stop  # Assign the depot stop to the vehicle
                     )
                     self.vehicles.add(vehicle.id, vehicle)
                     vehicle_id += 1

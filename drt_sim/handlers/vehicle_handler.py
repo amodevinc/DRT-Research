@@ -8,6 +8,8 @@ from drt_sim.models.location import Location
 from drt_sim.config.config import ParameterSet
 from drt_sim.models.route import RouteStatus, RouteStop, Route
 from drt_sim.core.monitoring.types.metrics import MetricName
+from drt_sim.algorithms.base_interfaces.rebalancing_base import RebalancingAlgorithm
+from drt_sim.algorithms.rebalancing.naive import NaiveRebalancingAlgorithm
 import traceback
 import logging
 logger = logging.getLogger(__name__)
@@ -22,12 +24,14 @@ class VehicleHandler:
         self,
         config: ParameterSet,
         context: SimulationContext,
-        state_manager: StateManager
+        state_manager: StateManager,
+        rebalancer: RebalancingAlgorithm
     ):
         self.config = config
         self.context = context
         self.state_manager = state_manager
         self.vehicle_thresholds = self._setup_vehicle_thresholds()
+        self.rebalancer = rebalancer
         # Add semaphore for critical operations
         self.operation_locks = {}  # Vehicle ID -> Lock
 
@@ -162,6 +166,80 @@ class VehicleHandler:
             except Exception as e:
                 self.state_manager.rollback_transaction()
                 logger.error(f"Error handling vehicle dispatch: {traceback.format_exc()}")
+                self._handle_vehicle_error(event, str(e))
+
+    async def handle_vehicle_rebalancing_dispatch(self, event: Event) -> None:
+        """
+        Handle rebalancing dispatch specifically for vehicles going to depots.
+        This is simpler than the regular dispatch as it's just point-to-point movement.
+        """
+        vehicle_id = event.vehicle_id
+        
+        # Acquire lock for this vehicle to prevent concurrent operations
+        async with self._get_vehicle_lock(vehicle_id):
+            try:
+                logger.debug(f"=== START REBALANCING DISPATCH HANDLING ===")
+                logger.debug(f"Vehicle {vehicle_id} - Processing rebalancing dispatch request at time: {self.context.current_time}")
+                
+                # Begin transaction
+                self.state_manager.begin_transaction()
+                
+                route_id = event.data.get('route_id')
+                event_route_version = event.data.get('route_version')
+                
+                vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+                if not vehicle:
+                    raise ValueError(f"Vehicle {vehicle_id} not found")
+                
+                route = self.state_manager.route_worker.get_route(route_id)
+                if not route:
+                    raise ValueError(f"No route found with ID {route_id}")
+                
+                # Check route version 
+                if event_route_version is not None and route.version != event_route_version:
+                    logger.info(f"Skipping rebalancing dispatch: route version mismatch")
+                    self.state_manager.rollback_transaction()
+                    return
+                
+                # Cancel any pending events for this vehicle
+                self._cancel_pending_vehicle_events(vehicle_id)
+                
+                # Update vehicle status to REBALANCING (you might want to add this status)
+                self.state_manager.vehicle_worker.update_vehicle_status(
+                    vehicle_id,
+                    VehicleStatus.REBALANCING,  # New status type
+                    self.context.current_time
+                )
+                
+                # Get the depot stop (first stop in rebalancing route)
+                if not route.stops:
+                    raise ValueError(f"Rebalancing route {route_id} has no stops")
+                    
+                depot_stop = route.stops[0]
+                
+                # Update route status
+                if route.status in [RouteStatus.CREATED, RouteStatus.PLANNED]:
+                    route.status = RouteStatus.ACTIVE
+                    route.actual_start_time = self.context.current_time
+                
+                # Create movement event to the depot
+                self._create_vehicle_movement_event(
+                    vehicle_id=vehicle_id,
+                    route_stop=depot_stop,
+                    current_time=self.context.current_time,
+                    is_rebalancing=True
+                )
+                
+                # Update route state
+                self.state_manager.route_worker.update_route(route)
+                
+                self.state_manager.commit_transaction()
+                logger.info(f"Successfully started rebalancing for vehicle {vehicle_id} to depot")
+                logger.debug(f"=== END REBALANCING DISPATCH HANDLING ===")
+                
+            except Exception as e:
+                self.state_manager.rollback_transaction()
+                logger.error(f"Error handling rebalancing dispatch: {traceback.format_exc()}")
                 self._handle_vehicle_error(event, str(e))
 
     async def handle_vehicle_reroute_request(self, event: Event) -> None:
@@ -745,15 +823,21 @@ class VehicleHandler:
 
     def _handle_rebalancing_arrival(self, vehicle_id: str, event: Event) -> None:
         """Handle vehicle arrival at depot after rebalancing."""
+        # Get vehicle
+        vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+        if not vehicle:
+            logger.warning(f"Vehicle {vehicle_id} not found during rebalancing arrival")
+            return
+            
         # Update vehicle location first
+        destination_location = event.data.get('destination')
         self.state_manager.vehicle_worker.update_vehicle_location(
             vehicle_id,
-            event.data.get('destination')
+            destination_location
         )
         
         # Log distance metric if available
         distance = event.data.get('actual_distance', 0)
-        vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
         if vehicle.current_state.current_occupancy > 0:
             self.context.metrics_collector.log(
                 MetricName.VEHICLE_OCCUPIED_DISTANCE,
@@ -769,6 +853,17 @@ class VehicleHandler:
                 { 'vehicle_id': vehicle_id }
             )
         
+        # Update route status to completed
+        route_id = event.data.get('route_id')
+        if route_id:
+            self.state_manager.route_worker.update_route_status(
+                route_id,
+                RouteStatus.COMPLETED,
+                {
+                    'actual_end_time': self.context.current_time
+                }
+            )
+        
         # Clear active route for the vehicle
         self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle_id, None)
         
@@ -778,6 +873,8 @@ class VehicleHandler:
             VehicleStatus.IDLE,
             self.context.current_time
         )
+    
+        logger.info(f"Vehicle {vehicle_id} successfully rebalanced to depot")
 
     def handle_vehicle_wait_timeout(self, event: Event) -> None:
         """
@@ -1022,29 +1119,8 @@ class VehicleHandler:
                     
                     # Check if this was the last stop
                     if route_stop.sequence == len(route.stops) - 1:
+                        self._handle_route_completion(route.id, vehicle_id)
                         logger.debug(f"This was the last stop (sequence {route_stop.sequence}) in route {route.id}")
-                        
-                        # This was the last stop, complete the route
-                        self.state_manager.route_worker.update_route_status(
-                            route.id,
-                            RouteStatus.COMPLETED,
-                            {
-                                'actual_end_time': self.context.current_time
-                            }
-                        )
-                        
-                        logger.debug(f"Updated route {route.id} status to COMPLETED, EndTime={self.context.current_time}")
-                        
-                        # Update vehicle status
-                        self.state_manager.vehicle_worker.update_vehicle_status(
-                            vehicle_id,
-                            VehicleStatus.IDLE,
-                            self.context.current_time
-                        )
-                        self.state_manager.vehicle_worker.clear_vehicle_active_route(vehicle_id)
-                        
-                        logger.debug(f"Updated vehicle {vehicle_id} status to IDLE, cleared route and stop IDs")
-                        logger.info(f"Vehicle {vehicle_id} completed route {route.id}")
                         
                     else:
                         logger.debug(f"Looking for next stop after sequence {route_stop.sequence} in route {route.id}")
@@ -1076,19 +1152,40 @@ class VehicleHandler:
                 logger.error(f"Error handling stop operations completed: {traceback.format_exc()}")
                 self._handle_vehicle_error(event, str(e))
 
-
-    def _handle_route_completion(self, vehicle_id: str, route: Route, current_time: datetime) -> Route:
+    def _handle_route_completion(self, route_id: str, vehicle_id: str) -> None:
         """
-        Handle completion of route and initiate rebalancing through event publishing.
-        Updates route status and triggers rebalancing request.
+        Handle completion of a route and trigger rebalancing.
+        
+        Args:
+            vehicle_id: ID of the vehicle
+            route_id: ID of the route
         """
-        # Update route status
-        route.status = RouteStatus.COMPLETED
-        route.actual_end_time = current_time
-
-        # Create rebalancing required event
+        logger.debug(f"=== START ROUTE COMPLETION ===")
+        logger.debug(f"Vehicle {vehicle_id} - Completing route {route_id}")
+        
+        # This was the last stop, complete the route
+        self.state_manager.route_worker.update_route_status(
+            route_id,
+            RouteStatus.COMPLETED,
+            {
+                'actual_end_time': self.context.current_time
+            }
+        )
+        self.state_manager.vehicle_worker.update_vehicle_status(
+            vehicle_id,
+            VehicleStatus.IDLE,
+            self.context.current_time
+        )
+        
+        logger.debug(f"Updated route {route_id} status to COMPLETED, EndTime={self.context.current_time}")
+        
         self._create_rebalancing_event(vehicle_id)
-        return route
+        
+        logger.debug(f"Updated vehicle {vehicle_id} status to IDLE, cleared route and stop IDs")
+        logger.info(f"Vehicle {vehicle_id} completed route {route_id}")
+        logger.debug(f"=== END ROUTE COMPLETION ===")
+        return True
+    
 
     async def _handle_route_continuation(self, vehicle_id: str, route: Route, current_time: datetime) -> Route:
         """
@@ -1154,7 +1251,8 @@ class VehicleHandler:
         self,
         vehicle_id: str,
         route_stop: RouteStop,
-        current_time: datetime
+        current_time: datetime,
+        is_rebalancing: bool = False
     ) -> None:
         """
         Create events for vehicle movement to a stop with waypoint updates.
@@ -1249,6 +1347,7 @@ class VehicleHandler:
             vehicle_id=vehicle_id,
             data={
                 'route_stop': route_stop,
+                'is_rebalancing': is_rebalancing,
                 'movement_start_time': current_time,
                 'origin': origin_location,
                 'destination': destination_location,
@@ -1289,7 +1388,7 @@ class VehicleHandler:
         )
 
 
-    def handle_vehicle_rebalancing_required(self, event: Event) -> None:
+    async def handle_vehicle_rebalancing_required(self, event: Event) -> None:
         """Handle rebalancing request to depot."""
         try:
             self.state_manager.begin_transaction()
@@ -1297,11 +1396,37 @@ class VehicleHandler:
             vehicle_id = event.vehicle_id
             logger.info(f"Handling rebalancing for vehicle {vehicle_id}")
             
-            # This is a placeholder for actual rebalancing logic
-            # In a real implementation, you would calculate optimal depot location,
-            # create a route to the depot, and dispatch the vehicle
-            logger.info(f"Rebalancing implementation required")
+            # Retrieve the vehicle object
+            vehicle = self.state_manager.vehicle_worker.get_vehicle(vehicle_id)
+            if not vehicle:
+                raise ValueError(f"Vehicle {vehicle_id} not found")
+                
+            target_depot_stop = self.rebalancer.get_rebalancing_target(vehicle)
+            if not target_depot_stop:
+                logger.info(f"No target depot for vehicle {vehicle_id}, skipping rebalancing")
+                self.state_manager.commit_transaction()
+                return
+                
+            logger.info(f"Target depot stop: {str(target_depot_stop)}")
+            new_route = await self.rebalancer.create_rebalancing_route(vehicle, target_depot_stop, self.context.current_time)
+            route_exists = self.state_manager.route_worker.get_route(new_route.id)
+            if not route_exists:
+                self.state_manager.route_worker.add_route(new_route)
+            self.state_manager.vehicle_worker.update_vehicle_active_route_id(vehicle_id, new_route.id)
             
+            # Create rebalancing-specific dispatch event
+            dispatch_event = Event(
+                event_type=EventType.VEHICLE_REBALANCING_DISPATCH,  # New event type
+                priority=EventPriority.HIGH,
+                timestamp=self.context.current_time,
+                vehicle_id=vehicle_id,
+                data={
+                    'route_id': new_route.id,
+                    'route_version': new_route.version,
+                    'is_rebalancing': True
+                }
+            )
+            self.context.event_manager.publish_event(dispatch_event)
             self.state_manager.commit_transaction()
             
         except Exception as e:

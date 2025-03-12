@@ -19,6 +19,14 @@ class RouteStatus(Enum):
     PLANNED = "planned"
     MODIFIED = "modified"  # Status to track modifications
 
+class RouteType(Enum):
+    """Type of a vehicle route"""
+    REGULAR = "regular"  # Regular passenger service
+    REBALANCING = "rebalancing"  # Vehicle rebalancing (no passengers)
+    DEADHEAD = "deadhead"  # Moving without passengers for operational reasons
+    CHARGING = "charging"  # Moving to a charging station
+    MAINTENANCE = "maintenance"  # Moving to maintenance
+
 @dataclass
 class RouteStop(ModelBase):
     """Represents a stop within a route context with additional route-specific information"""
