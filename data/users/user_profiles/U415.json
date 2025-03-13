@@ -1,0 +1,28 @@
+{
+  "id": "U415",
+  "max_walking_time_to_origin": 2.371437616262534,
+  "max_walking_time_from_destination": 3.111558715801444,
+  "max_waiting_time": 11.056589912548308,
+  "max_in_vehicle_time": 15.939714104403397,
+  "max_cost": 26.825838586013635,
+  "max_acceptable_delay": 9.983489055944245,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.7713459819684633,
+    "wait_time": -0.7625549943359554,
+    "in_vehicle_time": 1.7080004903346537,
+    "walking_time_from_destination": 0.825900485969765,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 23,
+  "historical_acceptance_rate": 0.5316842888111054,
+  "historical_ratings": [
+    3.2,
+    3.2,
+    3.6,
+    4.3,
+    4.0
+  ]
+}

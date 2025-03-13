@@ -1,0 +1,28 @@
+{
+  "id": "U320",
+  "max_walking_time_to_origin": 5.504171927917562,
+  "max_walking_time_from_destination": 5.1165365626211905,
+  "max_waiting_time": 7.258897842618095,
+  "max_in_vehicle_time": 22.22320891209353,
+  "max_cost": 21.899804295018377,
+  "max_acceptable_delay": 6.96209956808911,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 30,
+  "historical_acceptance_rate": 0.7678286777142245,
+  "historical_ratings": [
+    3.4,
+    4.7,
+    5.0,
+    3.9,
+    4.3
+  ]
+}

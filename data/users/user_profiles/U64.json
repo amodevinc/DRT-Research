@@ -1,0 +1,28 @@
+{
+  "id": "U64",
+  "max_walking_time_to_origin": 4.385319624306508,
+  "max_walking_time_from_destination": 3.315357933359674,
+  "max_waiting_time": 7.530779468992065,
+  "max_in_vehicle_time": 28.22751270589803,
+  "max_cost": 30.134568465651498,
+  "max_acceptable_delay": 6.962264603344413,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.3521645301988111,
+    "wait_time": -0.6691503598043594,
+    "in_vehicle_time": 1.621280291969117,
+    "walking_time_from_destination": -0.3042944623635686,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.861759241412566,
+  "historical_ratings": [
+    3.0,
+    4.1,
+    4.7,
+    4.6,
+    4.3
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U19",
+  "max_walking_time_to_origin": 3.2305550162080974,
+  "max_walking_time_from_destination": 4.636796332546361,
+  "max_waiting_time": 9.684114527845345,
+  "max_in_vehicle_time": 25.638570294812492,
+  "max_cost": 33.932824183896,
+  "max_acceptable_delay": 8.643907544605785,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.44433950760551716,
+    "wait_time": -0.5526256331442035,
+    "in_vehicle_time": 3.719864983685009,
+    "walking_time_from_destination": -1.7228998429352884,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 5,
+  "historical_acceptance_rate": 0.5192170289381979,
+  "historical_ratings": [
+    4.1,
+    4.7,
+    3.6,
+    4.6,
+    4.2
+  ]
+}

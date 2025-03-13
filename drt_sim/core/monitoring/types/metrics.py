@@ -40,6 +40,12 @@ class MetricName(Enum):
     SERVICE_VIOLATIONS = 'service.violations'
     SERVICE_ON_TIME_RATE = 'service.on_time_rate'
     SERVICE_CAPACITY_UTILIZATION = 'service.capacity_utilization'
+    
+    # User acceptance metrics
+    USER_ACCEPTANCE_PROBABILITY = 'user.acceptance_probability'
+    USER_ACCEPTANCE_RATE = 'user.acceptance_rate'
+    USER_REJECTION_REASON = 'user.rejection_reason'
+    USER_FEATURE_IMPORTANCE = 'user.feature_importance'
 
 class MetricDefinition:
     def __init__(self, name: str, description: str, metric_type: str, unit: str,

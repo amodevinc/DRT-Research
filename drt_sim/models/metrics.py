@@ -347,6 +347,123 @@ class StopMetrics:
         self.average_vehicles_queued = self.current_total_queued / n_active
 
 @dataclass
+class UserAcceptanceMetrics:
+    """Metrics tracked for user acceptance"""
+    # Counts
+    total_decisions: int = 0
+    accepted_decisions: int = 0
+    rejected_decisions: int = 0
+    
+    # Rates
+    acceptance_rate: float = 0.0
+    
+    # By user type
+    by_user_type: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # By time of day
+    by_time_of_day: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # By waiting time
+    by_waiting_time: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # By travel time
+    by_travel_time: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # Rejection reasons
+    rejection_reasons: Dict[str, int] = field(default_factory=dict)
+    
+    # Feature importance
+    feature_importance: Dict[str, float] = field(default_factory=dict)
+    
+    def update_decision(self, accepted: bool, user_type: str, 
+                        waiting_time: float, travel_time: float,
+                        time_of_day: int, rejection_reason: str = None) -> None:
+        """Update metrics with a new user decision."""
+        # Update counts
+        self.total_decisions += 1
+        if accepted:
+            self.accepted_decisions += 1
+        else:
+            self.rejected_decisions += 1
+            if rejection_reason:
+                self.rejection_reasons[rejection_reason] = self.rejection_reasons.get(rejection_reason, 0) + 1
+        
+        # Update acceptance rate
+        self.acceptance_rate = self.accepted_decisions / self.total_decisions if self.total_decisions > 0 else 0.0
+        
+        # Update by user type
+        if user_type not in self.by_user_type:
+            self.by_user_type[user_type] = {"total": 0, "accepted": 0, "rate": 0.0}
+        
+        self.by_user_type[user_type]["total"] += 1
+        if accepted:
+            self.by_user_type[user_type]["accepted"] += 1
+        
+        self.by_user_type[user_type]["rate"] = (
+            self.by_user_type[user_type]["accepted"] / self.by_user_type[user_type]["total"]
+            if self.by_user_type[user_type]["total"] > 0 else 0.0
+        )
+        
+        # Update by time of day
+        hour_range = f"{time_of_day:02d}:00-{(time_of_day+1)%24:02d}:00"
+        if hour_range not in self.by_time_of_day:
+            self.by_time_of_day[hour_range] = {"total": 0, "accepted": 0, "rate": 0.0}
+        
+        self.by_time_of_day[hour_range]["total"] += 1
+        if accepted:
+            self.by_time_of_day[hour_range]["accepted"] += 1
+        
+        self.by_time_of_day[hour_range]["rate"] = (
+            self.by_time_of_day[hour_range]["accepted"] / self.by_time_of_day[hour_range]["total"]
+            if self.by_time_of_day[hour_range]["total"] > 0 else 0.0
+        )
+        
+        # Update by waiting time
+        wait_category = self._categorize_time(waiting_time)
+        if wait_category not in self.by_waiting_time:
+            self.by_waiting_time[wait_category] = {"total": 0, "accepted": 0, "rate": 0.0}
+        
+        self.by_waiting_time[wait_category]["total"] += 1
+        if accepted:
+            self.by_waiting_time[wait_category]["accepted"] += 1
+        
+        self.by_waiting_time[wait_category]["rate"] = (
+            self.by_waiting_time[wait_category]["accepted"] / self.by_waiting_time[wait_category]["total"]
+            if self.by_waiting_time[wait_category]["total"] > 0 else 0.0
+        )
+        
+        # Update by travel time
+        travel_category = self._categorize_time(travel_time)
+        if travel_category not in self.by_travel_time:
+            self.by_travel_time[travel_category] = {"total": 0, "accepted": 0, "rate": 0.0}
+        
+        self.by_travel_time[travel_category]["total"] += 1
+        if accepted:
+            self.by_travel_time[travel_category]["accepted"] += 1
+        
+        self.by_travel_time[travel_category]["rate"] = (
+            self.by_travel_time[travel_category]["accepted"] / self.by_travel_time[travel_category]["total"]
+            if self.by_travel_time[travel_category]["total"] > 0 else 0.0
+        )
+    
+    def update_feature_importance(self, feature_importance: Dict[str, float]) -> None:
+        """Update feature importance metrics."""
+        self.feature_importance = feature_importance
+    
+    def _categorize_time(self, time_minutes: float) -> str:
+        """Categorize time in minutes into buckets."""
+        if time_minutes <= 5:
+            return "0-5 min"
+        elif time_minutes <= 10:
+            return "5-10 min"
+        elif time_minutes <= 15:
+            return "10-15 min"
+        elif time_minutes <= 20:
+            return "15-20 min"
+        else:
+            return "20+ min"
+
+@dataclass
 class SystemMetrics(ModelBase):
     timestamp: datetime
     operational: OperationalMetrics
@@ -355,3 +472,4 @@ class SystemMetrics(ModelBase):
     stop_metrics: StopMetrics
     passenger_metrics: PassengerMetrics
     financial_metrics: Dict[str, float]
+    user_acceptance_metrics: UserAcceptanceMetrics = field(default_factory=UserAcceptanceMetrics)

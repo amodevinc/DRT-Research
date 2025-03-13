@@ -1,0 +1,22 @@
+{
+  "id": "U30",
+  "max_walking_time_to_origin": 3.7741180147445097,
+  "max_walking_time_from_destination": 2.0713038825460477,
+  "max_waiting_time": 8.879195267459364,
+  "max_in_vehicle_time": 22.882268684972473,
+  "max_cost": 21.00607930751434,
+  "max_acceptable_delay": 8.475239080222668,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.21596768093737562,
+    "wait_time": 0.48819900549577966,
+    "in_vehicle_time": 0.863496665092938,
+    "walking_time_from_destination": -0.13572798965134192,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.5793740701103876,
+  "historical_ratings": []
+}

@@ -66,6 +66,7 @@ class Request(ModelBase):
     """Representation of a passenger request for a DRT service"""
     type: RequestType
     id: str
+    user_id: str
     passenger_id: str
     origin: Location
     destination: Location
@@ -91,6 +92,7 @@ class Request(ModelBase):
         return {
             'type': self.type.value,
             'id': self.id,
+            'user_id': self.user_id,
             'passenger_id': self.passenger_id,
             'origin': self.origin.to_dict(),
             'destination': self.destination.to_dict(),
@@ -107,6 +109,7 @@ class Request(ModelBase):
         return cls(
             type=RequestType(data['type']),
             id=data['id'],
+            user_id=data['user_id'],
             passenger_id=data['passenger_id'],
             origin=Location.from_dict(data['origin']),
             destination=Location.from_dict(data['destination']),

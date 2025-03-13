@@ -1,0 +1,28 @@
+{
+  "id": "U16",
+  "max_walking_time_to_origin": 2.46589668321234,
+  "max_walking_time_from_destination": 4.391598174290148,
+  "max_waiting_time": 13.734875613020684,
+  "max_in_vehicle_time": 27.017443779955926,
+  "max_cost": 30.84095635110134,
+  "max_acceptable_delay": 9.791402815534276,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.605539252731842,
+    "wait_time": -0.7353313935666375,
+    "in_vehicle_time": 0.768109103591797,
+    "walking_time_from_destination": 0.36168303724299866,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.9244333014388377,
+  "historical_ratings": [
+    3.6,
+    4.5,
+    4.7,
+    3.7,
+    4.7
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U160",
+  "max_walking_time_to_origin": 5.7907062243513785,
+  "max_walking_time_from_destination": 3.214256484224451,
+  "max_waiting_time": 9.248903729537655,
+  "max_in_vehicle_time": 17.361835579174944,
+  "max_cost": 31.453440581536007,
+  "max_acceptable_delay": 9.865651246251831,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.2125799356052912,
+    "wait_time": 0.502855194055865,
+    "in_vehicle_time": 0.8542095947679037,
+    "walking_time_from_destination": -0.1444848532184776,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 23,
+  "historical_acceptance_rate": 0.5936734280238256,
+  "historical_ratings": [
+    3.2,
+    3.8,
+    3.8,
+    4.4,
+    4.7
+  ]
+}

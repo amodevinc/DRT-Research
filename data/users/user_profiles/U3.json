@@ -1,0 +1,28 @@
+{
+  "id": "U3",
+  "max_walking_time_to_origin": 3.004888735385536,
+  "max_walking_time_from_destination": 2.928787235483309,
+  "max_waiting_time": 7.347402221747459,
+  "max_in_vehicle_time": 21.282062712242716,
+  "max_cost": 34.897448990071865,
+  "max_acceptable_delay": 8.928629566099003,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.3401253696816725,
+    "wait_time": -0.08957316238993633,
+    "in_vehicle_time": 0.9598862325636958,
+    "walking_time_from_destination": -0.21043843985543198,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 26,
+  "historical_acceptance_rate": 0.6780997232279224,
+  "historical_ratings": [
+    3.8,
+    4.1,
+    4.2,
+    4.2,
+    3.8
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U174",
+  "max_walking_time_to_origin": 2.054755559411475,
+  "max_walking_time_from_destination": 3.8544548871262823,
+  "max_waiting_time": 14.369950955130426,
+  "max_in_vehicle_time": 16.12299292050913,
+  "max_cost": 32.99016945393538,
+  "max_acceptable_delay": 9.696486243616349,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -16.213698613502228,
+    "wait_time": -30.15947070327271,
+    "in_vehicle_time": 26.22806036583583,
+    "walking_time_from_destination": 21.145108950939104,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 23,
+  "historical_acceptance_rate": 0.9250383507929083,
+  "historical_ratings": [
+    3.2,
+    3.3,
+    3.9,
+    4.5,
+    4.2
+  ]
+}

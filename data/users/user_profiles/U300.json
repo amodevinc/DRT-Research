@@ -1,0 +1,28 @@
+{
+  "id": "U300",
+  "max_walking_time_to_origin": 3.168995263453537,
+  "max_walking_time_from_destination": 5.664448646307751,
+  "max_waiting_time": 7.442659452399254,
+  "max_in_vehicle_time": 27.482009345952953,
+  "max_cost": 32.24681994352345,
+  "max_acceptable_delay": 8.809490818900246,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4176262029238746,
+    "wait_time": 0.8855308814827768,
+    "in_vehicle_time": 0.0073263242843828276,
+    "walking_time_from_destination": -0.3104834086910342,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 16,
+  "historical_acceptance_rate": 0.5598116112247229,
+  "historical_ratings": [
+    3.7,
+    3.2,
+    4.9,
+    3.6,
+    4.6
+  ]
+}

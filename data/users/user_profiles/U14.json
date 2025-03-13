@@ -1,0 +1,28 @@
+{
+  "id": "U14",
+  "max_walking_time_to_origin": 4.11266572323869,
+  "max_walking_time_from_destination": 4.770885783651494,
+  "max_waiting_time": 5.057533789874158,
+  "max_in_vehicle_time": 27.538032358907177,
+  "max_cost": 26.20237382908022,
+  "max_acceptable_delay": 5.155935638785991,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.13253732023658102,
+    "wait_time": 1.2810988129983218,
+    "in_vehicle_time": -0.5720643280855003,
+    "walking_time_from_destination": 0.15842819485059742,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 11,
+  "historical_acceptance_rate": 0.8830026795016459,
+  "historical_ratings": [
+    4.1,
+    4.4,
+    3.4,
+    3.1,
+    3.9
+  ]
+}

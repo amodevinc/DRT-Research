@@ -1,0 +1,28 @@
+{
+  "id": "U261",
+  "max_walking_time_to_origin": 3.2414378407890734,
+  "max_walking_time_from_destination": 3.683342649943847,
+  "max_waiting_time": 8.055196344030005,
+  "max_in_vehicle_time": 21.360482697138902,
+  "max_cost": 37.453709246465294,
+  "max_acceptable_delay": 6.185449728948819,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4084362877009461,
+    "wait_time": 0.8921399511883062,
+    "in_vehicle_time": 0.00276190507071745,
+    "walking_time_from_destination": -0.3033381439599696,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 7,
+  "historical_acceptance_rate": 0.6004607279803228,
+  "historical_ratings": [
+    4.5,
+    4.5,
+    3.3,
+    4.6,
+    3.6
+  ]
+}

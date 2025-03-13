@@ -1,0 +1,28 @@
+{
+  "id": "U420",
+  "max_walking_time_to_origin": 3.6426814681061885,
+  "max_walking_time_from_destination": 4.451510636171989,
+  "max_waiting_time": 7.5181386105563535,
+  "max_in_vehicle_time": 25.865710732571152,
+  "max_cost": 36.75945336789593,
+  "max_acceptable_delay": 8.469450763828208,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 28,
+  "historical_acceptance_rate": 0.7848857939144308,
+  "historical_ratings": [
+    3.4,
+    3.4,
+    4.2,
+    3.3,
+    4.2
+  ]
+}

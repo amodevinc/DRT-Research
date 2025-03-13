@@ -1,0 +1,28 @@
+{
+  "id": "U173",
+  "max_walking_time_to_origin": 3.0242428872852387,
+  "max_walking_time_from_destination": 5.928254602806119,
+  "max_waiting_time": 9.81462693670338,
+  "max_in_vehicle_time": 34.12460112534135,
+  "max_cost": 38.49642026656065,
+  "max_acceptable_delay": 9.793556168292898,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 1.2413751320208615,
+    "wait_time": 0.7258181323257595,
+    "in_vehicle_time": -0.5120214147987154,
+    "walking_time_from_destination": -0.4551718495479056,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 39,
+  "historical_acceptance_rate": 0.5365830843212894,
+  "historical_ratings": [
+    4.0,
+    3.8,
+    3.5,
+    3.3,
+    3.1
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U308",
+  "max_walking_time_to_origin": 3.6694773272418963,
+  "max_walking_time_from_destination": 2.078661625297396,
+  "max_waiting_time": 8.665558139738238,
+  "max_in_vehicle_time": 26.101860791577742,
+  "max_cost": 31.087555674430973,
+  "max_acceptable_delay": 8.407579569773077,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 8,
+  "historical_acceptance_rate": 0.7803691939291826,
+  "historical_ratings": [
+    4.8,
+    3.4,
+    3.0,
+    3.8,
+    3.3
+  ]
+}

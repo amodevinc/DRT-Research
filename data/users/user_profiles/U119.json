@@ -1,0 +1,28 @@
+{
+  "id": "U119",
+  "max_walking_time_to_origin": 1.6541827190675922,
+  "max_walking_time_from_destination": 2.6254986468280053,
+  "max_waiting_time": 5.0577404739976775,
+  "max_in_vehicle_time": 31.20173481154517,
+  "max_cost": 25.172619477145766,
+  "max_acceptable_delay": 8.307158927938715,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.41329720291678457,
+    "wait_time": 0.8754481875981068,
+    "in_vehicle_time": -0.010471946265094715,
+    "walking_time_from_destination": -0.2782734442497966,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 36,
+  "historical_acceptance_rate": 0.5067634593918433,
+  "historical_ratings": [
+    4.3,
+    4.4,
+    3.9,
+    4.7,
+    4.4
+  ]
+}

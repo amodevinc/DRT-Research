@@ -1,0 +1,28 @@
+{
+  "id": "U240",
+  "max_walking_time_to_origin": 2.227550765198912,
+  "max_walking_time_from_destination": 5.738722103552428,
+  "max_waiting_time": 5.24609240340244,
+  "max_in_vehicle_time": 30.195074651522937,
+  "max_cost": 23.408982477808287,
+  "max_acceptable_delay": 5.949269495953357,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.3960302418283638,
+    "wait_time": 0.8439663634083006,
+    "in_vehicle_time": -0.0126472712720776,
+    "walking_time_from_destination": -0.22734933396458679,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 39,
+  "historical_acceptance_rate": 0.7134755812588912,
+  "historical_ratings": [
+    4.7,
+    4.7,
+    4.5,
+    4.8,
+    4.6
+  ]
+}

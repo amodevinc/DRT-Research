@@ -1,0 +1,28 @@
+{
+  "id": "U391",
+  "max_walking_time_to_origin": 5.927788689373094,
+  "max_walking_time_from_destination": 4.417844966435126,
+  "max_waiting_time": 10.742944513757596,
+  "max_in_vehicle_time": 29.724273266908753,
+  "max_cost": 37.08287997631821,
+  "max_acceptable_delay": 8.281929956172014,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.0761368317669966,
+    "wait_time": 0.8833173169921079,
+    "in_vehicle_time": 0.23954696785245003,
+    "walking_time_from_destination": -0.1990011166115546,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 40,
+  "historical_acceptance_rate": 0.8910400241362861,
+  "historical_ratings": [
+    5.0,
+    4.8,
+    4.9,
+    4.3,
+    3.3
+  ]
+}

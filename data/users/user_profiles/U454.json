@@ -1,0 +1,28 @@
+{
+  "id": "U454",
+  "max_walking_time_to_origin": 3.207312357900002,
+  "max_walking_time_from_destination": 3.2847085974901287,
+  "max_waiting_time": 7.8169361935358275,
+  "max_in_vehicle_time": 21.70994060252726,
+  "max_cost": 29.120233278047838,
+  "max_acceptable_delay": 8.965146797786211,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 6,
+  "historical_acceptance_rate": 0.6990195000047563,
+  "historical_ratings": [
+    3.5,
+    3.0,
+    4.8,
+    4.1,
+    4.9
+  ]
+}

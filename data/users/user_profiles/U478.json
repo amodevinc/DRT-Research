@@ -1,0 +1,28 @@
+{
+  "id": "U478",
+  "max_walking_time_to_origin": 2.0040127611329024,
+  "max_walking_time_from_destination": 5.103616101958486,
+  "max_waiting_time": 9.175335230846787,
+  "max_in_vehicle_time": 21.441018647265683,
+  "max_cost": 38.24974631737868,
+  "max_acceptable_delay": 9.836860985285146,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4707749184374435,
+    "wait_time": 0.6695209150474152,
+    "in_vehicle_time": -0.08110704706240096,
+    "walking_time_from_destination": -0.05918878642245763,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 41,
+  "historical_acceptance_rate": 0.5587284316485107,
+  "historical_ratings": [
+    3.2,
+    3.3,
+    4.6,
+    3.7,
+    3.1
+  ]
+}

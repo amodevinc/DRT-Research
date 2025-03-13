@@ -1,0 +1,27 @@
+{
+  "id": "U92",
+  "max_walking_time_to_origin": 4.562516093082442,
+  "max_walking_time_from_destination": 5.250452071145211,
+  "max_waiting_time": 7.106662390282479,
+  "max_in_vehicle_time": 31.980459154693712,
+  "max_cost": 38.78165897879387,
+  "max_acceptable_delay": 6.963110201998183,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 4,
+  "historical_acceptance_rate": 0.8650351080691763,
+  "historical_ratings": [
+    4.0,
+    4.0,
+    3.2,
+    4.3
+  ]
+}

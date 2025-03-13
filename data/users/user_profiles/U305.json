@@ -1,0 +1,28 @@
+{
+  "id": "U305",
+  "max_walking_time_to_origin": 4.883468688352103,
+  "max_walking_time_from_destination": 4.742916215295486,
+  "max_waiting_time": 9.71402007376372,
+  "max_in_vehicle_time": 19.114573406169423,
+  "max_cost": 37.54502129532611,
+  "max_acceptable_delay": 9.756877890188292,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.24501981124665326,
+    "wait_time": -0.4263481836461969,
+    "in_vehicle_time": 2.6852753336248334,
+    "walking_time_from_destination": -1.013907338731983,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 43,
+  "historical_acceptance_rate": 0.8716002730113525,
+  "historical_ratings": [
+    4.4,
+    3.4,
+    3.7,
+    4.6,
+    4.3
+  ]
+}

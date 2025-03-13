@@ -1,0 +1,28 @@
+{
+  "id": "U128",
+  "max_walking_time_to_origin": 1.330155677316077,
+  "max_walking_time_from_destination": 2.7628165180708617,
+  "max_waiting_time": 6.903330736468082,
+  "max_in_vehicle_time": 35.633057918303464,
+  "max_cost": 24.395445831691767,
+  "max_acceptable_delay": 5.26427173735555,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.7941566004549732,
+    "wait_time": 0.7175430485981855,
+    "in_vehicle_time": 0.03423338168847329,
+    "walking_time_from_destination": -0.545933030741632,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 20,
+  "historical_acceptance_rate": 0.6913287290722231,
+  "historical_ratings": [
+    4.7,
+    4.0,
+    4.5,
+    4.5,
+    3.6
+  ]
+}

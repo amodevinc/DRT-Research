@@ -433,3 +433,68 @@ metrics:
       time_series: true
       distribution: false
       summary: true
+
+  - name: "user.acceptance_probability"
+    description: "Probability of a user accepting a proposed service."
+    metric_type: "event"
+    unit: "probability"
+    required_context:
+      - request_id
+      - user_id
+      - vehicle_id
+      - waiting_time
+      - travel_time
+      - accepted
+    aggregations:
+      - mean
+      - min
+      - max
+      - std
+      - count
+    visualizations:
+      time_series: true
+      distribution: true
+      summary: true
+
+  - name: "user.acceptance_rate"
+    description: "Rate at which users accept proposed services."
+    metric_type: "event"
+    unit: "ratio"
+    required_context:
+      - accepted_count
+      - rejected_count
+    aggregations:
+      - computed
+    visualizations:
+      time_series: true
+      distribution: false
+      summary: true
+
+  - name: "user.rejection_reason"
+    description: "Reasons why users reject proposed services."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - user_id
+      - request_id
+      - rejection_reason
+    aggregations:
+      - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
+
+  - name: "user.feature_importance"
+    description: "Importance of different features in user acceptance decisions."
+    metric_type: "event"
+    unit: "weight"
+    required_context:
+      - feature_name
+      - importance_value
+    aggregations:
+      - mean
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true

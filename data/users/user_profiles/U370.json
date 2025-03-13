@@ -1,0 +1,28 @@
+{
+  "id": "U370",
+  "max_walking_time_to_origin": 5.0995962541756885,
+  "max_walking_time_from_destination": 5.228081062329613,
+  "max_waiting_time": 14.4989935615085,
+  "max_in_vehicle_time": 23.216884742046705,
+  "max_cost": 39.556711665936845,
+  "max_acceptable_delay": 7.73380495828473,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -1.3994206652006853,
+    "wait_time": -1.68041143092511,
+    "in_vehicle_time": 13.014386029614148,
+    "walking_time_from_destination": -8.93455393348835,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 19,
+  "historical_acceptance_rate": 0.6290482937299331,
+  "historical_ratings": [
+    4.6,
+    3.3,
+    4.1,
+    5.0,
+    3.8
+  ]
+}

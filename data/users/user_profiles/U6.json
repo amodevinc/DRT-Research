@@ -1,0 +1,28 @@
+{
+  "id": "U6",
+  "max_walking_time_to_origin": 2.0777416221859766,
+  "max_walking_time_from_destination": 5.797315347683375,
+  "max_waiting_time": 7.38365331563898,
+  "max_in_vehicle_time": 18.792586836264714,
+  "max_cost": 23.422132086558044,
+  "max_acceptable_delay": 5.861845122108717,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.2952948764545871,
+    "wait_time": 0.5940923905538291,
+    "in_vehicle_time": 0.8798272214627662,
+    "walking_time_from_destination": -0.17862473556200814,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 30,
+  "historical_acceptance_rate": 0.6259962851584038,
+  "historical_ratings": [
+    3.6,
+    4.9,
+    4.7,
+    4.5,
+    4.8
+  ]
+}

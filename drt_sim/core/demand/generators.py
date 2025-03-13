@@ -45,6 +45,7 @@ class BaseDemandGenerator(ABC):
             return None
         return Request(
             id=f"R{self.request_counter}",
+            user_id=f"U{self.request_counter}",
             passenger_id=f"P{self.request_counter}",
             origin=origin,
             destination=destination,

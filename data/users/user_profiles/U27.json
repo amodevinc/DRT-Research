@@ -1,0 +1,28 @@
+{
+  "id": "U27",
+  "max_walking_time_to_origin": 3.8638786817890938,
+  "max_walking_time_from_destination": 2.2652496897642362,
+  "max_waiting_time": 12.559242333386134,
+  "max_in_vehicle_time": 37.80369035189792,
+  "max_cost": 34.22392147501236,
+  "max_acceptable_delay": 9.473371753012032,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 28,
+  "historical_acceptance_rate": 0.8472312354328477,
+  "historical_ratings": [
+    4.7,
+    4.0,
+    4.5,
+    3.6,
+    4.1
+  ]
+}

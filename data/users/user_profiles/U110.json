@@ -1,0 +1,28 @@
+{
+  "id": "U110",
+  "max_walking_time_to_origin": 3.2959245096256984,
+  "max_walking_time_from_destination": 4.033489846739117,
+  "max_waiting_time": 10.535104235757316,
+  "max_in_vehicle_time": 38.82482973506681,
+  "max_cost": 22.193077145883656,
+  "max_acceptable_delay": 8.670080296699451,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.8019029304263117,
+    "wait_time": 0.7665968686333627,
+    "in_vehicle_time": 0.013331142860896351,
+    "walking_time_from_destination": -0.5818309419205707,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 23,
+  "historical_acceptance_rate": 0.5054010559028979,
+  "historical_ratings": [
+    3.6,
+    4.3,
+    4.6,
+    3.9,
+    4.2
+  ]
+}

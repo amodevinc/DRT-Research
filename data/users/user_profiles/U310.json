@@ -1,0 +1,28 @@
+{
+  "id": "U310",
+  "max_walking_time_to_origin": 3.1591331154882356,
+  "max_walking_time_from_destination": 3.395981651851663,
+  "max_waiting_time": 7.06890661534562,
+  "max_in_vehicle_time": 22.53514541151741,
+  "max_cost": 28.496489103057634,
+  "max_acceptable_delay": 7.13078092389668,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.10546919996327,
+    "wait_time": 0.8528917331898445,
+    "in_vehicle_time": 0.23207739479652048,
+    "walking_time_from_destination": -0.19043832794963497,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 17,
+  "historical_acceptance_rate": 0.5354171270747144,
+  "historical_ratings": [
+    3.8,
+    4.0,
+    4.5,
+    4.5,
+    3.9
+  ]
+}

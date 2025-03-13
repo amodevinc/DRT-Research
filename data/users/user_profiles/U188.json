@@ -1,0 +1,28 @@
+{
+  "id": "U188",
+  "max_walking_time_to_origin": 1.193364462973861,
+  "max_walking_time_from_destination": 3.0896754800323474,
+  "max_waiting_time": 13.50173989166445,
+  "max_in_vehicle_time": 16.61355031276447,
+  "max_cost": 37.4452837461627,
+  "max_acceptable_delay": 5.546094556143092,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.8889997152315812,
+    "wait_time": -0.3092357327562804,
+    "in_vehicle_time": 0.4143243764128635,
+    "walking_time_from_destination": 0.005911641111835753,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 46,
+  "historical_acceptance_rate": 0.526845653985797,
+  "historical_ratings": [
+    3.6,
+    4.5,
+    4.9,
+    4.4,
+    3.4
+  ]
+}

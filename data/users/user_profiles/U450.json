@@ -1,0 +1,27 @@
+{
+  "id": "U450",
+  "max_walking_time_to_origin": 4.125925350044053,
+  "max_walking_time_from_destination": 5.141441810771653,
+  "max_waiting_time": 12.565872307026112,
+  "max_in_vehicle_time": 35.372000658017164,
+  "max_cost": 20.131709521928137,
+  "max_acceptable_delay": 5.8692968167018735,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 4,
+  "historical_acceptance_rate": 0.6676567336757202,
+  "historical_ratings": [
+    3.5,
+    3.5,
+    3.3,
+    3.9
+  ]
+}

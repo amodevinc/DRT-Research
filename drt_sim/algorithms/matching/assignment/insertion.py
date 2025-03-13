@@ -12,7 +12,7 @@ from drt_sim.network.manager import NetworkManager
 from drt_sim.models.location import Location
 from drt_sim.core.state.manager import StateManager
 from drt_sim.core.simulation.context import SimulationContext
-from drt_sim.core.user.manager import UserProfileManager
+from drt_sim.core.user.user_profile_manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.config.config import MatchingAssignmentConfig
 from drt_sim.models.rejection import RejectionReason, RejectionMetadata

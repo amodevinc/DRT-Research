@@ -1,0 +1,28 @@
+{
+  "id": "U290",
+  "max_walking_time_to_origin": 3.1447523936837602,
+  "max_walking_time_from_destination": 5.490696234422554,
+  "max_waiting_time": 8.416044968730517,
+  "max_in_vehicle_time": 28.607426478420102,
+  "max_cost": 24.946361188095977,
+  "max_acceptable_delay": 8.643118988504987,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 47,
+  "historical_acceptance_rate": 0.502885638362859,
+  "historical_ratings": [
+    3.8,
+    3.6,
+    4.5,
+    3.1,
+    4.2
+  ]
+}

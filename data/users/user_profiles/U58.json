@@ -1,0 +1,28 @@
+{
+  "id": "U58",
+  "max_walking_time_to_origin": 2.9679958987791446,
+  "max_walking_time_from_destination": 4.125643832889823,
+  "max_waiting_time": 9.45796421778299,
+  "max_in_vehicle_time": 28.425492022087848,
+  "max_cost": 34.94728154402086,
+  "max_acceptable_delay": 8.73629103316865,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 40,
+  "historical_acceptance_rate": 0.7659840134612805,
+  "historical_ratings": [
+    3.8,
+    4.3,
+    3.8,
+    4.6,
+    4.2
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U22",
+  "max_walking_time_to_origin": 2.8815031510639595,
+  "max_walking_time_from_destination": 3.470604690706216,
+  "max_waiting_time": 8.392400452200576,
+  "max_in_vehicle_time": 34.82659331128288,
+  "max_cost": 25.00257637613055,
+  "max_acceptable_delay": 6.865258685892965,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.3726692522909365,
+    "wait_time": 0.8104898168545811,
+    "in_vehicle_time": 0.022890938647848802,
+    "walking_time_from_destination": -0.2060500077933663,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 33,
+  "historical_acceptance_rate": 0.883363210131137,
+  "historical_ratings": [
+    4.9,
+    3.4,
+    3.2,
+    4.4,
+    3.7
+  ]
+}

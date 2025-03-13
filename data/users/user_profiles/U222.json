@@ -1,0 +1,28 @@
+{
+  "id": "U222",
+  "max_walking_time_to_origin": 2.4311203056451074,
+  "max_walking_time_from_destination": 2.524956039522754,
+  "max_waiting_time": 7.677479957249357,
+  "max_in_vehicle_time": 32.07728018439144,
+  "max_cost": 20.61350812148366,
+  "max_acceptable_delay": 5.223195709315588,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.3090211030480243,
+    "wait_time": 1.0233725204725583,
+    "in_vehicle_time": -0.07626012686783973,
+    "walking_time_from_destination": -0.25613349665274293,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 18,
+  "historical_acceptance_rate": 0.6478303150637679,
+  "historical_ratings": [
+    3.3,
+    3.6,
+    4.8,
+    3.7,
+    3.8
+  ]
+}

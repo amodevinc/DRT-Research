@@ -1,0 +1,28 @@
+{
+  "id": "U345",
+  "max_walking_time_to_origin": 2.377976980176347,
+  "max_walking_time_from_destination": 2.9703350628599674,
+  "max_waiting_time": 8.575700756327594,
+  "max_in_vehicle_time": 25.811983060418278,
+  "max_cost": 31.01672026126381,
+  "max_acceptable_delay": 9.515964458233615,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 47,
+  "historical_acceptance_rate": 0.774936602586034,
+  "historical_ratings": [
+    4.6,
+    4.2,
+    3.2,
+    3.7,
+    4.4
+  ]
+}

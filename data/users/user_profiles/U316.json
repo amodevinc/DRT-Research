@@ -1,0 +1,28 @@
+{
+  "id": "U316",
+  "max_walking_time_to_origin": 3.5880660417816292,
+  "max_walking_time_from_destination": 2.4028246786653487,
+  "max_waiting_time": 11.98750180075569,
+  "max_in_vehicle_time": 26.690591678935462,
+  "max_cost": 25.65567250209727,
+  "max_acceptable_delay": 5.712697707122425,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.7659445463119771,
+  "historical_ratings": [
+    3.5,
+    4.0,
+    4.9,
+    3.5,
+    3.5
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U332",
+  "max_walking_time_to_origin": 4.851603649400057,
+  "max_walking_time_from_destination": 5.230527137607854,
+  "max_waiting_time": 11.58051870768046,
+  "max_in_vehicle_time": 26.728965740085144,
+  "max_cost": 36.48200615297961,
+  "max_acceptable_delay": 8.473955713114826,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.2479515254206499,
+    "wait_time": 0.5296694863552704,
+    "in_vehicle_time": 0.8471409142638706,
+    "walking_time_from_destination": -0.12885887519849115,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 38,
+  "historical_acceptance_rate": 0.649721201226189,
+  "historical_ratings": [
+    3.9,
+    4.3,
+    3.9,
+    4.6,
+    4.3
+  ]
+}

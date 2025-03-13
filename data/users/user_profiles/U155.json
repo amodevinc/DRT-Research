@@ -1,0 +1,28 @@
+{
+  "id": "U155",
+  "max_walking_time_to_origin": 2.646333902431321,
+  "max_walking_time_from_destination": 1.0450971773601678,
+  "max_waiting_time": 7.2426369748673665,
+  "max_in_vehicle_time": 23.235232696645802,
+  "max_cost": 33.10588439869966,
+  "max_acceptable_delay": 6.37714644180221,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.061105173502388956,
+    "wait_time": -0.11894156467086095,
+    "in_vehicle_time": 0.6897695586380133,
+    "walking_time_from_destination": 0.49027717953523664,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 32,
+  "historical_acceptance_rate": 0.8792916515895651,
+  "historical_ratings": [
+    3.6,
+    3.9,
+    3.8,
+    4.9,
+    4.7
+  ]
+}

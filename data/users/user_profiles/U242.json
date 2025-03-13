@@ -1,0 +1,28 @@
+{
+  "id": "U242",
+  "max_walking_time_to_origin": 2.6933557771252508,
+  "max_walking_time_from_destination": 3.5878095790582627,
+  "max_waiting_time": 9.988799220306555,
+  "max_in_vehicle_time": 24.547272583464228,
+  "max_cost": 30.041245468263977,
+  "max_acceptable_delay": 8.633074937855277,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": -0.5257814582936008,
+    "wait_time": 0.6359866648530854,
+    "in_vehicle_time": 0.42714676793678674,
+    "walking_time_from_destination": 0.4626480255037287,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 43,
+  "historical_acceptance_rate": 0.8923784678298117,
+  "historical_ratings": [
+    3.9,
+    3.8,
+    3.1,
+    4.3,
+    4.8
+  ]
+}

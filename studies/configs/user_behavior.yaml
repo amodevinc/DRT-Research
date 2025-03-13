@@ -1,89 +1,234 @@
-name: "user_behavior_study"
-description: "Study impact of user acceptance models and waiting time tolerance"
+name: "User Acceptance Model Comparison Study"
+description: "Study to evaluate and compare different user acceptance models (Default, Logit, and RL) in DRT systems"
 version: "1.0.0"
-authors:
-  - "Research Team"
-tags:
-  - "user-behavior"
-  - "acceptance-models"
-  - "service-quality"
+authors: ["DRT Research Team"]
+tags: ["user_behavior", "acceptance", "simulation", "model_comparison"]
 
-type: "scenario_comparison"
+mlflow:
+  experiment_name: "User Acceptance Model Comparison"
+  tracking_uri: "sqlite:///studies/mlflow.db"
+  artifact_location: "studies/artifacts/user_acceptance_comparison"
+  tags:
+    category: "user_behavior"
+    model_comparison: "true"
+    version: "1.0.0"
+
+execution:
+  distributed: false
+  max_parallel: 4
+  continue_on_error: true
+  save_intermediate: true
 
 simulation:
   start_time: "2024-10-24 07:00:00"
-  end_time: "2024-10-24 23:00:00"
+  end_time: "2024-10-24 19:00:00"
   warm_up_duration: 1800
+  random_seed: 42
   time_step: 60
   time_scale_factor: 1.0
+  save_state: true
+  save_interval: 3600
+  sumo:
+    enabled: false
 
 base_config:
+  name: "Base Configuration"
+  description: "Base configuration for user acceptance model comparison"
+  
   network:
     network_file: "data/networks/hwaseong_drive.graphml"
     walk_network_file: "data/networks/hwaseong_walk.graphml"
     coordinate_system: "EPSG:4326"
     walking_speed: 1.4
     driving_speed: 8.33
-    service_area_polygon:
-      - [126.827032, 37.198957]
-      - [126.822082, 37.203549]
-      - [126.818869, 37.206509]
-      - [126.817734, 37.209793]
-      - [126.832442, 37.216226]
-      - [126.833297, 37.209711]
-      - [126.836499, 37.210003]
-      - [126.838809, 37.206861]
-      - [126.844007, 37.201823]
-      - [126.828538, 37.198760]
   
   demand:
     generator_type: "csv"
-    num_requests: 10
+    num_requests: 500
     csv_config:
       files:
         - file_path: "data/demands/base_real_time.csv"
           weight: 1.0
+      service_area_polygon:
+        - [126.827032, 37.198957]
+        - [126.822082, 37.203549]
+        - [126.818869, 37.206509]
+        - [126.817734, 37.209793]
+        - [126.832442, 37.216226]
+        - [126.833297, 37.209711]
+        - [126.836499, 37.210003]
+        - [126.838809, 37.206861]
+        - [126.844007, 37.201823]
+        - [126.828538, 37.198760]
       columns:
         request_time: "time"
         pickup_lat: "o_y"
         pickup_lon: "o_x"
         dropoff_lat: "d_y"
         dropoff_lon: "d_x"
+  
+  service:
+    max_wait_time: 600
+    max_ride_time: 1800
+    max_walking_distance: 400.0
+    max_journey_time: 3600
+  
+  algorithm:
+    routing_algorithm: "dijkstra"
+    cost_function: "simple"
+    user_acceptance_model: "default"  # This will be overridden in parameter sets
+    stop_selector: "coverage_based"
+    stop_selector_params:
+      strategy: "coverage_based"
+      max_walking_distance: 500
+      min_stop_spacing: 200
+      coverage_radius: 400
+      min_demand_threshold: 2
+      accessibility_weights:
+        walk: 0.4
+        demand: 0.3
+        vehicle: 0.2
+        coverage: 0.1
+      custom_params:
+        immediate_demand_window_minutes: 60
+        historical_demand_window_hours: 12
+        min_requests_for_cluster: 3
+        cluster_weight: 0.7
+        max_vehicle_distance: 1500
+      candidate_stops_file: "data/candidate_stops/hwaseong.csv"
+    stop_assigner: "multi_objective"
+    stop_assigner_params:
+      strategy: "multi_objective"
+      max_alternatives: 3
+      thresholds: {"max_walking_distance": 400.0, "max_walking_time": 300.0, "max_driving_time": 900.0}
+      weights: {"vehicle_access_time": 0.3, "passenger_access_time": 0.7}
+  
+  vehicle:
+    fleet_size: 20
+    capacity: 4
+    speed: 10.0
+    boarding_time: 30
+    alighting_time: 30
+  
+  matching:
+    assignment_method: "insertion"
+    optimization_method: "none"
+    assignment_config:
+      constraints:
+        max_waiting_time_secs: 600
+        max_in_vehicle_time_secs: 900
+        max_vehicle_access_time_secs: 600
+        max_existing_passenger_delay_secs: 420
+        max_distance_meters: 10000.0
+      weights:
+        passenger_waiting_time: 0.20
+        passenger_in_vehicle_time: 0.40
+        existing_passenger_delay: 0.30
+        distance: 0.10
+  # User acceptance base configuration (common settings)
+  user_acceptance:
+    max_history_size: 1000
+    enable_user_specific_models: false  # Set per parameter set
+    default_acceptance_threshold: 0.5
+    learning_rate: 0.01
+    user_profiles_dir_path: "data/users/user_profiles"
+    
+    # Feature weights (used as defaults)
+    feature_weights:
+      walking_time_to_origin: -0.4
+      waiting_time: -0.3
+      in_vehicle_time: -0.3
+      walking_time_from_destination: -0.2
+      cost: -0.1
+    
+    # Feature extractor configuration
+    feature_extractor_config:
+      normalization_overrides:
+        walking_time_to_origin: 15.0
+        walking_time_from_destination: 15.0
+        waiting_time: 20.0
+        in_vehicle_time: 45.0
+        cost: 30.0
+    
+    # Feature provider configuration
+    feature_provider_config:
+      time_based:
+        enabled: true
+        holidays: []  # Add specific dates if needed
+      spatial:
+        enabled: true
+        urban_areas: {}  # Could be populated from a file
+        region_info: {}
+      user_history:
+        enabled: true
+      weather:
+        enabled: false
+      service_quality:
+        enabled: true
+      custom_providers: []
+  
+  replications: 1
 
 parameter_sets:
-  acceptance_model_comparison_simple_logit:
-    name: "simple_logit"
-    experiment: "acceptance_model_comparison"
-    description: "Compare different user acceptance models (simple logit scenario)"
-    replications: 1
+  default_model:
+    name: "Default Acceptance Model"
+    description: "Using the threshold-based default acceptance model"
+    algorithm:
+      user_acceptance_model: "default"
+    user_acceptance:
+      model:
+        type: "default"
+        parameters:
+          max_walking_time_to_origin: 15.0
+          max_walking_time_from_destination: 15.0
+          max_waiting_time: 20.0
+          max_in_vehicle_time: 45.0
+          max_cost: 30.0
+          feature_weights:
+            walking_time_to_origin: -0.4
+            waiting_time: -0.3
+            in_vehicle_time: -0.3
+            walking_time_from_destination: -0.2
+            cost: -0.1
+      enable_user_specific_models: false
+  
+  logit_model:
+    name: "Logit Acceptance Model"
+    description: "Using the logistic regression acceptance model"
     algorithm:
       user_acceptance_model: "logit"
-      dispatch_strategy: "fcfs"
-  acceptance_model_comparison_ml_based:
-    name: "ml_based"
-    experiment: "acceptance_model_comparison"
-    description: "Compare different user acceptance models (ML-based scenario)"
-    replications: 1
+    user_acceptance:
+      model:
+        type: "logit"
+        parameters:
+          default_coefficients:
+            walking_time_to_origin: -2.0
+            walking_time_from_destination: -1.5
+            waiting_time: -2.5
+            in_vehicle_time: -1.5
+            cost: -2.0
+          max_training_samples: 2000
+          logistic_params:
+            solver: "lbfgs"
+            max_iter: 1000
+            class_weight: "balanced"
+      enable_user_specific_models: true
+  
+  rl_model:
+    name: "Reinforcement Learning Acceptance Model"
+    description: "Using the reinforcement learning-based acceptance model"
     algorithm:
-      user_acceptance_model: "ml_acceptance"
-      dispatch_strategy: "fcfs"
-
-  waiting_time_sensitivity_low_tolerance:
-    name: "low_tolerance"
-    experiment: "waiting_time_sensitivity"
-    description: "Study impact of different waiting time thresholds (low tolerance)"
-    replications: 1
-    algorithm:
-      user_acceptance_model: "logit"
-      dispatch_strategy: "fcfs"
-      max_waiting_time: 600
-
-  waiting_time_sensitivity_high_tolerance:
-    name: "high_tolerance"
-    experiment: "waiting_time_sensitivity"
-    description: "Study impact of different waiting time thresholds (high tolerance)"
-    replications: 1
-    algorithm:
-      user_acceptance_model: "logit"
-      dispatch_strategy: "fcfs"
-      max_waiting_time: 1200
+      user_acceptance_model: "rl"
+    user_acceptance:
+      model:
+        type: "rl"
+        parameters:
+          alpha: 0.1
+          gamma: 0.9
+          epsilon: 0.2
+          min_epsilon: 0.05
+          epsilon_decay: 0.9999
+          num_bins: 10
+          memory_size: 1000
+          batch_size: 64
+      enable_user_specific_models: true

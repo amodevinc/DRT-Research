@@ -1,0 +1,28 @@
+{
+  "id": "U44",
+  "max_walking_time_to_origin": 5.170082181598237,
+  "max_walking_time_from_destination": 2.6816744687938976,
+  "max_waiting_time": 11.176767776878508,
+  "max_in_vehicle_time": 24.28268436151241,
+  "max_cost": 35.083311141546616,
+  "max_acceptable_delay": 7.063500846753275,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.06815790318139495,
+    "wait_time": 0.16548384527291754,
+    "in_vehicle_time": 0.7668974764032829,
+    "walking_time_from_destination": 0.13577658150519462,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 46,
+  "historical_acceptance_rate": 0.5705479714472043,
+  "historical_ratings": [
+    3.0,
+    4.7,
+    3.6,
+    3.7,
+    3.9
+  ]
+}

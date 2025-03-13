@@ -1,0 +1,27 @@
+{
+  "id": "U245",
+  "max_walking_time_to_origin": 3.9684574357872116,
+  "max_walking_time_from_destination": 2.731438612185768,
+  "max_waiting_time": 5.74524267682454,
+  "max_in_vehicle_time": 34.10895352689745,
+  "max_cost": 36.110602953713396,
+  "max_acceptable_delay": 8.689404807818779,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4386586027917224,
+    "wait_time": 0.9200949459922515,
+    "in_vehicle_time": -0.020878635576151418,
+    "walking_time_from_destination": -0.3378749132078225,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 4,
+  "historical_acceptance_rate": 0.6969844157520695,
+  "historical_ratings": [
+    3.3,
+    4.8,
+    3.4,
+    3.6
+  ]
+}

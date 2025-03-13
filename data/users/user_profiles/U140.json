@@ -1,0 +1,28 @@
+{
+  "id": "U140",
+  "max_walking_time_to_origin": 3.062286139706492,
+  "max_walking_time_from_destination": 2.5211417337739848,
+  "max_waiting_time": 5.548373265688818,
+  "max_in_vehicle_time": 26.913667101382895,
+  "max_cost": 22.61769890051573,
+  "max_acceptable_delay": 6.596340718235201,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": -0.4264125393985722,
+    "wait_time": 0.908820522598324,
+    "in_vehicle_time": -1.3116501294804992,
+    "walking_time_from_destination": 1.8292421462807473,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 32,
+  "historical_acceptance_rate": 0.9155051593821366,
+  "historical_ratings": [
+    4.9,
+    4.8,
+    3.3,
+    3.5,
+    4.4
+  ]
+}

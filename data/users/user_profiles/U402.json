@@ -1,0 +1,28 @@
+{
+  "id": "U402",
+  "max_walking_time_to_origin": 3.220871908266615,
+  "max_walking_time_from_destination": 2.675315652063551,
+  "max_waiting_time": 8.564982274213335,
+  "max_in_vehicle_time": 28.133656491547676,
+  "max_cost": 32.39453921081495,
+  "max_acceptable_delay": 8.286885792739987,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.3368970275747366,
+    "wait_time": 0.7743096294220786,
+    "in_vehicle_time": 0.01205033104248103,
+    "walking_time_from_destination": -0.12325698803929608,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 11,
+  "historical_acceptance_rate": 0.5149562550834627,
+  "historical_ratings": [
+    3.4,
+    4.9,
+    3.4,
+    4.0,
+    4.7
+  ]
+}

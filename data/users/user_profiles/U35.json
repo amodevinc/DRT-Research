@@ -1,0 +1,26 @@
+{
+  "id": "U35",
+  "max_walking_time_to_origin": 4.391922806023243,
+  "max_walking_time_from_destination": 2.302174797665357,
+  "max_waiting_time": 10.226533820383274,
+  "max_in_vehicle_time": 22.342282379153257,
+  "max_cost": 23.681958289011355,
+  "max_acceptable_delay": 6.721043991924927,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": -0.5755284153307648,
+    "wait_time": 0.6893420125643821,
+    "in_vehicle_time": 0.43667308606763655,
+    "walking_time_from_destination": 0.4495133166987461,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 3,
+  "historical_acceptance_rate": 0.6006492791075757,
+  "historical_ratings": [
+    3.1,
+    5.0,
+    4.6
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "csv_column": "feature_name",
+  "access": "walking_time_to_origin",
+  "wait": "wait_time",
+  "ivt": "in_vehicle_time",
+  "egress": "walking_time_from_destination"
+}

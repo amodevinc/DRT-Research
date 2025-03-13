@@ -1,0 +1,28 @@
+{
+  "id": "U289",
+  "max_walking_time_to_origin": 3.2849081441320833,
+  "max_walking_time_from_destination": 2.112722893032953,
+  "max_waiting_time": 10.593785569191155,
+  "max_in_vehicle_time": 25.424932130125313,
+  "max_cost": 36.720905943675795,
+  "max_acceptable_delay": 7.324705009197965,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 30,
+  "historical_acceptance_rate": 0.6961963924281436,
+  "historical_ratings": [
+    3.9,
+    3.1,
+    3.8,
+    5.0,
+    3.5
+  ]
+}

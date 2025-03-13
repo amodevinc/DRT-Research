@@ -1,0 +1,28 @@
+{
+  "id": "U90",
+  "max_walking_time_to_origin": 3.2600816595882907,
+  "max_walking_time_from_destination": 5.857351871049307,
+  "max_waiting_time": 6.812178679977036,
+  "max_in_vehicle_time": 18.736347431013026,
+  "max_cost": 27.671839983917188,
+  "max_acceptable_delay": 9.872447897154192,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.01888375487774287,
+    "wait_time": 0.45208414743672376,
+    "in_vehicle_time": 0.5191370385470786,
+    "walking_time_from_destination": 0.009895059138454865,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.6923278483745093,
+  "historical_ratings": [
+    3.8,
+    4.2,
+    4.5,
+    3.2,
+    4.5
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U83",
+  "max_walking_time_to_origin": 4.089526242510157,
+  "max_walking_time_from_destination": 2.541200434370665,
+  "max_waiting_time": 7.190083675201832,
+  "max_in_vehicle_time": 31.90925726082248,
+  "max_cost": 27.357032687770584,
+  "max_acceptable_delay": 8.45886214084452,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.20104886052423748,
+    "wait_time": 0.44993173149116483,
+    "in_vehicle_time": 0.1548517241927926,
+    "walking_time_from_destination": 0.1941676837918051,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 15,
+  "historical_acceptance_rate": 0.6113210226666557,
+  "historical_ratings": [
+    4.6,
+    4.3,
+    4.5,
+    4.6,
+    4.8
+  ]
+}

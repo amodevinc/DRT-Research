@@ -1,0 +1,28 @@
+{
+  "id": "U94",
+  "max_walking_time_to_origin": 4.181084522688413,
+  "max_walking_time_from_destination": 1.8862287479863031,
+  "max_waiting_time": 12.980515212489736,
+  "max_in_vehicle_time": 15.723737694301962,
+  "max_cost": 27.819753279364882,
+  "max_acceptable_delay": 8.702241799638378,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.09110700612989346,
+    "wait_time": -0.16247218308777275,
+    "in_vehicle_time": 0.7311600487808065,
+    "walking_time_from_destination": 0.5224191404368597,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 25,
+  "historical_acceptance_rate": 0.8953446688655156,
+  "historical_ratings": [
+    4.8,
+    3.3,
+    4.4,
+    3.8,
+    3.3
+  ]
+}

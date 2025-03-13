@@ -1,0 +1,28 @@
+{
+  "id": "U150",
+  "max_walking_time_to_origin": 2.995632797576286,
+  "max_walking_time_from_destination": 3.676153149774419,
+  "max_waiting_time": 9.753847686557869,
+  "max_in_vehicle_time": 16.390964075679975,
+  "max_cost": 28.120662379212362,
+  "max_acceptable_delay": 6.560888794408317,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.29909055022115616,
+    "wait_time": -1.645972344658627,
+    "in_vehicle_time": 2.3140641404193305,
+    "walking_time_from_destination": 0.03281765401814045,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 37,
+  "historical_acceptance_rate": 0.75902400601834,
+  "historical_ratings": [
+    3.4,
+    3.4,
+    3.7,
+    3.1,
+    4.2
+  ]
+}

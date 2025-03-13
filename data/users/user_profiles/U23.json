@@ -1,0 +1,28 @@
+{
+  "id": "U23",
+  "max_walking_time_to_origin": 2.6077545473617625,
+  "max_walking_time_from_destination": 5.430460903955592,
+  "max_waiting_time": 9.686130374673176,
+  "max_in_vehicle_time": 23.833174421826776,
+  "max_cost": 39.54387399993303,
+  "max_acceptable_delay": 6.0283121936330435,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 22,
+  "historical_acceptance_rate": 0.7258217213541573,
+  "historical_ratings": [
+    4.4,
+    4.2,
+    3.4,
+    3.8,
+    4.4
+  ]
+}

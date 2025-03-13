@@ -1,0 +1,28 @@
+{
+  "id": "U202",
+  "max_walking_time_to_origin": 3.119364941102983,
+  "max_walking_time_from_destination": 5.330671777287572,
+  "max_waiting_time": 12.753825234557981,
+  "max_in_vehicle_time": 39.09584611157155,
+  "max_cost": 24.84955072800876,
+  "max_acceptable_delay": 6.179295725463902,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 21,
+  "historical_acceptance_rate": 0.7299191646871855,
+  "historical_ratings": [
+    4.1,
+    4.4,
+    4.8,
+    4.7,
+    4.2
+  ]
+}

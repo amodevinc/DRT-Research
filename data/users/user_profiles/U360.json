@@ -1,0 +1,28 @@
+{
+  "id": "U360",
+  "max_walking_time_to_origin": 2.49393192204891,
+  "max_walking_time_from_destination": 3.261792580402311,
+  "max_waiting_time": 13.50577354086901,
+  "max_in_vehicle_time": 35.984243821315765,
+  "max_cost": 34.84178263021613,
+  "max_acceptable_delay": 8.47005599669185,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 1.047697296506601,
+    "wait_time": 0.23693597735525662,
+    "in_vehicle_time": -0.07309327647126648,
+    "walking_time_from_destination": -0.21153999739059118,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 11,
+  "historical_acceptance_rate": 0.5047222599242647,
+  "historical_ratings": [
+    4.9,
+    4.2,
+    3.2,
+    3.6,
+    4.3
+  ]
+}

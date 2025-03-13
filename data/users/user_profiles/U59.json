@@ -1,0 +1,28 @@
+{
+  "id": "U59",
+  "max_walking_time_to_origin": 1.3151763551402422,
+  "max_walking_time_from_destination": 2.3634923727561556,
+  "max_waiting_time": 12.468886409459458,
+  "max_in_vehicle_time": 21.41444705441522,
+  "max_cost": 33.471046219066395,
+  "max_acceptable_delay": 5.9564570437260675,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 1.5114217361798208,
+    "wait_time": -1.8688099237358344,
+    "in_vehicle_time": 1.7500424487909372,
+    "walking_time_from_destination": -0.3926542612349235,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.935523719037729,
+  "historical_ratings": [
+    3.3,
+    4.9,
+    3.4,
+    3.4,
+    4.3
+  ]
+}

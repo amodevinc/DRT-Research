@@ -378,7 +378,7 @@ class AlgorithmConfig(DataclassYAMLMixin):
     """Configuration for system algorithms"""
     routing_algorithm: str = "dijkstra"
     cost_function: str = "simple"
-    user_acceptance_model: str = "logit"
+    user_acceptance_model: str = "default"
     rebalancing_interval: int = 300
     stop_selector: str = "coverage_based"
     stop_assigner: str = "nearest"
@@ -406,6 +406,300 @@ class AlgorithmConfig(DataclassYAMLMixin):
             
         logger.info(f"Final stop_selector_params: {self.stop_selector_params}")
         logger.info(f"Final stop_assigner_params: {self.stop_assigner_params}")
+
+@dataclass
+class UserAcceptanceConfig(DataclassYAMLMixin):
+    """Configuration for user acceptance models"""
+    
+    # Model configuration
+    model: Dict[str, Any] = field(default_factory=lambda: {
+        "type": "default",
+        "parameters": {
+            "max_walking_time_to_origin": 15.0,
+            "max_walking_time_from_destination": 45.0,
+            "max_waiting_time": 30.0,
+            "max_in_vehicle_time": 25.0,
+            "max_cost": 30.0,
+            "feature_weights": {
+                "walking_time_to_origin": -0.4,
+                "walking_time_from_destination": -0.3,
+                "waiting_time": -0.3,
+                "in_vehicle_time": -0.2,
+                "cost": -0.1
+            }
+        }
+    })
+    
+    # General settings
+    max_history_size: int = 1000
+    enable_user_specific_models: bool = False
+    default_acceptance_threshold: float = 0.5
+    learning_rate: float = 0.01
+    user_profiles_dir_path: str = "data/users/user_profiles"
+    
+    # Feature extractor configuration
+    feature_extractor_config: Dict[str, Any] = field(default_factory=lambda: {
+        "feature_registry": None,
+        "enabled_features": None,
+        "normalization_overrides": {
+            "walking_time_to_origin": 15.0,
+            "walking_time_from_destination": 15.0,
+            "waiting_time": 30.0,
+            "in_vehicle_time": 60.0,
+            "cost": 50.0
+        }
+    })
+    
+    # Feature provider configuration
+    feature_provider_config: Dict[str, Any] = field(default_factory=lambda: {
+        "time_based": {
+            "enabled": True,
+            "holidays": []
+        },
+        "spatial": {
+            "enabled": True,
+            "urban_areas": {},
+            "region_info": {}
+        },
+        "user_history": {
+            "enabled": True
+        },
+        "weather": {
+            "enabled": False,
+            "service": None
+        },
+        "service_quality": {
+            "enabled": True
+        },
+        "custom_providers": []
+    })
+    
+    # Feature weights (used as defaults)
+    feature_weights: Dict[str, float] = field(default_factory=lambda: {
+        "walking_time_to_origin": -0.4,
+        "walking_time_from_destination": -0.3,
+        "waiting_time": -0.4,
+        "in_vehicle_time": -0.2,
+        "cost": -0.1
+    })
+    
+    # Custom parameters for extensibility
+    custom_params: Dict[str, Any] = field(default_factory=dict)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a configuration value by key"""
+        return getattr(self, key, default)
+    
+    def __post_init__(self):
+        """Initialize nested configurations"""
+        # Ensure model is a dictionary
+        if not isinstance(self.model, dict):
+            self.model = {
+                "type": "default",
+                "parameters": {
+                    "max_walking_time_to_origin": 15.0,
+                    "max_walking_time_from_destination": 15.0,
+                    "max_waiting_time": 30.0,
+                    "max_in_vehicle_time": 60.0,
+                    "max_cost": 50.0,
+                    "feature_weights": {
+                        "walking_time_to_origin": -0.4,
+                        "walking_time_from_destination": -0.3,
+                        "waiting_time": -0.3,
+                        "in_vehicle_time": -0.2,
+                        "cost": -0.1
+                    }
+                }
+            }
+        
+        # Ensure model has type and parameters
+        if "type" not in self.model:
+            self.model["type"] = "default"
+        if "parameters" not in self.model:
+            self.model["parameters"] = {}
+            
+        # Set default parameters based on model type if not provided
+        model_type = self.model["type"]
+        if model_type == "default" and not self.model["parameters"]:
+            self.model["parameters"] = {
+                "max_walking_time_to_origin": 15.0,
+                "max_walking_time_from_destination": 15.0,
+                "max_waiting_time": 30.0,
+                "max_in_vehicle_time": 60.0,
+                "max_cost": 50.0,
+                "feature_weights": {
+                    "walking_time_to_origin": -0.4,
+                    "walking_time_from_destination": -0.3,
+                    "waiting_time": -0.3,
+                    "in_vehicle_time": -0.2,
+                    "cost": -0.1
+                }
+            }
+        elif model_type == "logit" and not self.model["parameters"]:
+            self.model["parameters"] = {
+                "default_coefficients": {
+                    "walking_time_to_origin": -2.0,
+                    "walking_time_from_destination": -1.5,
+                    "waiting_time": -2.5,
+                    "in_vehicle_time": -1.5,
+                    "cost": -2.0
+                },
+                "max_training_samples": 1000,
+                "logistic_params": {
+                    "solver": "lbfgs",
+                    "max_iter": 1000,
+                    "class_weight": "balanced"
+                }
+            }
+        elif model_type == "rl" and not self.model["parameters"]:
+            self.model["parameters"] = {
+                "alpha": 0.1,
+                "gamma": 0.9,
+                "epsilon": 0.2,
+                "min_epsilon": 0.05,
+                "epsilon_decay": 0.9999,
+                "num_bins": 10,
+                "memory_size": 1000,
+                "batch_size": 64
+            }
+        
+        # Ensure feature extractor config exists
+        if not isinstance(self.feature_extractor_config, dict):
+            self.feature_extractor_config = {
+                "feature_registry": None,
+                "enabled_features": None,
+                "normalization_overrides": {
+                    "walking_time_to_origin": 15.0,
+                    "walking_time_from_destination": 15.0,
+                    "waiting_time": 30.0,
+                    "in_vehicle_time": 60.0,
+                    "cost": 50.0
+                }
+            }
+        
+        # Ensure feature provider config exists
+        if not isinstance(self.feature_provider_config, dict):
+            self.feature_provider_config = {
+                "time_based": {
+                    "enabled": True,
+                    "holidays": []
+                },
+                "spatial": {
+                    "enabled": True,
+                    "urban_areas": {},
+                    "region_info": {}
+                },
+                "user_history": {
+                    "enabled": True
+                },
+                "weather": {
+                    "enabled": False,
+                    "service": None
+                },
+                "service_quality": {
+                    "enabled": True
+                },
+                "custom_providers": []
+            }
+    
+    def get_model_config(self) -> Dict[str, Any]:
+        """Get the model configuration in a format suitable for the ModelFactory"""
+        return {
+            "model_type": self.model["type"],
+            "parameters": self.model["parameters"],
+            "feature_extractor_config": self.feature_extractor_config
+        }
+    
+    def set_model_type(self, model_type: str) -> None:
+        """
+        Set the model type and update parameters with appropriate defaults.
+        
+        Args:
+            model_type: The model type (e.g., "default", "logit", "rl")
+        """
+        old_type = self.model.get("type", "default")
+        self.model["type"] = model_type
+        
+        # If changing model type and parameters are still for the old type,
+        # update with appropriate defaults
+        if old_type != model_type and self.model.get("parameters", {}):
+            self.__post_init__()
+    
+    def update_model_parameters(self, parameters: Dict[str, Any]) -> None:
+        """
+        Update model parameters.
+        
+        Args:
+            parameters: Dictionary of parameters to update
+        """
+        if "parameters" not in self.model:
+            self.model["parameters"] = {}
+            
+        self.model["parameters"].update(parameters)
+    
+    def update_feature_extractor_config(self, config: Dict[str, Any]) -> None:
+        """
+        Update feature extractor configuration.
+        
+        Args:
+            config: Dictionary of configuration parameters to update
+        """
+        self.feature_extractor_config.update(config)
+    
+    def enable_feature_provider(self, provider_name: str, config: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Enable a feature provider and optionally update its configuration.
+        
+        Args:
+            provider_name: Name of the provider
+            config: Configuration parameters for the provider
+        """
+        if provider_name not in self.feature_provider_config:
+            self.feature_provider_config[provider_name] = {"enabled": True}
+        else:
+            self.feature_provider_config[provider_name]["enabled"] = True
+            
+        if config:
+            self.feature_provider_config[provider_name].update(config)
+    
+    def disable_feature_provider(self, provider_name: str) -> None:
+        """
+        Disable a feature provider.
+        
+        Args:
+            provider_name: Name of the provider
+        """
+        if provider_name in self.feature_provider_config:
+            self.feature_provider_config[provider_name]["enabled"] = False
+    
+    def add_custom_feature_provider(self, name: str, class_path: str, args: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Add a custom feature provider configuration.
+        
+        Args:
+            name: Provider name
+            class_path: Full import path to provider class (e.g., "my_package.providers.MyProvider")
+            args: Arguments to pass to the provider constructor
+        """
+        if "custom_providers" not in self.feature_provider_config:
+            self.feature_provider_config["custom_providers"] = []
+            
+        provider_config = {
+            "name": name,
+            "class": class_path
+        }
+        
+        if args:
+            provider_config["args"] = args
+            
+        # Remove any existing provider with the same name
+        self.feature_provider_config["custom_providers"] = [
+            p for p in self.feature_provider_config["custom_providers"] 
+            if p.get("name") != name
+        ]
+        
+        # Add the new provider
+        self.feature_provider_config["custom_providers"].append(provider_config)
         
 @dataclass
 class SUMOConfig(DataclassYAMLMixin):
@@ -490,6 +784,7 @@ class ParameterSet(DataclassYAMLMixin):
     algorithm: AlgorithmConfig = field(default_factory=AlgorithmConfig)
     matching: MatchingConfig = field(default_factory=MatchingConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
+    user_acceptance: UserAcceptanceConfig = field(default_factory=UserAcceptanceConfig)
     replications: int = 1
     tags: List[str] = field(default_factory=list)
 
@@ -511,6 +806,8 @@ class ParameterSet(DataclassYAMLMixin):
             self.matching = MatchingConfig(**self.matching)
         if isinstance(self.network, dict):
             self.network = NetworkConfig(**self.network)
+        if isinstance(self.user_acceptance, dict):
+            self.user_acceptance = UserAcceptanceConfig(**self.user_acceptance)
 
 @dataclass
 class StudyConfig(DataclassYAMLMixin):
@@ -604,6 +901,7 @@ class StudyConfig(DataclassYAMLMixin):
             "algorithm": merged_config.get("algorithm", {}),
             "matching": merged_config.get("matching", {}),
             "network": merged_config.get("network", {}),
+            "user_acceptance": merged_config.get("user_acceptance", {}),
             "replications": merged_config.get("replications", 1),
             "tags": merged_config.get("tags", []),
         }

@@ -1,0 +1,28 @@
+{
+  "id": "U435",
+  "max_walking_time_to_origin": 2.689040846929562,
+  "max_walking_time_from_destination": 3.540038721983244,
+  "max_waiting_time": 10.949914687064878,
+  "max_in_vehicle_time": 25.137437920591452,
+  "max_cost": 38.80417298488504,
+  "max_acceptable_delay": 7.302198177791002,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 6.727461554135117,
+    "wait_time": -7.23854216864047,
+    "in_vehicle_time": 7.741026818793673,
+    "walking_time_from_destination": -6.229946204288319,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 43,
+  "historical_acceptance_rate": 0.7315346307159696,
+  "historical_ratings": [
+    3.8,
+    3.9,
+    3.8,
+    4.8,
+    3.4
+  ]
+}

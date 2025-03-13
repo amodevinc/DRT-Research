@@ -1,0 +1,28 @@
+{
+  "id": "U333",
+  "max_walking_time_to_origin": 4.951401514582399,
+  "max_walking_time_from_destination": 3.0784654218171514,
+  "max_waiting_time": 6.299737348997968,
+  "max_in_vehicle_time": 25.77572457593086,
+  "max_cost": 39.1774892910442,
+  "max_acceptable_delay": 5.783171532598723,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.4252324394871481,
+    "wait_time": 0.8595814908783325,
+    "in_vehicle_time": 0.9906684856147214,
+    "walking_time_from_destination": -0.4250175370059058,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 22,
+  "historical_acceptance_rate": 0.7800931270808161,
+  "historical_ratings": [
+    3.5,
+    3.4,
+    4.0,
+    3.9,
+    4.6
+  ]
+}

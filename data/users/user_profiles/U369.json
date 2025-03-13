@@ -1,0 +1,28 @@
+{
+  "id": "U369",
+  "max_walking_time_to_origin": 4.90326344590536,
+  "max_walking_time_from_destination": 5.377414217491044,
+  "max_waiting_time": 13.602240605540956,
+  "max_in_vehicle_time": 17.594383595801173,
+  "max_cost": 34.27426154711005,
+  "max_acceptable_delay": 8.78170308390434,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.07415230044748161,
+    "wait_time": 0.17144803172038955,
+    "in_vehicle_time": 0.7701393061288255,
+    "walking_time_from_destination": 0.13256496259826653,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 48,
+  "historical_acceptance_rate": 0.6570590620133658,
+  "historical_ratings": [
+    3.4,
+    4.1,
+    4.4,
+    3.1,
+    3.1
+  ]
+}

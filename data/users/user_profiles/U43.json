@@ -1,0 +1,28 @@
+{
+  "id": "U43",
+  "max_walking_time_to_origin": 4.316548341679892,
+  "max_walking_time_from_destination": 3.564130474548111,
+  "max_waiting_time": 11.51448365833465,
+  "max_in_vehicle_time": 15.09490558980597,
+  "max_cost": 32.22432647432188,
+  "max_acceptable_delay": 8.573931851575823,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.10362179684842607,
+    "wait_time": 0.032277112088829,
+    "in_vehicle_time": 1.3216403665355643,
+    "walking_time_from_destination": -0.45753927547281936,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 15,
+  "historical_acceptance_rate": 0.8932627948358032,
+  "historical_ratings": [
+    4.6,
+    3.1,
+    3.2,
+    3.9,
+    4.3
+  ]
+}

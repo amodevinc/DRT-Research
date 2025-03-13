@@ -1,0 +1,28 @@
+{
+  "id": "U235",
+  "max_walking_time_to_origin": 2.9804850604322146,
+  "max_walking_time_from_destination": 4.6948975262493775,
+  "max_waiting_time": 10.404225026775384,
+  "max_in_vehicle_time": 20.612162448264534,
+  "max_cost": 39.73305033670013,
+  "max_acceptable_delay": 9.778210886441979,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4044479235946873,
+    "wait_time": 0.8490029378590143,
+    "in_vehicle_time": -0.08311460188193222,
+    "walking_time_from_destination": -0.1703362595717694,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 48,
+  "historical_acceptance_rate": 0.6084212058148242,
+  "historical_ratings": [
+    3.3,
+    4.4,
+    4.8,
+    3.7,
+    3.4
+  ]
+}

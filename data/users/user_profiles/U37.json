@@ -1,0 +1,28 @@
+{
+  "id": "U37",
+  "max_walking_time_to_origin": 2.7693582077130934,
+  "max_walking_time_from_destination": 4.711813416819393,
+  "max_waiting_time": 11.090224798347595,
+  "max_in_vehicle_time": 34.97965956282469,
+  "max_cost": 34.02084990502145,
+  "max_acceptable_delay": 8.956672234329526,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.8022143626318763,
+    "wait_time": 0.7530831429436626,
+    "in_vehicle_time": 0.02055621849831349,
+    "walking_time_from_destination": -0.5758537240738524,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 14,
+  "historical_acceptance_rate": 0.5312985039163977,
+  "historical_ratings": [
+    3.4,
+    3.7,
+    3.3,
+    4.9,
+    3.4
+  ]
+}

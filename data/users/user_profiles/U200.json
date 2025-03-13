@@ -1,0 +1,28 @@
+{
+  "id": "U200",
+  "max_walking_time_to_origin": 4.908513677208974,
+  "max_walking_time_from_destination": 2.4619155546467617,
+  "max_waiting_time": 11.673625986106337,
+  "max_in_vehicle_time": 35.531273820788115,
+  "max_cost": 37.75918429749123,
+  "max_acceptable_delay": 6.9636405124777845,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 35,
+  "historical_acceptance_rate": 0.8121665236424946,
+  "historical_ratings": [
+    4.3,
+    3.0,
+    5.0,
+    4.1,
+    4.4
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U210",
+  "max_walking_time_to_origin": 3.061952042252724,
+  "max_walking_time_from_destination": 5.638545791127485,
+  "max_waiting_time": 9.698153218765773,
+  "max_in_vehicle_time": 25.393393555516784,
+  "max_cost": 34.00892324488385,
+  "max_acceptable_delay": 6.032417081016968,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 27,
+  "historical_acceptance_rate": 0.6952214768511162,
+  "historical_ratings": [
+    4.4,
+    3.8,
+    3.6,
+    3.2,
+    3.8
+  ]
+}

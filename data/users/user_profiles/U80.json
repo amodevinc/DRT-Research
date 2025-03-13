@@ -1,0 +1,28 @@
+{
+  "id": "U80",
+  "max_walking_time_to_origin": 2.9891500887600593,
+  "max_walking_time_from_destination": 2.1041700540125876,
+  "max_waiting_time": 10.726214836677626,
+  "max_in_vehicle_time": 16.114283696343552,
+  "max_cost": 30.613362464007835,
+  "max_acceptable_delay": 9.425283822357645,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.020428589470436204,
+    "wait_time": 0.2016981027657698,
+    "in_vehicle_time": 0.6296417754456441,
+    "walking_time_from_destination": 0.18908871125902238,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 12,
+  "historical_acceptance_rate": 0.6329281954106328,
+  "historical_ratings": [
+    4.4,
+    3.5,
+    3.7,
+    3.6,
+    4.4
+  ]
+}

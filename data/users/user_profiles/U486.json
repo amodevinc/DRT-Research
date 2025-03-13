@@ -1,0 +1,28 @@
+{
+  "id": "U486",
+  "max_walking_time_to_origin": 3.2306024252783914,
+  "max_walking_time_from_destination": 2.6501390958064848,
+  "max_waiting_time": 7.266093314593765,
+  "max_in_vehicle_time": 38.41690474349259,
+  "max_cost": 33.34139168930015,
+  "max_acceptable_delay": 5.066030154184908,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.32860344068168124,
+    "wait_time": 0.8886025828879386,
+    "in_vehicle_time": -0.006892017825245946,
+    "walking_time_from_destination": -0.2103140057443739,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 25,
+  "historical_acceptance_rate": 0.7407910965814554,
+  "historical_ratings": [
+    4.4,
+    4.0,
+    3.6,
+    4.3,
+    4.7
+  ]
+}

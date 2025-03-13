@@ -1,0 +1,28 @@
+{
+  "id": "U124",
+  "max_walking_time_to_origin": 3.2589597880977723,
+  "max_walking_time_from_destination": 3.496857928754424,
+  "max_waiting_time": 7.139762572674197,
+  "max_in_vehicle_time": 27.047921236874373,
+  "max_cost": 33.41381416909735,
+  "max_acceptable_delay": 7.637208417625214,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": -2.486151697644942,
+    "wait_time": 3.133492453204957,
+    "in_vehicle_time": 2.3033710758406323,
+    "walking_time_from_destination": -1.9507118314006473,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 49,
+  "historical_acceptance_rate": 0.7314874369126391,
+  "historical_ratings": [
+    3.2,
+    3.6,
+    4.2,
+    3.1,
+    3.4
+  ]
+}

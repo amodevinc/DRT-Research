@@ -1,0 +1,28 @@
+{
+  "id": "U7",
+  "max_walking_time_to_origin": 1.4708778309787522,
+  "max_walking_time_from_destination": 2.758817951491106,
+  "max_waiting_time": 6.7316917693637475,
+  "max_in_vehicle_time": 28.09989244920031,
+  "max_cost": 39.91942367814782,
+  "max_acceptable_delay": 8.218652816284662,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.7510593821276591,
+    "wait_time": 0.7152049993440894,
+    "in_vehicle_time": 0.014768489915050217,
+    "walking_time_from_destination": -0.48103287138679873,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 31,
+  "historical_acceptance_rate": 0.8627626323534541,
+  "historical_ratings": [
+    4.3,
+    4.3,
+    3.3,
+    4.1,
+    3.7
+  ]
+}

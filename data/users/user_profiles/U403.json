@@ -1,0 +1,28 @@
+{
+  "id": "U403",
+  "max_walking_time_to_origin": 1.3457135227822439,
+  "max_walking_time_from_destination": 2.0336424206470225,
+  "max_waiting_time": 12.588378094505304,
+  "max_in_vehicle_time": 20.109310875937794,
+  "max_cost": 26.33558094119316,
+  "max_acceptable_delay": 5.307951407349461,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 3.262239156315986,
+    "wait_time": -6.514495794291485,
+    "in_vehicle_time": 4.794817428458086,
+    "walking_time_from_destination": -0.5425607904825865,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 11,
+  "historical_acceptance_rate": 0.9441744000011045,
+  "historical_ratings": [
+    5.0,
+    4.6,
+    4.0,
+    4.0,
+    3.3
+  ]
+}

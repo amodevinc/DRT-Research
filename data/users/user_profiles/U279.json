@@ -1,0 +1,28 @@
+{
+  "id": "U279",
+  "max_walking_time_to_origin": 3.517459930732413,
+  "max_walking_time_from_destination": 2.8230720103306908,
+  "max_waiting_time": 13.243254978244416,
+  "max_in_vehicle_time": 20.198703322551797,
+  "max_cost": 38.29493182676576,
+  "max_acceptable_delay": 9.024810466947304,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 3.6145420953563794,
+    "wait_time": -3.3625896810343963,
+    "in_vehicle_time": 4.238386397970622,
+    "walking_time_from_destination": -3.4903388122926056,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 22,
+  "historical_acceptance_rate": 0.8053321554283059,
+  "historical_ratings": [
+    3.5,
+    3.0,
+    4.9,
+    3.2,
+    4.7
+  ]
+}

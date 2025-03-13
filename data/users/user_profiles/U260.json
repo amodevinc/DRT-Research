@@ -1,0 +1,28 @@
+{
+  "id": "U260",
+  "max_walking_time_to_origin": 4.789018723881085,
+  "max_walking_time_from_destination": 2.282501604061866,
+  "max_waiting_time": 12.564685177432073,
+  "max_in_vehicle_time": 32.66893367317159,
+  "max_cost": 29.80816238392852,
+  "max_acceptable_delay": 6.423627410099751,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 21,
+  "historical_acceptance_rate": 0.5696627160575228,
+  "historical_ratings": [
+    3.4,
+    3.1,
+    4.8,
+    3.7,
+    4.6
+  ]
+}

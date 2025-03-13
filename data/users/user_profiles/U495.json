@@ -1,0 +1,28 @@
+{
+  "id": "U495",
+  "max_walking_time_to_origin": 5.7261005467069985,
+  "max_walking_time_from_destination": 5.426401557372023,
+  "max_waiting_time": 12.990078659960421,
+  "max_in_vehicle_time": 20.194455025695618,
+  "max_cost": 26.54778843028457,
+  "max_acceptable_delay": 6.482892669818684,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.30709018341344463,
+    "wait_time": -0.3964320348604679,
+    "in_vehicle_time": 3.1879447192915924,
+    "walking_time_from_destination": -1.48442250101768,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 47,
+  "historical_acceptance_rate": 0.7950577128526551,
+  "historical_ratings": [
+    3.7,
+    4.3,
+    4.9,
+    3.5,
+    4.4
+  ]
+}

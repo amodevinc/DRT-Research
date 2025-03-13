@@ -12,7 +12,7 @@ from drt_sim.algorithms.matching.assignment.insertion import InsertionAssigner
 from drt_sim.algorithms.matching.assignment.auction import AuctionAssigner
 from drt_sim.core.simulation.context import SimulationContext
 
-from drt_sim.core.user.manager import UserProfileManager
+from drt_sim.core.user.user_profile_manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.stop import StopAssignment
 import logging

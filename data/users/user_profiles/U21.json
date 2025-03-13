@@ -1,0 +1,28 @@
+{
+  "id": "U21",
+  "max_walking_time_to_origin": 3.4664113474262472,
+  "max_walking_time_from_destination": 1.6724450047473494,
+  "max_waiting_time": 13.882078175248878,
+  "max_in_vehicle_time": 15.427382757625589,
+  "max_cost": 32.74074306635583,
+  "max_acceptable_delay": 9.944443148284664,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.12227738979674091,
+    "wait_time": -0.2518176567525631,
+    "in_vehicle_time": 0.8097049943920122,
+    "walking_time_from_destination": 0.5643900521572918,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 31,
+  "historical_acceptance_rate": 0.9341583324886771,
+  "historical_ratings": [
+    3.3,
+    3.4,
+    3.5,
+    4.1,
+    4.2
+  ]
+}

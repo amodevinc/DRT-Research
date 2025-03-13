@@ -1,0 +1,22 @@
+{
+  "id": "U75",
+  "max_walking_time_to_origin": 4.0375599471252785,
+  "max_walking_time_from_destination": 3.937216590969326,
+  "max_waiting_time": 11.511113621474454,
+  "max_in_vehicle_time": 25.824067545287026,
+  "max_cost": 22.659706778874117,
+  "max_acceptable_delay": 5.016323847656685,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -1.4892564415024507,
+    "wait_time": 0.39868225978047583,
+    "in_vehicle_time": 1.684106264212515,
+    "walking_time_from_destination": 0.4064679175094599,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.7578002644784334,
+  "historical_ratings": []
+}

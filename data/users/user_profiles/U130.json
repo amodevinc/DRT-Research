@@ -1,0 +1,28 @@
+{
+  "id": "U130",
+  "max_walking_time_to_origin": 3.872963277402321,
+  "max_walking_time_from_destination": 2.516915204638248,
+  "max_waiting_time": 11.871438776028057,
+  "max_in_vehicle_time": 16.713453421474654,
+  "max_cost": 23.27255681213249,
+  "max_acceptable_delay": 9.062587465361291,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.4844786727328869,
+    "wait_time": -1.0981580208390354,
+    "in_vehicle_time": 3.6783736088890127,
+    "walking_time_from_destination": -2.0646942607828644,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 24,
+  "historical_acceptance_rate": 0.7256455655330732,
+  "historical_ratings": [
+    3.2,
+    4.2,
+    3.0,
+    4.5,
+    4.0
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U5",
+  "max_walking_time_to_origin": 5.6141794924145625,
+  "max_walking_time_from_destination": 4.057069970774426,
+  "max_waiting_time": 11.662745248419881,
+  "max_in_vehicle_time": 25.112085114072578,
+  "max_cost": 33.5696711477058,
+  "max_acceptable_delay": 9.701772770097344,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.39146763088555087,
+    "wait_time": -0.525591200921616,
+    "in_vehicle_time": 2.408823341944958,
+    "walking_time_from_destination": -1.2746997719088928,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 23,
+  "historical_acceptance_rate": 0.8494461048920361,
+  "historical_ratings": [
+    4.7,
+    4.0,
+    3.8,
+    3.8,
+    4.6
+  ]
+}

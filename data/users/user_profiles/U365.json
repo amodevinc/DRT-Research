@@ -1,0 +1,28 @@
+{
+  "id": "U365",
+  "max_walking_time_to_origin": 4.733813041110466,
+  "max_walking_time_from_destination": 4.932542558786988,
+  "max_waiting_time": 11.619375177849435,
+  "max_in_vehicle_time": 32.74208904319275,
+  "max_cost": 32.152993032068686,
+  "max_acceptable_delay": 6.167120393177742,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 14,
+  "historical_acceptance_rate": 0.7983897244412121,
+  "historical_ratings": [
+    3.0,
+    3.1,
+    4.2,
+    3.7,
+    3.1
+  ]
+}

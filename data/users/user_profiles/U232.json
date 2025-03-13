@@ -1,0 +1,28 @@
+{
+  "id": "U232",
+  "max_walking_time_to_origin": 5.186977285324705,
+  "max_walking_time_from_destination": 5.075023757199274,
+  "max_waiting_time": 8.29479558337427,
+  "max_in_vehicle_time": 29.543205572107016,
+  "max_cost": 38.974299225369776,
+  "max_acceptable_delay": 8.311866893030128,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 40,
+  "historical_acceptance_rate": 0.7574893934012716,
+  "historical_ratings": [
+    4.8,
+    3.9,
+    4.2,
+    4.8,
+    4.8
+  ]
+}

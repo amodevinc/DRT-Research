@@ -1,0 +1,28 @@
+{
+  "id": "U381",
+  "max_walking_time_to_origin": 2.3326460778470985,
+  "max_walking_time_from_destination": 2.463094327633025,
+  "max_waiting_time": 14.663255202510886,
+  "max_in_vehicle_time": 36.656832506645316,
+  "max_cost": 27.319426148073703,
+  "max_acceptable_delay": 5.494892688016418,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 5,
+  "historical_acceptance_rate": 0.5270401412732328,
+  "historical_ratings": [
+    3.5,
+    4.2,
+    4.1,
+    4.3,
+    4.6
+  ]
+}

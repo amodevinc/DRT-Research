@@ -1,0 +1,28 @@
+{
+  "id": "U295",
+  "max_walking_time_to_origin": 2.848371620616767,
+  "max_walking_time_from_destination": 3.401176264390279,
+  "max_waiting_time": 12.125535245402276,
+  "max_in_vehicle_time": 21.8025336510901,
+  "max_cost": 29.285372865742513,
+  "max_acceptable_delay": 7.705023403563956,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.5923499401760896,
+    "wait_time": -0.7405935982214941,
+    "in_vehicle_time": 1.3149721998660993,
+    "walking_time_from_destination": -0.1667285418206947,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.7358369441052739,
+  "historical_ratings": [
+    4.0,
+    4.1,
+    4.8,
+    3.6,
+    3.7
+  ]
+}

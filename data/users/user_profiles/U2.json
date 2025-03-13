@@ -1,0 +1,28 @@
+{
+  "id": "U2",
+  "max_walking_time_to_origin": 5.9538610774542065,
+  "max_walking_time_from_destination": 5.813433894314695,
+  "max_waiting_time": 10.1479908905238,
+  "max_in_vehicle_time": 15.601332945087721,
+  "max_cost": 39.10018717787596,
+  "max_acceptable_delay": 6.03975395879476,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": -0.013798002079834051,
+    "wait_time": -0.026281167796194677,
+    "in_vehicle_time": 0.6842579237139407,
+    "walking_time_from_destination": 0.35582124616208816,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 12,
+  "historical_acceptance_rate": 0.7769774289515212,
+  "historical_ratings": [
+    3.5,
+    4.5,
+    3.7,
+    4.0,
+    3.9
+  ]
+}

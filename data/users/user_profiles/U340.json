@@ -1,0 +1,27 @@
+{
+  "id": "U340",
+  "max_walking_time_to_origin": 2.882516132079021,
+  "max_walking_time_from_destination": 3.912036109117421,
+  "max_waiting_time": 12.401824471497697,
+  "max_in_vehicle_time": 29.867641825286533,
+  "max_cost": 25.422131632166767,
+  "max_acceptable_delay": 6.267157307074802,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.9762763372948974,
+    "wait_time": -0.003741126943318664,
+    "in_vehicle_time": -0.40219951800097914,
+    "walking_time_from_destination": 0.42966430764940045,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 4,
+  "historical_acceptance_rate": 0.8530935110209357,
+  "historical_ratings": [
+    3.8,
+    3.8,
+    4.6,
+    3.2
+  ]
+}

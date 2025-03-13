@@ -1,0 +1,28 @@
+{
+  "id": "U433",
+  "max_walking_time_to_origin": 5.894226309301782,
+  "max_walking_time_from_destination": 1.474863114909631,
+  "max_waiting_time": 8.215116486211716,
+  "max_in_vehicle_time": 26.135606896663496,
+  "max_cost": 33.7737122914522,
+  "max_acceptable_delay": 9.508640096223454,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.10157258300873302,
+    "wait_time": 0.3663584824316772,
+    "in_vehicle_time": 0.028181928558457525,
+    "walking_time_from_destination": 0.5038870060011323,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 22,
+  "historical_acceptance_rate": 0.9325512876465173,
+  "historical_ratings": [
+    3.8,
+    4.4,
+    5.0,
+    4.4,
+    3.5
+  ]
+}

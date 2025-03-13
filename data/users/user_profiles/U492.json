@@ -1,0 +1,28 @@
+{
+  "id": "U492",
+  "max_walking_time_to_origin": 2.056208355639046,
+  "max_walking_time_from_destination": 3.517431001986364,
+  "max_waiting_time": 14.69888904403767,
+  "max_in_vehicle_time": 34.68156760544347,
+  "max_cost": 30.806269544555093,
+  "max_acceptable_delay": 5.091889033712176,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 49,
+  "historical_acceptance_rate": 0.8072676998756596,
+  "historical_ratings": [
+    5.0,
+    3.5,
+    4.2,
+    4.4,
+    4.2
+  ]
+}

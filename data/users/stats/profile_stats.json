@@ -1,0 +1,12 @@
+{
+  "total_profiles": 500,
+  "service_preferences": {
+    "reliability": 357,
+    "speed": 143
+  },
+  "avg_historical_trips": 25.818,
+  "avg_max_walking_time_to_origin": 3.598501021764916,
+  "avg_max_walking_time_from_destination": 3.8128737657819323,
+  "avg_max_waiting_time": 10.297897277677208,
+  "avg_max_in_vehicle_time": 27.670318953540523
+}

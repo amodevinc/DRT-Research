@@ -1,0 +1,28 @@
+{
+  "id": "U39",
+  "max_walking_time_to_origin": 5.425472248017654,
+  "max_walking_time_from_destination": 3.2594515812974736,
+  "max_waiting_time": 5.453468526656555,
+  "max_in_vehicle_time": 18.07942813680347,
+  "max_cost": 22.105753402914402,
+  "max_acceptable_delay": 5.586944383295245,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": -1.0665454478849137,
+    "wait_time": 1.6608897453642395,
+    "in_vehicle_time": 1.6497172268829376,
+    "walking_time_from_destination": -1.2440615243622635,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 10,
+  "historical_acceptance_rate": 0.7619765353940418,
+  "historical_ratings": [
+    4.7,
+    3.0,
+    3.4,
+    4.2,
+    4.7
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "U159",
+  "max_walking_time_to_origin": 4.478458791496672,
+  "max_walking_time_from_destination": 5.865400857017194,
+  "max_waiting_time": 11.28642987631991,
+  "max_in_vehicle_time": 15.9845750891655,
+  "max_cost": 26.6704168990039,
+  "max_acceptable_delay": 6.713131911704455,
+  "service_preference": "speed",
+  "weights": {
+    "walking_time_to_origin": 0.29393671553275363,
+    "wait_time": 0.047287312234713774,
+    "in_vehicle_time": 0.7825215854199269,
+    "walking_time_from_destination": -0.1237456131873942,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 44,
+  "historical_acceptance_rate": 0.6525965531066292,
+  "historical_ratings": [
+    4.6,
+    3.9,
+    3.4,
+    3.9,
+    4.0
+  ]
+}

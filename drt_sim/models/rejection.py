@@ -1,13 +1,30 @@
+'''
+Rejection models for the DRT system.
+
+This module provides models for handling request rejections in the DRT system.
+'''
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, auto
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 class RejectionReason(Enum):
-    """Enum for request rejection reasons"""
-    NO_VEHICLES_AVAILABLE = "no_vehicles_available"
-    NO_FEASIBLE_INSERTION = "no_feasible_insertion"
+    """
+    Reasons for rejecting a transportation request.
+    """
+    UNKNOWN = "unknown"
+    VALIDATION_FAILED = "validation_failed"
+    NO_VEHICLE_AVAILABLE = "no_vehicle_available"
+    CAPACITY_EXCEEDED = "capacity_exceeded"
+    SERVICE_AREA_VIOLATION = "service_area_violation"
+    TIME_CONSTRAINT_VIOLATION = "time_constraint_violation"
+    SYSTEM_OVERLOAD = "system_overload"
+    USER_REJECTED = "user_rejected"
+    OPTIMIZATION_FAILED = "optimization_failed"
     TECHNICAL_ERROR = "technical_error"
+    DUPLICATE_REQUEST = "duplicate_request"
+    INVALID_PARAMETERS = "invalid_parameters"
+    SERVICE_UNAVAILABLE = "service_unavailable"
     
     # Time-based constraints
     TIME_WINDOW_CONSTRAINT = "time_window_constraint"
@@ -36,52 +53,44 @@ class RejectionReason(Enum):
 
 @dataclass
 class RejectionMetadata:
-    """Metadata for request rejection"""
+    """
+    Metadata for a rejected request.
+    
+    This class stores information about why a request was rejected,
+    when it was rejected, and any additional details.
+    """
     reason: RejectionReason
-    timestamp: str
-    stage: str
-    details: Dict[str, Any]
+    details: str
+    timestamp: datetime
+    additional_data: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
-        """Validate and process rejection metadata"""
-        if not isinstance(self.reason, RejectionReason):
-            raise ValueError("reason must be a RejectionReason enum")
-        if not isinstance(self.timestamp, str):
-            raise ValueError("timestamp must be a string")
-        if not isinstance(self.stage, str):
-            raise ValueError("stage must be a string")
-        if not isinstance(self.details, dict):
-            raise ValueError("details must be a dictionary")
-            
-        # Ensure timestamp is valid ISO format
-        try:
-            datetime.fromisoformat(self.timestamp)
-        except ValueError:
-            raise ValueError("timestamp must be in ISO format")
-            
-        # Add standard fields to details if not present
-        if "evaluated_vehicles" not in self.details:
-            self.details["evaluated_vehicles"] = 0
-        if "rejection_counts" not in self.details:
-            self.details["rejection_counts"] = {}
-        if "constraint_violations" not in self.details:
-            self.details["constraint_violations"] = {}
+        """Ensure reason is a RejectionReason enum."""
+        if isinstance(self.reason, str):
+            try:
+                self.reason = RejectionReason(self.reason)
+            except ValueError:
+                self.reason = RejectionReason.UNKNOWN
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert metadata to dictionary format"""
+        """Convert to dictionary representation."""
         return {
             "reason": self.reason.value,
-            "timestamp": self.timestamp,
-            "stage": self.stage,
-            "details": self.details
+            "details": self.details,
+            "timestamp": self.timestamp.isoformat(),
+            "additional_data": self.additional_data
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RejectionMetadata':
-        """Create metadata from dictionary"""
+        """Create from dictionary representation."""
+        timestamp = data.get("timestamp")
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+        
         return cls(
-            reason=RejectionReason(data["reason"]),
-            timestamp=data["timestamp"],
-            stage=data["stage"],
-            details=data["details"]
+            reason=data.get("reason", RejectionReason.UNKNOWN),
+            details=data.get("details", ""),
+            timestamp=timestamp or datetime.now(),
+            additional_data=data.get("additional_data")
         ) 

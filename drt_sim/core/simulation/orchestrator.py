@@ -13,7 +13,8 @@ from drt_sim.models.state import SimulationState
 from drt_sim.core.state.manager import StateManager
 from drt_sim.core.events.manager import EventManager
 from drt_sim.core.demand.manager import DemandManager
-from drt_sim.core.user.manager import UserProfileManager
+from drt_sim.core.user.user_profile_manager import UserProfileManager
+from drt_sim.core.user.user_acceptance_manager import UserAcceptanceManager
 from drt_sim.config.config import ParameterSet, SimulationConfig
 from drt_sim.handlers.request_handler import RequestHandler
 from drt_sim.handlers.vehicle_handler import VehicleHandler
@@ -71,6 +72,7 @@ class SimulationOrchestrator:
         self.demand_manager: Optional[DemandManager] = None
         self.network_manager: Optional[NetworkManager] = None
         self.user_profile_manager: Optional[UserProfileManager] = None
+        self.user_acceptance_manager: Optional[UserAcceptanceManager] = None
         self.route_service: Optional[RouteService] = None
         self.visualization_manager: Optional[VisualizationManager] = None
         self.sumo_integration: Optional[SUMOIntegration] = None
@@ -117,7 +119,13 @@ class SimulationOrchestrator:
             self.network_manager = NetworkManager(config=self.cfg.network)
 
             # Initialize user profile manager
-            self.user_profile_manager = UserProfileManager()
+            self.user_profile_manager = UserProfileManager(self.cfg.user_acceptance)
+
+            # Initialize user acceptance manager
+            self.user_acceptance_manager = UserAcceptanceManager(
+                config=self.cfg.user_acceptance,
+                user_profile_manager=self.user_profile_manager
+            )
 
             # Initialize SUMO integration if enabled
             if self.sim_cfg.sumo.enabled:
@@ -160,48 +168,73 @@ class SimulationOrchestrator:
             raise
             
     def _initialize_handlers(self) -> None:
-        """Initialize event handlers."""
+        """Initialize all event handlers."""
+        logger.info("Initializing handlers")
+        
+        # Initialize user profile manager
+        self.user_profile_manager = UserProfileManager(self.cfg.user_acceptance)
+        
+        # Initialize user acceptance manager
+        self.user_acceptance_manager = UserAcceptanceManager(
+            config=self.cfg.user_acceptance,
+            user_profile_manager=self.user_profile_manager
+        )
+        
+        # Initialize route service
+        self.route_service = RouteService(
+            self.network_manager,
+            self.context,
+            self.state_manager
+        )
+        
+        # Initialize request handler
         self.request_handler = RequestHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager,
-            network_manager=self.network_manager
+            self.cfg,
+            self.context,
+            self.state_manager,
+            self.network_manager
         )
         
+        # Initialize vehicle handler
         self.vehicle_handler = VehicleHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager,
+            self.cfg,
+            self.context,
+            self.state_manager,
         )
         
+        # Initialize passenger handler
         self.passenger_handler = PassengerHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager,
+            self.cfg,
+            self.context,
+            self.state_manager,
+            self.network_manager
         )
         
+        # Initialize route handler
         self.route_handler = RouteHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager,
-            network_manager=self.network_manager
+            self.cfg,
+            self.context,
+            self.state_manager,
+            self.network_manager
         )
         
+        # Initialize stop handler
         self.stop_handler = StopHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager,
-            network_manager=self.network_manager,
-            visualization_manager=self.visualization_manager
+            self.cfg,
+            self.context,
+            self.state_manager,
+            self.network_manager
         )
         
+        # Initialize matching handler
         self.matching_handler = MatchingHandler(
-            config=self.cfg,
-            context=self.context,
-            state_manager=self.state_manager,
-            network_manager=self.network_manager,
-            user_profile_manager=self.user_profile_manager,
-            route_service=self.route_service
+            self.cfg,
+            self.context,
+            self.state_manager,
+            self.network_manager,
+            self.user_profile_manager,
+            self.route_service,
+            self.user_acceptance_manager
         )
 
     def _register_handlers(self) -> None:

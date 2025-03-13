@@ -15,9 +15,11 @@ from drt_sim.algorithms.base_interfaces.matching_base import (
     MatchingStrategy, Assignment
 )
 from drt_sim.algorithms.optimization.global_optimizer import GlobalSystemOptimizer
-from drt_sim.core.user.manager import UserProfileManager
+from drt_sim.core.user.user_profile_manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.rejection import RejectionReason, RejectionMetadata
+from drt_sim.core.user.user_acceptance_manager import UserAcceptanceManager
+from drt_sim.core.monitoring.types.metrics import MetricName
 import logging
 import traceback
 logger = logging.getLogger(__name__)
@@ -32,7 +34,8 @@ class MatchingHandler:
         state_manager: StateManager,
         network_manager: NetworkManager,
         user_profile_manager: UserProfileManager,
-        route_service: RouteService
+        route_service: RouteService,
+        user_acceptance_manager: UserAcceptanceManager
     ):
         self.config = config
         self.context = context
@@ -40,6 +43,7 @@ class MatchingHandler:
         self.network_manager = network_manager
         self.user_profile_manager = user_profile_manager
         self.route_service = route_service
+        self.user_acceptance_manager = user_acceptance_manager
         # Initialize matching strategy
         self.matching_strategy = self._initialize_matching_strategy()
         
@@ -57,7 +61,10 @@ class MatchingHandler:
             'successful_matches': 0,
             'failed_matches': 0,
             'average_matching_time': 0.0,
-            'average_waiting_time': 0.0
+            'average_waiting_time': 0.0,
+            'user_accepted_matches': 0,
+            'user_rejected_matches': 0,
+            'user_acceptance_rate': 0.0
         }
         
         # Lock for synchronizing vehicle assignments
@@ -182,17 +189,127 @@ class MatchingHandler:
     async def _process_assignment(self, assignment: Assignment) -> None:
         try:
             """Process successful assignments."""
+            # Get the request
+            request = self.state_manager.request_worker.get_request(assignment.request_id)
+            if not request:
+                raise ValueError(f"Request {assignment.request_id} not found")
+            
+            # Get the vehicle
+            vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
+            if not vehicle:
+                raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
+            
+            # Calculate proposed pickup time and travel time
+            proposed_pickup_time = None
+            proposed_travel_time = None
+            cost = 0.0
+            service_attributes = {}
+            
+            # Extract pickup and dropoff times from the route
+            for stop in assignment.route.stops:
+                if assignment.request_id in stop.pickup_passengers:
+                    proposed_pickup_time = stop.estimated_arrival_time
+                    service_attributes["pickup_location"] = stop.location
+                    service_attributes["pickup_stop_id"] = stop.stop_id
+                
+                if assignment.request_id in stop.dropoff_passengers:
+                    dropoff_time = stop.estimated_arrival_time
+                    if proposed_pickup_time:
+                        proposed_travel_time = dropoff_time - proposed_pickup_time
+                    service_attributes["dropoff_location"] = stop.location
+                    service_attributes["dropoff_stop_id"] = stop.stop_id
+            
+            # Add additional service attributes
+            service_attributes["vehicle_id"] = vehicle.id
+            service_attributes["vehicle_type"] = vehicle.vehicle_type
+            service_attributes["route_id"] = assignment.route.id
+            service_attributes["request_time"] = request.request_time
+            service_attributes["waiting_time"] = (proposed_pickup_time - request.request_time).total_seconds() / 60 if proposed_pickup_time else 0
+            service_attributes["travel_time"] = proposed_travel_time.total_seconds() / 60 if proposed_travel_time else 0
+            service_attributes["detour_ratio"] = assignment.detour_ratio if hasattr(assignment, "detour_ratio") else 0.0
+            service_attributes["cost"] = cost
+            
+            # Check if user will accept this assignment
+            user_accepted, acceptance_probability = False, 0.0
+            if proposed_pickup_time and proposed_travel_time:
+                user_accepted, acceptance_probability = self.user_acceptance_manager.decide_acceptance(
+                    request=request,
+                    proposed_pickup_time=proposed_pickup_time,
+                    proposed_travel_time=proposed_travel_time,
+                    cost=cost,
+                    service_attributes=service_attributes
+                )
+                
+                # Log user acceptance metrics
+                self.context.metrics_collector.log(
+                    MetricName.USER_ACCEPTANCE_PROBABILITY,
+                    acceptance_probability,
+                    self.context.current_time,
+                    {
+                        'request_id': request.id,
+                        'user_id': getattr(request, "user_id", "unknown"),
+                        'vehicle_id': vehicle.id,
+                        'waiting_time': service_attributes["waiting_time"],
+                        'travel_time': service_attributes["travel_time"],
+                        'accepted': user_accepted
+                    }
+                )
+                
+                # Update matching metrics
+                if user_accepted:
+                    self.matching_metrics['user_accepted_matches'] += 1
+                else:
+                    self.matching_metrics['user_rejected_matches'] += 1
+                
+                total_user_decisions = (
+                    self.matching_metrics['user_accepted_matches'] + 
+                    self.matching_metrics['user_rejected_matches']
+                )
+                if total_user_decisions > 0:
+                    self.matching_metrics['user_acceptance_rate'] = (
+                        self.matching_metrics['user_accepted_matches'] / total_user_decisions
+                    )
+            
+            # If user rejected, handle rejection
+            if not user_accepted:
+                rejection_metadata = RejectionMetadata(
+                    reason=RejectionReason.USER_REJECTED,
+                    details="User rejected the proposed service",
+                    timestamp=self.context.current_time,
+                    additional_data={
+                        "acceptance_probability": acceptance_probability,
+                        "proposed_pickup_time": proposed_pickup_time.isoformat() if proposed_pickup_time else None,
+                        "proposed_travel_time": proposed_travel_time.total_seconds() if proposed_travel_time else None,
+                        "service_attributes": service_attributes
+                    }
+                )
+                
+                # Update the user acceptance model
+                self.user_acceptance_manager.update_model(
+                    request=request,
+                    accepted=False,
+                    service_attributes=service_attributes
+                )
+                
+                await self._handle_matching_failed(request, rejection_metadata)
+                return
+            
+            # User accepted, proceed with assignment
+            
             # 1. Update request status
             self.state_manager.request_worker.update_request_status(
                 assignment.request_id, 
                 RequestStatus.ASSIGNED
             )
             
+            # Update the user acceptance model
+            self.user_acceptance_manager.update_model(
+                request=request,
+                accepted=True,
+                service_attributes=service_attributes
+            )
+            
             # 2. Update vehicle state immediately
-            vehicle = self.state_manager.vehicle_worker.get_vehicle(assignment.vehicle_id)
-            if not vehicle:
-                raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
-                
             # Add and update route with proper status
             route_exists = bool(self.state_manager.route_worker.get_route(assignment.route.id))
             if not route_exists:
@@ -310,8 +427,6 @@ class MatchingHandler:
             if not stop_assignment:
                 raise ValueError(f"Stop assignment {assignment.stop_assignment_id} not found")
             
-            request = self.state_manager.request_worker.get_request(stop_assignment.request_id)
-
             passenger_journey_event = Event(
                 event_type=EventType.START_PASSENGER_JOURNEY,
                 priority=EventPriority.HIGH,

@@ -1,0 +1,28 @@
+{
+  "id": "U431",
+  "max_walking_time_to_origin": 1.405243104883883,
+  "max_walking_time_from_destination": 2.7008450052164434,
+  "max_waiting_time": 9.690791486251172,
+  "max_in_vehicle_time": 20.760002077572715,
+  "max_cost": 26.644041307851978,
+  "max_acceptable_delay": 9.287507768382511,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.6650009031181683,
+    "wait_time": 0.4886557833005303,
+    "in_vehicle_time": 0.05611733259182578,
+    "walking_time_from_destination": -0.20977401901052428,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 32,
+  "historical_acceptance_rate": 0.8787782448590348,
+  "historical_ratings": [
+    3.8,
+    4.4,
+    4.0,
+    3.7,
+    3.5
+  ]
+}

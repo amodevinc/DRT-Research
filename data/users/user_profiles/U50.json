@@ -1,0 +1,28 @@
+{
+  "id": "U50",
+  "max_walking_time_to_origin": 2.8154170905231157,
+  "max_walking_time_from_destination": 3.7580802660069623,
+  "max_waiting_time": 11.456784807280606,
+  "max_in_vehicle_time": 30.837427670349797,
+  "max_cost": 21.739394224429187,
+  "max_acceptable_delay": 5.158882542738821,
+  "service_preference": "reliability",
+  "weights": {
+    "walking_time_to_origin": 0.4,
+    "wait_time": 0.3,
+    "in_vehicle_time": 0.2,
+    "walking_time_from_destination": 0.1,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "historical_trips": 49,
+  "historical_acceptance_rate": 0.8653330148492686,
+  "historical_ratings": [
+    3.0,
+    4.4,
+    3.9,
+    4.3,
+    4.7
+  ]
+}
