@@ -1,28 +1,49 @@
 {
   "id": "U123",
-  "max_walking_time_to_origin": 3.4583814510402897,
-  "max_walking_time_from_destination": 4.247707128187928,
-  "max_waiting_time": 8.795645100906444,
-  "max_in_vehicle_time": 20.444309007068355,
-  "max_cost": 33.254112012383395,
-  "max_acceptable_delay": 7.506674723366979,
-  "service_preference": "speed",
-  "weights": {
-    "walking_time_to_origin": 0.8021695909685892,
-    "wait_time": 0.06017910182214903,
-    "in_vehicle_time": 0.06345603690904957,
-    "walking_time_from_destination": 0.07419527030021211,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": 0.053455124,
+    "wait_time": 0.004010226,
+    "in_vehicle_time": 0.004228595,
+    "walking_time_from_destination": 0.004944238,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
-  "historical_trips": 18,
-  "historical_acceptance_rate": 0.6848683445520851,
-  "historical_ratings": [
-    4.5,
-    3.3,
-    3.5,
-    4.9,
-    4.3
-  ]
+  "weights": {
+    "walking_time_to_origin": 0.053455124,
+    "wait_time": 0.004010226,
+    "in_vehicle_time": 0.004228595,
+    "walking_time_from_destination": 0.004944238,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.479878",
+      "weights": {
+        "walking_time_to_origin": 0.053455124,
+        "wait_time": 0.004010226,
+        "in_vehicle_time": 0.004228595,
+        "walking_time_from_destination": 0.004944238,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.479880",
+  "last_updated": "2025-03-18T11:06:08.479881"
 }

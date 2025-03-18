@@ -1,28 +1,49 @@
 {
   "id": "U108",
-  "max_walking_time_to_origin": 4.411234807342664,
-  "max_walking_time_from_destination": 5.7893372076375496,
-  "max_waiting_time": 8.510363496338869,
-  "max_in_vehicle_time": 38.20410326165824,
-  "max_cost": 24.918869630496737,
-  "max_acceptable_delay": 8.005069882852048,
-  "service_preference": "reliability",
-  "weights": {
-    "walking_time_to_origin": -0.8954780194028855,
-    "wait_time": 1.3212227007562378,
-    "in_vehicle_time": 0.26993575811412224,
-    "walking_time_from_destination": 0.30431956053252535,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": -0.269695314,
+    "wait_time": 0.397918836,
+    "in_vehicle_time": 0.081297818,
+    "walking_time_from_destination": 0.091653349,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
-  "historical_trips": 44,
-  "historical_acceptance_rate": 0.8590562304067961,
-  "historical_ratings": [
-    3.2,
-    3.3,
-    3.5,
-    4.3,
-    3.7
-  ]
+  "weights": {
+    "walking_time_to_origin": -0.269695314,
+    "wait_time": 0.397918836,
+    "in_vehicle_time": 0.081297818,
+    "walking_time_from_destination": 0.091653349,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.475117",
+      "weights": {
+        "walking_time_to_origin": -0.269695314,
+        "wait_time": 0.397918836,
+        "in_vehicle_time": 0.081297818,
+        "walking_time_from_destination": 0.091653349,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.475119",
+  "last_updated": "2025-03-18T11:06:08.475120"
 }

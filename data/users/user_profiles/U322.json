@@ -1,28 +1,49 @@
 {
   "id": "U322",
-  "max_walking_time_to_origin": 5.326331418363747,
-  "max_walking_time_from_destination": 2.584650755066686,
-  "max_waiting_time": 7.544001651512749,
-  "max_in_vehicle_time": 23.683719026409346,
-  "max_cost": 21.57323750763876,
-  "max_acceptable_delay": 6.326851154175028,
-  "service_preference": "reliability",
-  "weights": {
-    "walking_time_to_origin": -0.20984392818040926,
-    "wait_time": 0.7060258065138657,
-    "in_vehicle_time": -0.16244735832189225,
-    "walking_time_from_destination": 0.6662654799884358,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": -0.104561051,
+    "wait_time": 0.351798601,
+    "in_vehicle_time": -0.080944284,
+    "walking_time_from_destination": 0.331986822,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
-  "historical_trips": 36,
-  "historical_acceptance_rate": 0.5845399099919178,
-  "historical_ratings": [
-    4.8,
-    4.3,
-    4.1,
-    4.3,
-    3.5
-  ]
+  "weights": {
+    "walking_time_to_origin": -0.104561051,
+    "wait_time": 0.351798601,
+    "in_vehicle_time": -0.080944284,
+    "walking_time_from_destination": 0.331986822,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.531025",
+      "weights": {
+        "walking_time_to_origin": -0.104561051,
+        "wait_time": 0.351798601,
+        "in_vehicle_time": -0.080944284,
+        "walking_time_from_destination": 0.331986822,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.531028",
+  "last_updated": "2025-03-18T11:06:08.531029"
 }

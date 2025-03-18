@@ -3,7 +3,8 @@ Script to create user profiles based on acceptance weights data.
 
 This script reads the acceptance weights from a CSV file and creates
 user profiles for each user, with reasonable default values and 
-proper weight mappings.
+proper weight mappings. It also sets up logging for tracking changes
+to profiles over time, especially weight modifications across simulation studies.
 """
 import os
 import pandas as pd
@@ -12,20 +13,15 @@ import random
 import logging
 import argparse
 from pathlib import Path
-from enum import Enum
 import traceback
+from datetime import datetime
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Define service preferences - simplified to what we can reasonably infer
-class ServicePreference(Enum):
-    """Service preferences that influence acceptance weights"""
-    SPEED = "speed"                # Prefers faster service (in-vehicle time)
-    RELIABILITY = "reliability"    # Prefers reliable arrival times (wait time)
 
 def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles'):
     """
@@ -52,11 +48,19 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
     stats_dir = os.path.join(output_dir, 'stats')
     os.makedirs(stats_dir, exist_ok=True)
     
+    # Create directory structure for change logs
+    change_logs_dir = os.path.join(output_dir, 'change_logs')
+    os.makedirs(change_logs_dir, exist_ok=True)
+    
+    # Default studies and simulations directories
+    default_study_dir = os.path.join(change_logs_dir, 'default_study')
+    os.makedirs(default_study_dir, exist_ok=True)
+    default_sim_dir = os.path.join(default_study_dir, 'base')
+    os.makedirs(default_sim_dir, exist_ok=True)
+    
     # Summary statistics
     profile_stats = {
         'total_profiles': len(weights_df),
-        'service_preferences': {},
-        'avg_historical_trips': 0,
         'avg_max_walking_time_to_origin': 0,
         'avg_max_walking_time_from_destination': 0,
         'avg_max_waiting_time': 0,
@@ -67,99 +71,63 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
     for _, row in weights_df.iterrows():
         user_id = row['id']
         
-        # Map CSV weights to feature name
+        # Map CSV weights to feature name - use exact weights from CSV
         walking_time_to_origin_weight = row['access']
         wait_time_weight = row['wait']
         in_vehicle_time_weight = row['ivt']
         walking_time_from_destination_weight = row['egress']
         
-        # Normalize weights to sum to 1.0
-        total_weight = walking_time_to_origin_weight + wait_time_weight + in_vehicle_time_weight + walking_time_from_destination_weight
-        if total_weight > 0:
-            walking_time_to_origin_weight /= total_weight
-            wait_time_weight /= total_weight
-            in_vehicle_time_weight /= total_weight
-            walking_time_from_destination_weight /= total_weight
-        else:
-            # Default weights if all are 0
-            walking_time_to_origin_weight = 0.4
-            wait_time_weight = 0.3
-            in_vehicle_time_weight = 0.2
-            walking_time_from_destination_weight = 0.1
+        # Create base weights dictionary - use exact coefficients without normalization
+        base_weights = {
+            "walking_time_to_origin": walking_time_to_origin_weight,
+            "wait_time": wait_time_weight,
+            "in_vehicle_time": in_vehicle_time_weight,
+            "walking_time_from_destination": walking_time_from_destination_weight,
+            "time_of_day": 0.0,
+            "day_of_week": 0.0,
+            "distance_to_pickup": 0.0
+        }
         
-        # Generate reasonable values for time preferences based on weights
-        max_walking_time_to_origin = random.uniform(
-            1.0 if walking_time_to_origin_weight > 0.4 else 2.0,
-            4.0 if walking_time_to_origin_weight > 0.4 else 6.0
-        )
-        
-        max_walking_time_from_destination = random.uniform(
-            1.0 if walking_time_from_destination_weight > 0.4 else 2.0,
-            4.0 if walking_time_from_destination_weight > 0.4 else 6.0
-        )
-        
-        # Users who value waiting time less may accept longer waits
-        max_waiting_time = random.uniform(
-            5.0 if wait_time_weight > 0.4 else 7.0,
-            12.0 if wait_time_weight > 0.4 else 15.0
-        )
-        
-        # Users who value travel time less may accept longer trips
-        max_in_vehicle_time = random.uniform(
-            15.0 if in_vehicle_time_weight > 0.4 else 20.0,
-            30.0 if in_vehicle_time_weight > 0.4 else 40.0
-        )
-        
-        # Generate reasonable value for max cost
-        max_cost = random.uniform(20.0, 40.0)
-        
-        # Generate reasonable value for acceptable delay
-        max_acceptable_delay = random.uniform(5.0, 10.0)
-        
-        # Simplified service preference determination based only on what we can reasonably infer
-        # If in-vehicle time weight is higher than wait time weight, prefer SPEED, otherwise RELIABILITY
-        service_preference = ServicePreference.SPEED if in_vehicle_time_weight > wait_time_weight else ServicePreference.RELIABILITY
-        
-        # Track statistics
-        if service_preference.value in profile_stats['service_preferences']:
-            profile_stats['service_preferences'][service_preference.value] += 1
-        else:
-            profile_stats['service_preferences'][service_preference.value] = 1
-        
-        # Generate historical data
-        historical_trips = random.randint(0, 50)
-        historical_acceptance_rate = random.uniform(0.5, 0.95)
-        historical_ratings = [round(random.uniform(3.0, 5.0), 1) for _ in range(min(5, historical_trips))]
+        # Set reasonable default values for time preferences (not based on weights)
+        max_walking_time_to_origin = 5.0  # minutes
+        max_walking_time_from_destination = 5.0  # minutes
+        max_waiting_time = 10.0  # minutes
+        max_in_vehicle_time = 30.0  # minutes
+        max_price = 30.0  # currency units
+        max_acceptable_delay = 7.0  # minutes
         
         # Update stats
-        profile_stats['avg_historical_trips'] += historical_trips
         profile_stats['avg_max_walking_time_to_origin'] += max_walking_time_to_origin
         profile_stats['avg_max_walking_time_from_destination'] += max_walking_time_from_destination
         profile_stats['avg_max_waiting_time'] += max_waiting_time
         profile_stats['avg_max_in_vehicle_time'] += max_in_vehicle_time
         
-        # Create user profile matching the UserProfile.to_dict() format
+        # Create weight history to track changes over time
+        weight_history = [{
+            "timestamp": datetime.now().isoformat(),
+            "weights": base_weights.copy(),
+            "study_id": "default_study",
+            "simulation_id": "base",
+            "reason": "Initial profile creation"
+        }]
+        
+        # Create user profile - no historical trips
         profile = {
             "id": user_id,
             "max_walking_time_to_origin": max_walking_time_to_origin,
             "max_walking_time_from_destination": max_walking_time_from_destination,
             "max_waiting_time": max_waiting_time,
             "max_in_vehicle_time": max_in_vehicle_time,
-            "max_cost": max_cost,
+            "max_price": max_price,
             "max_acceptable_delay": max_acceptable_delay,
-            "service_preference": service_preference.value,
-            "weights": {
-                "walking_time_to_origin": walking_time_to_origin_weight,
-                "wait_time": wait_time_weight,
-                "in_vehicle_time": in_vehicle_time_weight,
-                "walking_time_from_destination": walking_time_from_destination_weight,
-                "time_of_day": 0.0,
-                "day_of_week": 0.0,
-                "distance_to_pickup": 0.0
-            },
-            "historical_trips": historical_trips,
-            "historical_acceptance_rate": historical_acceptance_rate,
-            "historical_ratings": historical_ratings
+            "base_weights": base_weights.copy(),
+            "weights": base_weights.copy(),
+            "weight_history": weight_history,
+            "historical_trips": 0,
+            "historical_acceptance_rate": 0.0,
+            "historical_ratings": [],
+            "created_at": datetime.now().isoformat(),
+            "last_updated": datetime.now().isoformat()
         }
         
         # Save profile to JSON file
@@ -167,12 +135,26 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
         with open(profile_path, 'w') as f:
             json.dump(profile, f, indent=2)
         
+        # Initialize change log for this user
+        change_log = [{
+            "timestamp": datetime.now().isoformat(),
+            "type": "creation",
+            "study_id": "default_study",
+            "simulation_id": "base",
+            "description": "Profile created",
+            "weights": base_weights.copy()
+        }]
+        
+        # Save change log
+        change_log_path = os.path.join(default_sim_dir, f"{user_id}_changes.json")
+        with open(change_log_path, 'w') as f:
+            json.dump(change_log, f, indent=2)
+        
         if int(user_id.split('U')[1]) % 5 == 0:
-            logger.info(f"Created {user_id} profile")
+            logger.info(f"Created {user_id} profile and change log")
     
     # Calculate averages for stats
     if profile_stats['total_profiles'] > 0:
-        profile_stats['avg_historical_trips'] /= profile_stats['total_profiles']
         profile_stats['avg_max_walking_time_to_origin'] /= profile_stats['total_profiles']
         profile_stats['avg_max_walking_time_from_destination'] /= profile_stats['total_profiles']
         profile_stats['avg_max_waiting_time'] /= profile_stats['total_profiles']
@@ -184,11 +166,13 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
         json.dump(profile_stats, f, indent=2)
     
     logger.info(f"Created {profile_stats['total_profiles']} user profiles in {profiles_dir}")
+    logger.info(f"Created change logs in {change_logs_dir}")
     logger.info(f"Summary statistics saved to {stats_path}")
     
     # Return the paths for verification
     return {
         'profiles_dir': profiles_dir,
+        'change_logs_dir': change_logs_dir,
         'stats_path': stats_path,
         'total_profiles': profile_stats['total_profiles']
     }
@@ -214,6 +198,61 @@ def create_weight_mapping_file(output_dir):
     
     logger.info(f"Weight mapping saved to {mapping_path}")
     return mapping_path
+
+def log_profile_change(user_id, change_logs_dir, study_id, simulation_id, change_type, description, weights=None):
+    """
+    Log changes to a user profile.
+    
+    Args:
+        user_id: ID of the user whose profile was changed
+        change_logs_dir: Base directory containing change logs
+        study_id: ID of the current study
+        simulation_id: ID of the current simulation run
+        change_type: Type of change (e.g., 'weight_update', 'preference_change')
+        description: Description of the change
+        weights: New weights if applicable
+    """
+    # Create study and simulation directories if they don't exist
+    study_dir = os.path.join(change_logs_dir, study_id)
+    os.makedirs(study_dir, exist_ok=True)
+    
+    sim_dir = os.path.join(study_dir, simulation_id)
+    os.makedirs(sim_dir, exist_ok=True)
+    
+    change_log_path = os.path.join(sim_dir, f"{user_id}_changes.json")
+    
+    # Load existing log if it exists
+    if os.path.exists(change_log_path):
+        try:
+            with open(change_log_path, 'r') as f:
+                change_log = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading change log for {user_id}: {e}")
+            change_log = []
+    else:
+        change_log = []
+    
+    # Create new log entry
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "type": change_type,
+        "study_id": study_id,
+        "simulation_id": simulation_id,
+        "description": description
+    }
+    
+    # Add weights if provided
+    if weights:
+        log_entry["weights"] = weights.copy()
+    
+    # Add to log and save
+    change_log.append(log_entry)
+    try:
+        with open(change_log_path, 'w') as f:
+            json.dump(change_log, f, indent=2)
+        logger.debug(f"Updated change log for {user_id} in study {study_id}, simulation {simulation_id}")
+    except Exception as e:
+        logger.error(f"Error saving change log for {user_id}: {e}")
 
 def main():
     """Main function to execute the profile creation process."""

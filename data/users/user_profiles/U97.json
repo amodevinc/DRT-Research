@@ -1,28 +1,49 @@
 {
   "id": "U97",
-  "max_walking_time_to_origin": 2.49211667892877,
-  "max_walking_time_from_destination": 3.8228586720111686,
-  "max_waiting_time": 13.88185076819379,
-  "max_in_vehicle_time": 27.273967160668136,
-  "max_cost": 25.20984307428988,
-  "max_acceptable_delay": 7.780346341239229,
-  "service_preference": "reliability",
-  "weights": {
-    "walking_time_to_origin": 0.4,
-    "wait_time": 0.3,
-    "in_vehicle_time": 0.2,
-    "walking_time_from_destination": 0.1,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": -0.736448874,
+    "wait_time": -0.000480136,
+    "in_vehicle_time": 0.090047175,
+    "walking_time_from_destination": -0.012816896,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
-  "historical_trips": 35,
-  "historical_acceptance_rate": 0.5300591108479918,
-  "historical_ratings": [
-    3.1,
-    4.6,
-    3.7,
-    4.8,
-    4.4
-  ]
+  "weights": {
+    "walking_time_to_origin": -0.736448874,
+    "wait_time": -0.000480136,
+    "in_vehicle_time": 0.090047175,
+    "walking_time_from_destination": -0.012816896,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.472548",
+      "weights": {
+        "walking_time_to_origin": -0.736448874,
+        "wait_time": -0.000480136,
+        "in_vehicle_time": 0.090047175,
+        "walking_time_from_destination": -0.012816896,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.472549",
+  "last_updated": "2025-03-18T11:06:08.472550"
 }

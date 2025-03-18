@@ -1,22 +1,49 @@
 {
   "id": "U323",
-  "max_walking_time_to_origin": 2.886647306132634,
-  "max_walking_time_from_destination": 1.3706743942230974,
-  "max_waiting_time": 10.227375006526273,
-  "max_in_vehicle_time": 22.13409587466384,
-  "max_cost": 37.56879597907996,
-  "max_acceptable_delay": 7.519138357751878,
-  "service_preference": "speed",
-  "weights": {
-    "walking_time_to_origin": 0.34898859340036664,
-    "wait_time": -0.08026324947718633,
-    "in_vehicle_time": 0.30124168484088,
-    "walking_time_from_destination": 0.43003297123593964,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": 0.314378564,
+    "wait_time": -0.072303352,
+    "in_vehicle_time": 0.27136683,
+    "walking_time_from_destination": 0.387385578,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
+  "weights": {
+    "walking_time_to_origin": 0.314378564,
+    "wait_time": -0.072303352,
+    "in_vehicle_time": 0.27136683,
+    "walking_time_from_destination": 0.387385578,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.531343",
+      "weights": {
+        "walking_time_to_origin": 0.314378564,
+        "wait_time": -0.072303352,
+        "in_vehicle_time": 0.27136683,
+        "walking_time_from_destination": 0.387385578,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
   "historical_trips": 0,
-  "historical_acceptance_rate": 0.9362431270567446,
-  "historical_ratings": []
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.531345",
+  "last_updated": "2025-03-18T11:06:08.531345"
 }

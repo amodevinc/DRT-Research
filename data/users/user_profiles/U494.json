@@ -1,26 +1,49 @@
 {
   "id": "U494",
-  "max_walking_time_to_origin": 4.607560004484773,
-  "max_walking_time_from_destination": 3.392422933779938,
-  "max_waiting_time": 8.035272565085261,
-  "max_in_vehicle_time": 33.923041374879176,
-  "max_cost": 30.48361617135717,
-  "max_acceptable_delay": 5.1033293202094985,
-  "service_preference": "reliability",
-  "weights": {
-    "walking_time_to_origin": 0.4,
-    "wait_time": 0.3,
-    "in_vehicle_time": 0.2,
-    "walking_time_from_destination": 0.1,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": -0.173431573,
+    "wait_time": -0.193505615,
+    "in_vehicle_time": 0.246023153,
+    "walking_time_from_destination": -0.423902893,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
-  "historical_trips": 3,
-  "historical_acceptance_rate": 0.5885749065174016,
-  "historical_ratings": [
-    3.0,
-    4.9,
-    4.7
-  ]
+  "weights": {
+    "walking_time_to_origin": -0.173431573,
+    "wait_time": -0.193505615,
+    "in_vehicle_time": 0.246023153,
+    "walking_time_from_destination": -0.423902893,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.573306",
+      "weights": {
+        "walking_time_to_origin": -0.173431573,
+        "wait_time": -0.193505615,
+        "in_vehicle_time": 0.246023153,
+        "walking_time_from_destination": -0.423902893,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.573307",
+  "last_updated": "2025-03-18T11:06:08.573308"
 }

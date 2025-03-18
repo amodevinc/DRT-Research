@@ -1,27 +1,49 @@
 {
   "id": "U156",
-  "max_walking_time_to_origin": 5.183546061550286,
-  "max_walking_time_from_destination": 2.1175362884364914,
-  "max_waiting_time": 8.989635466832919,
-  "max_in_vehicle_time": 35.55323606407421,
-  "max_cost": 30.399770726736268,
-  "max_acceptable_delay": 8.052411776062653,
-  "service_preference": "reliability",
-  "weights": {
-    "walking_time_to_origin": 0.4,
-    "wait_time": 0.3,
-    "in_vehicle_time": 0.2,
-    "walking_time_from_destination": 0.1,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 30.0,
+  "max_price": 30.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": 0.106167105,
+    "wait_time": -0.323602445,
+    "in_vehicle_time": 0.243487242,
+    "walking_time_from_destination": -0.209004557,
     "time_of_day": 0.0,
     "day_of_week": 0.0,
     "distance_to_pickup": 0.0
   },
-  "historical_trips": 4,
-  "historical_acceptance_rate": 0.7187996938483793,
-  "historical_ratings": [
-    3.7,
-    5.0,
-    4.8,
-    3.8
-  ]
+  "weights": {
+    "walking_time_to_origin": 0.106167105,
+    "wait_time": -0.323602445,
+    "in_vehicle_time": 0.243487242,
+    "walking_time_from_destination": -0.209004557,
+    "time_of_day": 0.0,
+    "day_of_week": 0.0,
+    "distance_to_pickup": 0.0
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-03-18T11:06:08.488876",
+      "weights": {
+        "walking_time_to_origin": 0.106167105,
+        "wait_time": -0.323602445,
+        "in_vehicle_time": 0.243487242,
+        "walking_time_from_destination": -0.209004557,
+        "time_of_day": 0.0,
+        "day_of_week": 0.0,
+        "distance_to_pickup": 0.0
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-03-18T11:06:08.488878",
+  "last_updated": "2025-03-18T11:06:08.488879"
 }

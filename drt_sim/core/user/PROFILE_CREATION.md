@@ -65,7 +65,7 @@ Each user profile is stored as a JSON file with the following structure:
   "max_walking_time_from_destination": 3.0,
   "max_waiting_time": 10.0,
   "max_in_vehicle_time": 25.0,
-  "max_cost": 30.0,
+  "max_price": 30.0,
   "max_acceptable_delay": 7.0,
   "service_preference": "speed",
   "weights": {
