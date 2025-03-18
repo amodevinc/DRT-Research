@@ -137,7 +137,7 @@ class UserProfile:
     id: str
     max_waiting_time: float = 15.0
     max_travel_time: float = 45.0
-    max_cost: float = 30.0
+    max_price: float = 30.0
     max_detour_ratio: float = 0.5
     service_preference: ServicePreference = ServicePreference.SPEED
     weights: Dict[str, float] = field(default_factory=lambda: {...})
@@ -353,7 +353,7 @@ class DefaultModel(UserAcceptanceModel):
         self,
         max_waiting_time: float = 15.0,
         max_travel_time: float = 45.0,
-        max_cost: float = 30.0,
+        max_price: float = 30.0,
         feature_weights: Optional[Dict[str, float]] = None,
         feature_extractor: Optional[FeatureExtractor] = None,
         **kwargs

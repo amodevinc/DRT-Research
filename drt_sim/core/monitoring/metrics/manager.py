@@ -119,37 +119,69 @@ class MetricsManager:
     
     def _generate_key_service_metrics(self, metrics_df):
         """Generate only essential service metric visualizations."""
-        # Request success/failure pie chart
+        # Get all request metrics
         request_metrics = metrics_df[
-            metrics_df['metric_name'].isin(['request.assigned', 'request.rejected'])
+            metrics_df['metric_name'].isin(['request.received', 'request.assigned', 'request.rejected', 'request.user_rejected'])
         ]
         
         if not request_metrics.empty:
             try:
-                # Simple count by status
+                # Get counts by metric name
                 status_counts = request_metrics.groupby('metric_name')['metric_name'].count()
                 
-                # Create pie chart
-                labels = {'request.assigned': 'Accepted', 'request.rejected': 'Rejected'}
-                values = [
-                    status_counts.get('request.assigned', 0),
-                    status_counts.get('request.rejected', 0)
-                ]
+                # Plot 1: Requests received vs rejected (system level)
+                received_count = status_counts.get('request.received', 0)
+                rejected_count = status_counts.get('request.rejected', 0)
+                assigned_count = status_counts.get('request.assigned', 0)
                 
-                fig = go.Figure(data=[go.Pie(
-                    labels=list(labels.values()),
-                    values=values,
+                # Create pie chart for system-level rejection rate
+                fig1 = go.Figure(data=[go.Pie(
+                    labels=['Assigned or User Rejected', 'System Rejected'],
+                    values=[assigned_count + status_counts.get('request.user_rejected', 0), rejected_count],
                     hole=.3
                 )])
-                fig.update_layout(title_text="Request Acceptance Rate")
+                fig1.update_layout(
+                    title_text="Service Offerings Made",
+                    annotations=[{
+                        'text': f'Total: {received_count}',
+                        'x': 1.0,
+                        'y': 1.0,
+                        'font_size': 12,
+                        'showarrow': False
+                    }]
+                )
                 
-                self.save_figure(fig, "request_acceptance_rate", "service")
+                self.save_figure(fig1, "request_service_offerings", "service")
                 
-                # Log the actual rate to MLflow
-                total = sum(values)
-                if total > 0:
-                    acceptance_rate = values[0] / total
-                    mlflow.log_metric("service.acceptance_rate", acceptance_rate)
+                # Plot 2: User rejection rate (of those that got service offerings)
+                user_rejected_count = status_counts.get('request.user_rejected', 0)
+                total_offerings = assigned_count + user_rejected_count
+                
+                if total_offerings > 0:
+                    user_acceptance_rate = assigned_count / total_offerings
+                    user_rejection_rate = user_rejected_count / total_offerings
+                    
+                    fig2 = go.Figure(data=[go.Pie(
+                        labels=['Accepted by User', 'Rejected by User'],
+                        values=[assigned_count, user_rejected_count],
+                        hole=.3
+                    )])
+                    fig2.update_layout(
+                        title_text="User Response to Service Offerings",
+                        annotations=[{
+                            'text': f'Total: {total_offerings}',
+                            'x': 1.0,
+                            'y': 1.0,
+                            'font_size': 12,
+                            'showarrow': False
+                        }]
+                    )
+                    
+                    self.save_figure(fig2, "user_acceptance_rate", "service")
+                    
+                    # Log the rates to MLflow
+                    mlflow.log_metric("service.user_acceptance_rate", user_acceptance_rate)
+                    mlflow.log_metric("service.user_rejection_rate", user_rejection_rate)
             except Exception as e:
                 logger.error(f"Error generating service metrics: {str(e)}")
     

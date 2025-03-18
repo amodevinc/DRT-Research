@@ -112,13 +112,6 @@ class TimeBasedFeatureProvider(FeatureProvider):
                 features["time_period"] = "evening_peak"
             else:
                 features["time_period"] = "night"
-            
-            # Is holiday
-            features["is_holiday"] = 0.0
-            if self.holidays:
-                reference_date = reference_time.date()
-                if reference_date in self.holidays:
-                    features["is_holiday"] = 1.0
         
         return features
     
@@ -134,82 +127,8 @@ class TimeBasedFeatureProvider(FeatureProvider):
             "day_of_week",
             "is_weekend",
             "time_period",
-            "is_holiday"
         ]
 
-class SpatialFeatureProvider(FeatureProvider):
-    """
-    Provider for spatial features.
-    
-    This provider extracts features related to location, such as
-    distance to pickup, distance to destination, is_urban, etc.
-    """
-    
-    def __init__(self, urban_areas=None, region_info=None):
-        """
-        Initialize the spatial feature provider.
-        
-        Args:
-            urban_areas: Dictionary mapping area IDs to urban classification
-            region_info: Dictionary containing region-specific information
-        """
-        self.urban_areas = urban_areas or {}
-        self.region_info = region_info or {}
-    
-    def get_features(
-        self,
-        request: Optional[Request],
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Get spatial features.
-        
-        Args:
-            request: The transportation request
-            context: Dictionary containing context information
-            
-        Returns:
-            Dict[str, Any]: Dictionary of spatial features
-        """
-        features = {}
-        
-        # Direct distance (if provided)
-        if "direct_distance" in context:
-            features["direct_distance"] = context["direct_distance"]
-        
-        # Calculate distance to pickup
-        if "distance_to_pickup" in context:
-            features["distance_to_pickup"] = context["distance_to_pickup"]
-        
-        # Urban classification
-        if request and hasattr(request, "origin_area_id") and request.origin_area_id in self.urban_areas:
-            features["is_urban_origin"] = 1.0 if self.urban_areas[request.origin_area_id] == "urban" else 0.0
-        
-        if request and hasattr(request, "destination_area_id") and request.destination_area_id in self.urban_areas:
-            features["is_urban_destination"] = 1.0 if self.urban_areas[request.destination_area_id] == "urban" else 0.0
-        
-        # Region density
-        if request and hasattr(request, "origin_area_id") and request.origin_area_id in self.region_info:
-            region = self.region_info[request.origin_area_id]
-            if "population_density" in region:
-                features["origin_population_density"] = region["population_density"]
-        
-        return features
-    
-    def get_feature_names(self) -> List[str]:
-        """
-        Get the names of features provided by this provider.
-        
-        Returns:
-            List[str]: List of feature names
-        """
-        return [
-            "direct_distance",
-            "distance_to_pickup",
-            "is_urban_origin",
-            "is_urban_destination",
-            "origin_population_density"
-        ]
 
 class UserHistoryFeatureProvider(FeatureProvider):
     """
@@ -237,7 +156,7 @@ class UserHistoryFeatureProvider(FeatureProvider):
         features = {}
         
         # Get user profile from context
-        user_profile = context.get("user_profile")
+        user_profile: UserProfile = context.get("user_profile")
         
         if user_profile:
             # Historical acceptance rate (if available)
@@ -373,90 +292,6 @@ class WeatherFeatureProvider(FeatureProvider):
             "wind_speed",
             "weather_condition",
             "is_bad_weather"
-        ]
-
-class ServiceQualityFeatureProvider(FeatureProvider):
-    """
-    Provider for service quality features.
-    
-    This provider extracts features related to service quality, such as
-    vehicle comfort, driver rating, etc.
-    """
-    
-    def get_features(
-        self,
-        request: Optional[Request],
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Get service quality features.
-        
-        Args:
-            request: The transportation request
-            context: Dictionary containing context information
-            
-        Returns:
-            Dict[str, Any]: Dictionary of service quality features
-        """
-        features = {}
-        
-        # Extract vehicle information
-        if "vehicle" in context:
-            vehicle = context["vehicle"]
-            
-            if hasattr(vehicle, "comfort_level"):
-                # Normalize to [0, 1] assuming 5-star scale
-                features["vehicle_comfort"] = vehicle.comfort_level / 5.0
-            
-            if hasattr(vehicle, "capacity"):
-                features["vehicle_capacity"] = vehicle.capacity
-                
-            if hasattr(vehicle, "vehicle_type"):
-                features["vehicle_type"] = vehicle.vehicle_type
-        
-        # Extract driver information
-        if "driver" in context:
-            driver = context["driver"]
-            
-            if hasattr(driver, "rating"):
-                # Normalize to [0, 1] assuming 5-star scale
-                features["driver_rating"] = driver.rating / 5.0
-            
-            if hasattr(driver, "experience"):
-                # Normalize to [0, 1] assuming 10 years is maximum
-                features["driver_experience"] = min(driver.experience / 10.0, 1.0)
-        
-        # Detour ratio (if not already extracted)
-        if "detour_ratio" not in features and "direct_distance" in context and "actual_distance" in context:
-            direct_distance = context["direct_distance"]
-            actual_distance = context["actual_distance"]
-            
-            if direct_distance > 0:
-                features["detour_ratio"] = (actual_distance / direct_distance) - 1.0
-        
-        # Extract occupancy
-        if "occupancy" in context:
-            features["vehicle_occupancy"] = context["occupancy"]
-        elif "current_occupancy" in context and "max_occupancy" in context:
-            features["vehicle_occupancy"] = context["current_occupancy"] / context["max_occupancy"]
-        
-        return features
-    
-    def get_feature_names(self) -> List[str]:
-        """
-        Get the names of features provided by this provider.
-        
-        Returns:
-            List[str]: List of feature names
-        """
-        return [
-            "vehicle_comfort",
-            "vehicle_capacity",
-            "vehicle_type",
-            "driver_rating",
-            "driver_experience",
-            "detour_ratio",
-            "vehicle_occupancy"
         ]
 
 class FeatureProviderRegistry:

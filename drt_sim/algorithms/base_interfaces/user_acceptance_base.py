@@ -7,6 +7,9 @@ used in the DRT simulation platform.
 from typing import Dict, Any, Optional, List, Tuple
 import abc
 import logging
+import os
+import json
+import pickle
 
 from drt_sim.core.user.acceptance_context import AcceptanceContext
 from drt_sim.core.user.feature_extractor import FeatureExtractor
@@ -135,3 +138,94 @@ class UserAcceptanceModel(abc.ABC):
         self.config.update(config)
         
         logger.info(f"{self.__class__.__name__} configured with: {config}")
+        
+    def save_model(self, filepath: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Save the model to a file.
+        
+        This method provides a default implementation that saves the model using pickle.
+        Subclasses may override this method to implement custom serialization.
+        
+        Args:
+            filepath: Path where the model should be saved
+            metadata: Optional dictionary with additional metadata to save with the model
+        
+        Raises:
+            IOError: If the model cannot be saved to the specified path
+        """
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+        
+        # Prepare metadata
+        save_metadata = {
+            "model_type": self.__class__.__name__,
+            "config": self.config,
+            "feature_names": self.feature_extractor.get_feature_names(),
+        }
+        
+        # Add user metadata if provided
+        if metadata:
+            save_metadata.update(metadata)
+            
+        try:
+            # Default implementation uses pickle for the model and JSON for metadata
+            # Save metadata as JSON
+            metadata_path = f"{filepath}.meta.json"
+            with open(metadata_path, 'w') as f:
+                json.dump(save_metadata, f, indent=2)
+                
+            # Save model using pickle
+            with open(filepath, 'wb') as f:
+                pickle.dump(self, f)
+                
+            logger.info(f"Model saved to {filepath} with metadata at {metadata_path}")
+        except (IOError, pickle.PickleError) as e:
+            logger.error(f"Failed to save model to {filepath}: {str(e)}")
+            raise IOError(f"Failed to save model: {str(e)}")
+            
+    @classmethod
+    def load_model(cls, filepath: str) -> 'UserAcceptanceModel':
+        """
+        Load a model from a file.
+        
+        This method provides a default implementation that loads the model using pickle.
+        Subclasses may override this method to implement custom deserialization.
+        
+        Args:
+            filepath: Path to the saved model
+            
+        Returns:
+            UserAcceptanceModel: The loaded model
+            
+        Raises:
+            IOError: If the model cannot be loaded from the specified path
+            ValueError: If the loaded model is not of the expected type
+        """
+        try:
+            # Load model using pickle
+            with open(filepath, 'rb') as f:
+                model = pickle.load(f)
+                
+            # Check if the loaded model is of the expected type
+            if not isinstance(model, cls):
+                raise ValueError(f"Loaded model is of type {type(model).__name__}, expected {cls.__name__}")
+                
+            # Load metadata if available
+            metadata_path = f"{filepath}.meta.json"
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                    logger.info(f"Loaded model metadata from {metadata_path}")
+                    
+                    # Update config from metadata
+                    if 'config' in metadata:
+                        model.config.update(metadata['config'])
+            
+            logger.info(f"Model loaded from {filepath}")
+            return model
+        except (IOError, pickle.PickleError) as e:
+            logger.error(f"Failed to load model from {filepath}: {str(e)}")
+            raise IOError(f"Failed to load model: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            raise

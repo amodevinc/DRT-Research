@@ -199,6 +199,10 @@ class MatchingHandler:
             if not vehicle:
                 raise ValueError(f"Vehicle {assignment.vehicle_id} not found")
             
+            stop_assignment = self.state_manager.stop_assignment_worker.get_assignment(assignment.stop_assignment_id)
+            if not stop_assignment:
+                raise ValueError(f"Stop assignment {assignment.stop_assignment_id} not found")
+            
             # Calculate proposed pickup time and travel time
             proposed_pickup_time = None
             proposed_travel_time = None
@@ -208,37 +212,39 @@ class MatchingHandler:
             # Extract pickup and dropoff times from the route
             for stop in assignment.route.stops:
                 if assignment.request_id in stop.pickup_passengers:
-                    proposed_pickup_time = stop.estimated_arrival_time
-                    service_attributes["pickup_location"] = stop.location
-                    service_attributes["pickup_stop_id"] = stop.stop_id
+                    proposed_pickup_time = stop.planned_arrival_time
+                    service_attributes["pickup_location"] = stop.stop.location
+                    service_attributes["pickup_stop_id"] = stop.stop.id
                 
                 if assignment.request_id in stop.dropoff_passengers:
-                    dropoff_time = stop.estimated_arrival_time
+                    dropoff_time = stop.planned_arrival_time
                     if proposed_pickup_time:
                         proposed_travel_time = dropoff_time - proposed_pickup_time
-                    service_attributes["dropoff_location"] = stop.location
-                    service_attributes["dropoff_stop_id"] = stop.stop_id
+                    service_attributes["dropoff_location"] = stop.stop.location
+                    service_attributes["dropoff_stop_id"] = stop.stop.id
             
             # Add additional service attributes
             service_attributes["vehicle_id"] = vehicle.id
-            service_attributes["vehicle_type"] = vehicle.vehicle_type
+            service_attributes["vehicle_type"] = vehicle.type.value
             service_attributes["route_id"] = assignment.route.id
             service_attributes["request_time"] = request.request_time
             service_attributes["waiting_time"] = (proposed_pickup_time - request.request_time).total_seconds() / 60 if proposed_pickup_time else 0
             service_attributes["travel_time"] = proposed_travel_time.total_seconds() / 60 if proposed_travel_time else 0
-            service_attributes["detour_ratio"] = assignment.detour_ratio if hasattr(assignment, "detour_ratio") else 0.0
             service_attributes["cost"] = cost
+            service_attributes["walking_time_to_pickup"] = stop_assignment.walking_time_origin
+            service_attributes["walking_time_from_destination"] = stop_assignment.walking_time_destination
+            service_attributes["in_vehicle_time"] = assignment.in_vehicle_time_mins
+            service_attributes["waiting_time"] = assignment.waiting_time_mins
             
             # Check if user will accept this assignment
             user_accepted, acceptance_probability = False, 0.0
             if proposed_pickup_time and proposed_travel_time:
                 user_accepted, acceptance_probability = self.user_acceptance_manager.decide_acceptance(
                     request=request,
-                    proposed_pickup_time=proposed_pickup_time,
-                    proposed_travel_time=proposed_travel_time,
-                    cost=cost,
                     service_attributes=service_attributes
                 )
+
+                logger.info(f" User accepted: {user_accepted}, acceptance probability: {acceptance_probability}")
                 
                 # Log user acceptance metrics
                 self.context.metrics_collector.log(
@@ -251,7 +257,7 @@ class MatchingHandler:
                         'vehicle_id': vehicle.id,
                         'waiting_time': service_attributes["waiting_time"],
                         'travel_time': service_attributes["travel_time"],
-                        'accepted': user_accepted
+                        'accepted': int(user_accepted)
                     }
                 )
                 
@@ -274,14 +280,15 @@ class MatchingHandler:
             if not user_accepted:
                 rejection_metadata = RejectionMetadata(
                     reason=RejectionReason.USER_REJECTED,
-                    details="User rejected the proposed service",
-                    timestamp=self.context.current_time,
-                    additional_data={
+                    details={
+                        "summary": "User rejected the proposed service",
                         "acceptance_probability": acceptance_probability,
                         "proposed_pickup_time": proposed_pickup_time.isoformat() if proposed_pickup_time else None,
                         "proposed_travel_time": proposed_travel_time.total_seconds() if proposed_travel_time else None,
                         "service_attributes": service_attributes
-                    }
+                    },
+                    timestamp=self.context.current_time.isoformat(),
+                    stage="user_acceptance"
                 )
                 
                 # Update the user acceptance model
@@ -289,6 +296,17 @@ class MatchingHandler:
                     request=request,
                     accepted=False,
                     service_attributes=service_attributes
+                )
+
+                self.context.metrics_collector.log(
+                    MetricName.REQUEST_USER_REJECTED,
+                    1,
+                    self.context.current_time,
+                    {
+                        'request_id': request.id,
+                        'rejection_time': self.context.current_time.isoformat(),
+                        'rejection_reason': rejection_metadata.reason.value
+                    }
                 )
                 
                 await self._handle_matching_failed(request, rejection_metadata)
@@ -464,7 +482,7 @@ class MatchingHandler:
     async def _handle_no_vehicles_available(self, request: Request) -> None:
         """Handle case when no vehicles are available."""
         rejection_metadata = RejectionMetadata(
-            reason=RejectionReason.NO_VEHICLES_AVAILABLE,
+            reason=RejectionReason.NO_VEHICLE_AVAILABLE,
             timestamp=self.context.current_time.isoformat(),
             stage="matching",
             details={

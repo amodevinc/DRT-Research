@@ -44,7 +44,7 @@ base_config:
   
   demand:
     generator_type: "csv"
-    num_requests: 500
+    num_requests: 120
     csv_config:
       files:
         - file_path: "data/demands/base_real_time.csv"
@@ -67,6 +67,18 @@ base_config:
         dropoff_lat: "d_y"
         dropoff_lon: "d_x"
   
+  vehicle:
+    fleet_size: 5
+    capacity: 7
+    boarding_time: 7
+    alighting_time: 7
+    depot_locations:
+      - [126.81736515, 37.209416]
+      - [126.82221158, 37.20090886]
+      - [126.83461236, 37.20602126]
+      - [126.8299617, 37.20062122]
+      - [126.83069764999999, 37.21154885]
+
   service:
     max_wait_time: 600
     max_ride_time: 1800
@@ -102,14 +114,7 @@ base_config:
       max_alternatives: 3
       thresholds: {"max_walking_distance": 400.0, "max_walking_time": 300.0, "max_driving_time": 900.0}
       weights: {"vehicle_access_time": 0.3, "passenger_access_time": 0.7}
-  
-  vehicle:
-    fleet_size: 20
-    capacity: 4
-    speed: 10.0
-    boarding_time: 30
-    alighting_time: 30
-  
+
   matching:
     assignment_method: "insertion"
     optimization_method: "none"
@@ -170,28 +175,6 @@ base_config:
   replications: 1
 
 parameter_sets:
-  default_model:
-    name: "Default Acceptance Model"
-    description: "Using the threshold-based default acceptance model"
-    algorithm:
-      user_acceptance_model: "default"
-    user_acceptance:
-      model:
-        type: "default"
-        parameters:
-          max_walking_time_to_origin: 15.0
-          max_walking_time_from_destination: 15.0
-          max_waiting_time: 20.0
-          max_in_vehicle_time: 45.0
-          max_cost: 30.0
-          feature_weights:
-            walking_time_to_origin: -0.4
-            waiting_time: -0.3
-            in_vehicle_time: -0.3
-            walking_time_from_destination: -0.2
-            cost: -0.1
-      enable_user_specific_models: false
-  
   logit_model:
     name: "Logit Acceptance Model"
     description: "Using the logistic regression acceptance model"
@@ -214,14 +197,14 @@ parameter_sets:
             class_weight: "balanced"
       enable_user_specific_models: true
   
-  rl_model:
-    name: "Reinforcement Learning Acceptance Model"
-    description: "Using the reinforcement learning-based acceptance model"
+  policy_gradient_agent_model:
+    name: "Policy Gradient Agent Acceptance Model"
+    description: "Using the policy gradient-based acceptance model"
     algorithm:
-      user_acceptance_model: "rl"
+      user_acceptance_model: "policy_gradient_agent"
     user_acceptance:
       model:
-        type: "rl"
+        type: "policy_gradient_agent"
         parameters:
           alpha: 0.1
           gamma: 0.9

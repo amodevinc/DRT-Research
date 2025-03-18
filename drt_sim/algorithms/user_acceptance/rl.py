@@ -11,6 +11,7 @@ import pickle
 import os
 import random
 from collections import deque
+import json
 
 from drt_sim.algorithms.base_interfaces.user_acceptance_base import UserAcceptanceModel
 from drt_sim.core.user.acceptance_context import AcceptanceContext
@@ -63,10 +64,6 @@ class RLAcceptanceModel(UserAcceptanceModel):
             "time_of_day",
             "day_of_week"
         ]
-        
-        # Default model as fallback
-        from drt_sim.algorithms.user_acceptance.default import DefaultModel
-        self.default_model = DefaultModel(feature_extractor=feature_extractor)
         
         # User type mapping
         self.service_preference_map = {
@@ -194,9 +191,6 @@ class RLAcceptanceModel(UserAcceptanceModel):
             # Clip to valid range
             return min(max(probability, 0.01), 0.99)
         
-        # If state not in Q-table, use default model as fallback
-        return self.default_model.calculate_acceptance_probability(context)
-    
     def _apply_user_preferences(self, probability: float, features: Dict[str, float], user_profile) -> float:
         """
         Apply user preferences to adjust probability.
@@ -524,61 +518,103 @@ class RLAcceptanceModel(UserAcceptanceModel):
         """
         return [name for name in self._feature_names if name not in self.get_required_features()]
     
-    def save_model(self, path: str) -> None:
+    def save_model(self, filepath: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
         Save the model to a file.
         
         Args:
-            path: Path to save the model
+            filepath: Path where the model should be saved
+            metadata: Optional dictionary with additional metadata to save with the model
+        
+        Raises:
+            IOError: If the model cannot be saved to the specified path
         """
+        # Create custom metadata specific to RLAcceptanceModel
+        rl_metadata = {
+            'alpha': self.alpha,
+            'gamma': self.gamma,
+            'epsilon': self.epsilon,
+            'min_epsilon': self.min_epsilon,
+            'epsilon_decay': self.epsilon_decay,
+            'num_bins': self.num_bins,
+            'feature_names': self._feature_names,
+            'service_preference_map': self.service_preference_map
+        }
+        
+        # Merge with user-provided metadata
+        if metadata:
+            rl_metadata.update(metadata)
+        
+        # Call the parent class implementation
+        super().save_model(filepath, rl_metadata)
+        
         try:
-            model_data = {
-                'q_tables': self.q_tables,
-                'alpha': self.alpha,
-                'gamma': self.gamma,
-                'epsilon': self.epsilon,
-                'min_epsilon': self.min_epsilon,
-                'epsilon_decay': self.epsilon_decay,
-                'num_bins': self.num_bins,
-                'feature_names': self._feature_names,
-                'service_preference_map': self.service_preference_map
-            }
+            # Save additional model-specific components that aren't handled by pickle
+            # For RLAcceptanceModel, we need to save the Q-tables separately
+            q_tables_path = f"{filepath}.q_tables"
             
-            with open(path, 'wb') as f:
-                pickle.dump(model_data, f)
+            with open(q_tables_path, 'wb') as f:
+                pickle.dump(self.q_tables, f)
                 
-            logger.info(f"Saved RL model to {path}")
+            logger.info(f"Saved RL model Q-tables to {q_tables_path}")
         except Exception as e:
-            logger.error(f"Error saving RL model: {e}")
+            logger.error(f"Error saving RL model Q-tables: {e}")
+            raise IOError(f"Failed to save model Q-tables: {str(e)}")
     
-    def load_model(self, path: str) -> None:
+    @classmethod
+    def load_model(cls, filepath: str) -> 'RLAcceptanceModel':
         """
-        Load the model from a file.
+        Load a model from a file.
         
         Args:
-            path: Path to load the model from
+            filepath: Path to the saved model
+            
+        Returns:
+            RLAcceptanceModel: The loaded model
+            
+        Raises:
+            IOError: If the model cannot be loaded from the specified path
         """
+        # First load the base model using the parent class method
+        model = super().load_model(filepath)
+        
+        # Load additional model-specific components
         try:
-            if not os.path.exists(path):
-                logger.warning(f"Model file {path} does not exist")
-                return
+            # Load Q-tables
+            q_tables_path = f"{filepath}.q_tables"
+            if os.path.exists(q_tables_path):
+                with open(q_tables_path, 'rb') as f:
+                    model.q_tables = pickle.load(f)
+                logger.info(f"Loaded RL model Q-tables from {q_tables_path}")
+            
+            # Load metadata to update model attributes
+            metadata_path = f"{filepath}.meta.json"
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
                 
-            with open(path, 'rb') as f:
-                model_data = pickle.load(f)
+                # Update model attributes from metadata
+                if 'alpha' in metadata:
+                    model.alpha = metadata['alpha']
+                if 'gamma' in metadata:
+                    model.gamma = metadata['gamma']
+                if 'epsilon' in metadata:
+                    model.epsilon = metadata['epsilon']
+                if 'min_epsilon' in metadata:
+                    model.min_epsilon = metadata['min_epsilon']
+                if 'epsilon_decay' in metadata:
+                    model.epsilon_decay = metadata['epsilon_decay']
+                if 'num_bins' in metadata:
+                    model.num_bins = metadata['num_bins']
+                if 'feature_names' in metadata:
+                    model._feature_names = metadata['feature_names']
+                if 'service_preference_map' in metadata:
+                    model.service_preference_map = metadata['service_preference_map']
             
-            self.q_tables = model_data.get('q_tables', {})
-            self.alpha = model_data.get('alpha', self.alpha)
-            self.gamma = model_data.get('gamma', self.gamma)
-            self.epsilon = model_data.get('epsilon', self.epsilon)
-            self.min_epsilon = model_data.get('min_epsilon', self.min_epsilon)
-            self.epsilon_decay = model_data.get('epsilon_decay', self.epsilon_decay)
-            self.num_bins = model_data.get('num_bins', self.num_bins)
-            self._feature_names = model_data.get('feature_names', self._feature_names)
-            self.service_preference_map = model_data.get('service_preference_map', self.service_preference_map)
-            
-            logger.info(f"Loaded RL model from {path}")
+            return model
         except Exception as e:
-            logger.error(f"Error loading RL model: {e}")
+            logger.error(f"Error loading RL model components: {e}")
+            raise IOError(f"Failed to load model components: {str(e)}")
     
     def configure(self, config: Dict[str, Any]) -> None:
         """

@@ -103,7 +103,7 @@ class InsertionAssigner:
             
             if not available_vehicles:
                 return None, RejectionMetadata(
-                    reason=RejectionReason.NO_VEHICLES_AVAILABLE,
+                    reason=RejectionReason.NO_VEHICLE_AVAILABLE,
                     timestamp=self.sim_context.current_time.isoformat(),
                     stage="matching",
                     details={
@@ -141,7 +141,7 @@ class InsertionAssigner:
                 most_common_reason = max(
                     set(rejection_reasons),
                     key=rejection_reasons.count,
-                    default=RejectionReason.NO_FEASIBLE_INSERTION
+                    default=RejectionReason.UNKNOWN
                 )
                 
                 # Aggregate rejection details
@@ -241,7 +241,7 @@ class InsertionAssigner:
                     feasible=False,
                     pickup_index=-1,
                     dropoff_index=-1,
-                    rejection_reason=RejectionReason.NO_FEASIBLE_INSERTION,
+                    rejection_reason=RejectionReason.SERVICE_UNAVAILABLE,
                     rejection_details={
                         "vehicle_id": vehicle.id,
                         "reason": "All stops in current route completed"
@@ -360,7 +360,7 @@ class InsertionAssigner:
                         feasible=False,
                         pickup_index=-1,
                         dropoff_index=-1,
-                        rejection_reason=RejectionReason.NO_FEASIBLE_INSERTION,
+                        rejection_reason=RejectionReason.SERVICE_UNAVAILABLE,
                         rejection_details={
                             "vehicle_id": vehicle.id,
                             "error": "Failed to create modified route"
@@ -375,7 +375,7 @@ class InsertionAssigner:
                         feasible=False,
                         pickup_index=-1,
                         dropoff_index=-1,
-                        rejection_reason=RejectionReason.NO_FEASIBLE_INSERTION,
+                        rejection_reason=RejectionReason.SERVICE_UNAVAILABLE,
                         rejection_details={
                             "vehicle_id": vehicle.id
                         }
@@ -672,14 +672,14 @@ class InsertionAssigner:
             "geographic": RejectionReason.GEOGRAPHIC_CONSTRAINT,
             
             # Distance-based violations
-            "distance": RejectionReason.NO_FEASIBLE_INSERTION
+            "distance": RejectionReason.SERVICE_UNAVAILABLE
         }
         
         # Log the violation for metrics tracking
         violation_type_normalized = violation_type.lower().replace(" ", "_")
         self.violation_counts[violation_type_normalized] = self.violation_counts.get(violation_type_normalized, 0) + 1
         
-        return violation_map.get(violation_type, RejectionReason.NO_FEASIBLE_INSERTION)
+        return violation_map.get(violation_type, RejectionReason.SERVICE_UNAVAILABLE)
 
     async def _evaluate_new_route(
         self,

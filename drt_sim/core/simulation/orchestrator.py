@@ -123,11 +123,15 @@ class SimulationOrchestrator:
             # Initialize user profile manager
             self.user_profile_manager = UserProfileManager(self.cfg.user_acceptance)
 
+            # Initialize user profile manager
+            self.user_profile_manager = UserProfileManager(self.cfg.user_acceptance)
+            
             # Initialize user acceptance manager
             self.user_acceptance_manager = UserAcceptanceManager(
                 config=self.cfg.user_acceptance,
                 user_profile_manager=self.user_profile_manager
             )
+        
 
             # Initialize SUMO integration if enabled
             if self.sim_cfg.sumo.enabled:
@@ -182,21 +186,6 @@ class SimulationOrchestrator:
         """Initialize all event handlers."""
         logger.info("Initializing handlers")
         
-        # Initialize user profile manager
-        self.user_profile_manager = UserProfileManager(self.cfg.user_acceptance)
-        
-        # Initialize user acceptance manager
-        self.user_acceptance_manager = UserAcceptanceManager(
-            config=self.cfg.user_acceptance,
-            user_profile_manager=self.user_profile_manager
-        )
-        
-        # Initialize route service
-        self.route_service = RouteService(
-            self.network_manager,
-            self.context,
-            self.state_manager
-        )
         
         # Initialize request handler
         self.request_handler = RequestHandler(
@@ -219,7 +208,6 @@ class SimulationOrchestrator:
             self.cfg,
             self.context,
             self.state_manager,
-            self.network_manager
         )
         
         # Initialize route handler

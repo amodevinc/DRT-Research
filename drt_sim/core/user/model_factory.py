@@ -77,30 +77,13 @@ class ModelFactory:
                 normalization_overrides=normalization_overrides
             )
         
-        # Try to get model class from registry
-        model_class = cls._model_registry.get(model_type)
+        # Get the model class
+        model_class = cls.get_model_class(model_type)
         
-        # If not in registry, try to load dynamically
-        if not model_class:
-            try:
-                # Import the model class dynamically
-                module_path = f"drt_sim.algorithms.user_acceptance.{model_type}"
-                module = importlib.import_module(module_path)
-                
-                # Get the model class (assuming it follows naming convention)
-                class_name = "".join(word.capitalize() for word in model_type.split("_")) + "Model"
-                model_class = getattr(module, class_name)
-                
-                # Register the model type for future use
-                cls.register_model_type(model_type, model_class)
-            except (ImportError, AttributeError) as e:
-                logger.error(f"Failed to load model type {model_type}: {str(e)}")
-                raise ValueError(f"Unsupported model type: {model_type}")
-        
-        # Create model instance with feature extractor
+        # Create model instance with feature extractor and provider registry
         model = model_class(
             feature_extractor=feature_extractor,
-            feature_provider_registry=feature_provider_registry,  # Pass the registry
+            feature_provider_registry=feature_provider_registry,
             **kwargs
         )
         
@@ -144,10 +127,11 @@ class ModelFactory:
         Raises:
             ValueError: If the model type is not supported
         """
+        # Check if model type is already registered
         if model_type in cls._model_registry:
             return cls._model_registry[model_type]
         
-        # Try to load dynamically
+        # If not registered, try to load dynamically
         try:
             # Import the model class dynamically
             module_path = f"drt_sim.algorithms.user_acceptance.{model_type}"
@@ -174,14 +158,7 @@ class ModelFactory:
             Dict[str, UserAcceptanceModel]: Dictionary of model type to model instance
         """
         default_models = {}
-        
-        # Try to register some common models
-        try:
-            from drt_sim.algorithms.user_acceptance.default import DefaultModel
-            cls.register_model_type("default", DefaultModel)
-        except ImportError:
-            pass
-        
+
         try:
             from drt_sim.algorithms.user_acceptance.logit import LogitModel
             cls.register_model_type("logit", LogitModel)
@@ -191,6 +168,12 @@ class ModelFactory:
         try:
             from drt_sim.algorithms.user_acceptance.rl import RLAcceptanceModel
             cls.register_model_type("rl", RLAcceptanceModel)
+        except ImportError:
+            pass
+
+        try:
+            from drt_sim.algorithms.user_acceptance.policy_gradient_agent import PolicyGradientAgentModel
+            cls.register_model_type("policy_gradient_agent", PolicyGradientAgentModel)
         except ImportError:
             pass
         

@@ -179,7 +179,7 @@ A simple threshold-based model:
 model = DefaultModel(
     max_waiting_time=15.0,
     max_travel_time=45.0,
-    max_cost=30.0,
+    max_price=30.0,
     feature_weights={
         "waiting_time": 0.4,
         "travel_time": 0.3,

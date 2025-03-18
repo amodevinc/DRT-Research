@@ -15,7 +15,8 @@ class MetricName(Enum):
     REQUEST_RECEIVED = 'request.received'
     REQUEST_ASSIGNED = 'request.assigned'
     REQUEST_REJECTED = 'request.rejected'
-
+    REQUEST_USER_REJECTED = 'request.user_rejected'
+    
     VEHICLE_UTILIZATION = 'vehicle.utilization'
     VEHICLE_WAIT_TIME = 'vehicle.wait_time'
     VEHICLE_OCCUPIED_DISTANCE = 'vehicle.occupied_distance'

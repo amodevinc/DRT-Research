@@ -38,19 +38,12 @@ class FeatureExtractor:
             "importance": "high",
             "group": "time"
         },
-        "cost": {
-            "description": "Monetary cost of the service",
+        "price": {
+            "description": "Monetary price of the service",
             "unit": "currency",
             "normalization": 50.0,
             "importance": "high",
-            "group": "cost"
-        },
-        "detour_ratio": {
-            "description": "Ratio of actual distance to direct distance",
-            "unit": "ratio",
-            "normalization": 1.0,
-            "importance": "medium",
-            "group": "quality"
+            "group": "price"
         },
         "time_of_day": {
             "description": "Hour of the day",
@@ -195,23 +188,10 @@ class FeatureExtractor:
                         travel_time = travel_time.total_seconds() / 60
                     result[feature_name] = min(travel_time / normalization, 1.0)
             
-            # Extract cost
-            elif feature_name == "cost":
-                if "cost" in features:
-                    result[feature_name] = min(features["cost"] / normalization, 1.0)
-            
-            # Extract detour ratio
-            elif feature_name == "detour_ratio":
-                if "detour_ratio" in features:
-                    result[feature_name] = min(features["detour_ratio"], 1.0)
-                else:
-                    # Calculate a simple detour ratio if not provided
-                    direct_distance = features.get("direct_distance", 0)
-                    actual_distance = features.get("actual_distance", direct_distance)
-                    if direct_distance > 0:
-                        result[feature_name] = min((actual_distance / direct_distance) - 1.0, 1.0)
-                    else:
-                        result[feature_name] = 0.0
+            # Extract price
+            elif feature_name == "price":
+                if "price" in features:
+                    result[feature_name] = min(features["price"] / normalization, 1.0)
             
             # Extract time of day
             elif feature_name == "time_of_day":

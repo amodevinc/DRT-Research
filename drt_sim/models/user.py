@@ -1,22 +1,41 @@
 """
-User profile module for DRT simulation.
+User model for DRT simulation.
 
-This module provides a redesigned user profile class that integrates well
-with the acceptance modeling framework and focuses on essential attributes.
+This module defines the user profile model and related data structures
+for use in acceptance decision modeling, with support for tracking weight
+changes over time across different simulation studies.
 """
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Dict, List, Any, Optional
+from weakref import ref, ReferenceType
+from datetime import datetime
 import logging
+import copy
 import json
 import os
-
 logger = logging.getLogger(__name__)
 
-class ServicePreference(Enum):
-    """Service preferences that influence acceptance weights"""
-    SPEED = "speed"                # Prefers faster service
-    RELIABILITY = "reliability"    # Prefers reliable arrival times
+# Define a protocol for profile saving to avoid circular imports
+class ProfileSaver:
+    """Protocol for profile saving functionality."""
+    
+    def save_user_profile(self, profile: 'UserProfile') -> None:
+        """
+        Save a user profile.
+        
+        Args:
+            profile: User profile to save
+        """
+        pass
+
+@dataclass
+class WeightChangeRecord:
+    """Record of a weight change event."""
+    timestamp: str
+    weights: Dict[str, float]
+    study_id: str
+    simulation_id: str
+    reason: str = "Weight update"
 
 @dataclass
 class UserProfile:
@@ -33,14 +52,11 @@ class UserProfile:
     max_walking_time_from_destination: float = 3.0  # minutes
     max_waiting_time: float = 10.0  # minutes
     max_in_vehicle_time: float = 25.0   # minutes
-    max_cost: float = 30.0          # currency units
+    max_price: float = 30.0          # currency units
     max_acceptable_delay: float = 7.0 # minutes
     
-    # User preferences
-    service_preference: ServicePreference = ServicePreference.SPEED
-    
     # Feature weights for acceptance decisions
-    weights: Dict[str, float] = field(default_factory=lambda: {
+    base_weights: Dict[str, float] = field(default_factory=lambda: {
         "walking_time_to_origin": 0.4,
         "wait_time": 0.3,
         "in_vehicle_time": 0.2,
@@ -50,20 +66,112 @@ class UserProfile:
         "distance_to_pickup": 0.0
     })
     
+    weights: Dict[str, float] = field(default_factory=dict)
+    
+    # Weight history
+    weight_history: List[Dict[str, Any]] = field(default_factory=list)
+    
     # Historical data
     historical_trips: int = 0
     historical_acceptance_rate: float = 0.0
     historical_ratings: List[float] = field(default_factory=list)
     
-    # Manager reference (set by UserProfileManager)
-    _manager: Any = None
+    # Timestamps
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    # Manager reference (set by UserProfileManager) - using weak reference to avoid circular references
+    _manager_ref: Optional[ReferenceType[ProfileSaver]] = None
+    
+    # Current study and simulation context
+    _current_study_id: str = "default_study"
+    _current_simulation_id: str = "default_simulation"
     
     def __post_init__(self):
         """Initialize after instance creation."""
+        # If weights not provided, use base_weights
+        if not self.weights:
+            self.weights = copy.deepcopy(self.base_weights)
+        
         # Ensure weights are properly normalized
-        weight_sum = sum(self.weights.values())
-        if weight_sum > 0:
-            self.weights = {k: v / weight_sum for k, v in self.weights.items()}
+        self._normalize_weights()
+        
+        # Initialize weight history if empty
+        if not self.weight_history:
+            self.weight_history = [{
+                "timestamp": datetime.now().isoformat(),
+                "weights": copy.deepcopy(self.weights),
+                "study_id": self._current_study_id,
+                "simulation_id": self._current_simulation_id,
+                "reason": "Initial profile creation"
+            }]
+    
+    def _normalize_weights(self):
+        """
+        Legacy method for weight normalization.
+        
+        No longer normalizes weights since we're using logit model coefficients
+        that should preserve their exact values.
+        """
+        # No normalization for logit coefficients
+        pass
+    
+    @property
+    def _manager(self) -> Optional[ProfileSaver]:
+        """Get the manager if it exists."""
+        if self._manager_ref is not None:
+            return self._manager_ref()
+        return None
+    
+    @_manager.setter
+    def _manager(self, manager: ProfileSaver) -> None:
+        """Set the manager reference."""
+        if manager is not None:
+            self._manager_ref = ref(manager)
+        else:
+            self._manager_ref = None
+    
+    def set_manager(self, manager: ProfileSaver) -> None:
+        """
+        Set the manager for this profile.
+        
+        Args:
+            manager: The manager to use for saving this profile
+        """
+        self._manager = manager
+    
+    def set_study_context(self, study_id: str, simulation_id: str) -> None:
+        """
+        Set the current study and simulation context.
+        
+        Args:
+            study_id: Current study ID
+            simulation_id: Current simulation ID
+        """
+        self._current_study_id = study_id
+        self._current_simulation_id = simulation_id
+    
+    def get_study_context(self) -> Dict[str, str]:
+        """
+        Get the current study and simulation context.
+        
+        Returns:
+            Dict containing study_id and simulation_id
+        """
+        return {
+            "study_id": self._current_study_id,
+            "simulation_id": self._current_simulation_id
+        }
+    
+    def _notify_update(self) -> None:
+        """Notify the manager of an update if available."""
+        self.last_updated = datetime.now().isoformat()
+        manager = self._manager
+        if manager is not None:
+            try:
+                manager.save_user_profile(self)
+            except Exception as e:
+                logger.error(f"Failed to save profile {self.id}: {e}")
     
     def get_acceptance_rate(self) -> float:
         """
@@ -94,66 +202,161 @@ class UserProfile:
             return 5.0
         return sum(self.historical_ratings) / len(self.historical_ratings)
     
-    def update_acceptance_rate(self, accepted: bool) -> None:
+    def add_trip(self, accepted: bool, rating: Optional[float] = None, reason: str = None) -> None:
         """
-        Update the historical acceptance rate with a new decision.
+        Add a trip to the user's history.
         
         Args:
-            accepted: Whether the user accepted the service
+            accepted: Whether the trip was accepted
+            rating: Optional rating given by the user
+            reason: Optional reason for the decision
         """
-        # Simple running average
-        if self.historical_trips == 0:
-            self.historical_acceptance_rate = 1.0 if accepted else 0.0
-        else:
-            new_rate = ((self.historical_acceptance_rate * self.historical_trips) + 
-                        (1.0 if accepted else 0.0)) / (self.historical_trips + 1)
-            self.historical_acceptance_rate = new_rate
-        
+        # Update trip count
         self.historical_trips += 1
         
-        # Notify manager of update if available
-        if self._manager:
-            self._manager.save_user_profile(self)
+        # Update acceptance rate
+        if self.historical_trips > 1:
+            old_accepted_count = self.historical_acceptance_rate * (self.historical_trips - 1)
+            new_accepted_count = old_accepted_count + (1 if accepted else 0)
+            self.historical_acceptance_rate = new_accepted_count / self.historical_trips
+        else:
+            self.historical_acceptance_rate = 1.0 if accepted else 0.0
+        
+        # Add rating if provided
+        if rating is not None:
+            self.historical_ratings.append(rating)
+        
+        # Notify manager
+        self._notify_update()
     
-    def add_rating(self, rating: float) -> None:
+    def update_weights(self, new_weights: Dict[str, float], reason: str = "Weight update") -> None:
         """
-        Add a new rating given by this user.
+        Update the user's weights.
         
         Args:
-            rating: Rating value (typically 1.0 to 5.0)
+            new_weights: New weights to apply (partial update supported)
+            reason: Reason for the weight update
         """
-        self.historical_ratings.append(rating)
+        # Create a record of the old weights before updating
+        old_weights = copy.deepcopy(self.weights)
         
-        # Notify manager of update if available
-        if self._manager:
-            self._manager.save_user_profile(self)
+        # Update weights - preserving exact values as logit model coefficients
+        for key, value in new_weights.items():
+            self.weights[key] = value
+        
+        # Call normalize method (no longer performs normalization for logit coefficients)
+        self._normalize_weights()
+        
+        # Record the weight change in history
+        self.weight_history.append({
+            "timestamp": datetime.now().isoformat(),
+            "weights": copy.deepcopy(self.weights),
+            "study_id": self._current_study_id,
+            "simulation_id": self._current_simulation_id,
+            "reason": reason,
+            "prev_weights": old_weights
+        })
+        
+        # Notify manager
+        self._notify_update()
     
-    def get_weights(self) -> Dict[str, float]:
+    def reset_to_base_weights(self, reason: str = "Reset to base weights") -> None:
         """
-        Get weights for acceptance model features.
+        Reset weights to the original base weights.
         
+        Args:
+            reason: Reason for resetting weights
+        """
+        old_weights = copy.deepcopy(self.weights)
+        self.weights = copy.deepcopy(self.base_weights)
+        
+        # Record the weight change in history
+        self.weight_history.append({
+            "timestamp": datetime.now().isoformat(),
+            "weights": copy.deepcopy(self.weights),
+            "study_id": self._current_study_id,
+            "simulation_id": self._current_simulation_id,
+            "reason": reason,
+            "prev_weights": old_weights
+        })
+        
+        # Notify manager
+        self._notify_update()
+    
+    def reset_to_simulation_point(self, study_id: str, simulation_id: str, reason: str = None) -> bool:
+        """
+        Reset weights to a specific simulation point.
+        
+        Args:
+            study_id: Study ID to reset to
+            simulation_id: Simulation ID to reset to
+            reason: Reason for resetting weights
+            
         Returns:
-            Dict[str, float]: Feature weights
+            bool: True if reset was successful, False otherwise
         """
-        return self.weights.copy()
+        # Find the latest weight update for the specified study and simulation
+        for entry in reversed(self.weight_history):
+            if entry["study_id"] == study_id and entry["simulation_id"] == simulation_id:
+                old_weights = copy.deepcopy(self.weights)
+                self.weights = copy.deepcopy(entry["weights"])
+                
+                reset_reason = reason or f"Reset to weights from {study_id}/{simulation_id}"
+                
+                # Record the weight change in history
+                self.weight_history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "weights": copy.deepcopy(self.weights),
+                    "study_id": self._current_study_id,
+                    "simulation_id": self._current_simulation_id,
+                    "reason": reset_reason,
+                    "prev_weights": old_weights,
+                    "reset_to": {"study_id": study_id, "simulation_id": simulation_id}
+                })
+                
+                # Notify manager
+                self._notify_update()
+                return True
+        
+        logger.warning(f"No weight history found for {study_id}/{simulation_id}")
+        return False
     
-    def update_weights(self, new_weights: Dict[str, float]) -> None:
+    def get_weight_evolution(self, weight_name: str = None, study_id: str = None) -> List[Dict]:
         """
-        Update feature weights.
+        Get the evolution of weights over time.
         
         Args:
-            new_weights: New weight values to set
+            weight_name: Optional specific weight to track
+            study_id: Optional study ID to filter by
+            
+        Returns:
+            List of weight change records
         """
-        self.weights.update(new_weights)
+        if not self.weight_history:
+            return []
         
-        # Renormalize weights
-        weight_sum = sum(self.weights.values())
-        if weight_sum > 0:
-            self.weights = {k: v / weight_sum for k, v in self.weights.items()}
+        filtered_history = self.weight_history
         
-        # Notify manager of update if available
-        if self._manager:
-            self._manager.save_user_profile(self)
+        # Filter by study ID if specified
+        if study_id:
+            filtered_history = [entry for entry in filtered_history 
+                               if entry["study_id"] == study_id]
+        
+        # Extract just the specific weight if specified
+        if weight_name:
+            result = []
+            for entry in filtered_history:
+                if weight_name in entry["weights"]:
+                    result.append({
+                        "timestamp": entry["timestamp"],
+                        "value": entry["weights"][weight_name],
+                        "study_id": entry["study_id"],
+                        "simulation_id": entry["simulation_id"],
+                        "reason": entry.get("reason", "Weight update")
+                    })
+            return result
+        
+        return filtered_history
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -168,13 +371,16 @@ class UserProfile:
             "max_walking_time_from_destination": self.max_walking_time_from_destination,
             "max_waiting_time": self.max_waiting_time,
             "max_in_vehicle_time": self.max_in_vehicle_time,
-            "max_cost": self.max_cost,
+            "max_price": self.max_price,
             "max_acceptable_delay": self.max_acceptable_delay,
-            "service_preference": self.service_preference.value,
+            "base_weights": self.base_weights,
             "weights": self.weights,
+            "weight_history": self.weight_history,
             "historical_trips": self.historical_trips,
             "historical_acceptance_rate": self.historical_acceptance_rate,
-            "historical_ratings": self.historical_ratings
+            "historical_ratings": self.historical_ratings,
+            "created_at": self.created_at,
+            "last_updated": self.last_updated
         }
     
     @classmethod
@@ -191,12 +397,13 @@ class UserProfile:
         # Create a copy to avoid modifying the original
         data_copy = data.copy()
         
-        # Parse service preference enum
-        if "service_preference" in data_copy and isinstance(data_copy["service_preference"], str):
-            try:
-                data_copy["service_preference"] = ServicePreference(data_copy["service_preference"])
-            except ValueError:
-                data_copy["service_preference"] = ServicePreference.SPEED
+        # Remove service_preference if present (for backward compatibility)
+        if "service_preference" in data_copy:
+            del data_copy["service_preference"]
+        
+        # Handle missing base_weights by using current weights
+        if "base_weights" not in data_copy and "weights" in data_copy:
+            data_copy["base_weights"] = copy.deepcopy(data_copy["weights"])
         
         return cls(**data_copy)
 
@@ -237,7 +444,7 @@ class UserProfileManager:
                             data = json.load(f)
                         
                         profile = UserProfile.from_dict(data)
-                        profile._manager = self
+                        profile.set_manager(self)
                         self.profiles[profile.id] = profile
                     except Exception as e:
                         logger.error(f"Error loading profile from {filename}: {e}")
@@ -273,7 +480,7 @@ class UserProfileManager:
         
         # Create a new profile
         profile = UserProfile(id=user_id)
-        profile._manager = self
+        profile.set_manager(self)
         self.profiles[user_id] = profile
         
         # Save the new profile

@@ -53,44 +53,52 @@ class RejectionReason(Enum):
 
 @dataclass
 class RejectionMetadata:
-    """
-    Metadata for a rejected request.
-    
-    This class stores information about why a request was rejected,
-    when it was rejected, and any additional details.
-    """
+    """Metadata for request rejection"""
     reason: RejectionReason
-    details: str
-    timestamp: datetime
-    additional_data: Optional[Dict[str, Any]] = None
+    timestamp: str
+    stage: str
+    details: Dict[str, Any]
     
     def __post_init__(self):
-        """Ensure reason is a RejectionReason enum."""
-        if isinstance(self.reason, str):
-            try:
-                self.reason = RejectionReason(self.reason)
-            except ValueError:
-                self.reason = RejectionReason.UNKNOWN
+        """Validate and process rejection metadata"""
+        if not isinstance(self.reason, RejectionReason):
+            raise ValueError("reason must be a RejectionReason enum")
+        if not isinstance(self.timestamp, str):
+            raise ValueError("timestamp must be a string")
+        if not isinstance(self.stage, str):
+            raise ValueError("stage must be a string")
+        if not isinstance(self.details, dict):
+            raise ValueError("details must be a dictionary")
+            
+        # Ensure timestamp is valid ISO format
+        try:
+            datetime.fromisoformat(self.timestamp)
+        except ValueError:
+            raise ValueError("timestamp must be in ISO format")
+            
+        # Add standard fields to details if not present
+        if "evaluated_vehicles" not in self.details:
+            self.details["evaluated_vehicles"] = 0
+        if "rejection_counts" not in self.details:
+            self.details["rejection_counts"] = {}
+        if "constraint_violations" not in self.details:
+            self.details["constraint_violations"] = {}
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary representation."""
+        """Convert metadata to dictionary format"""
         return {
             "reason": self.reason.value,
-            "details": self.details,
-            "timestamp": self.timestamp.isoformat(),
-            "additional_data": self.additional_data
+            "timestamp": self.timestamp,
+            "stage": self.stage,
+            "details": self.details
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RejectionMetadata':
-        """Create from dictionary representation."""
-        timestamp = data.get("timestamp")
-        if isinstance(timestamp, str):
-            timestamp = datetime.fromisoformat(timestamp)
-        
+        """Create metadata from dictionary"""
         return cls(
-            reason=data.get("reason", RejectionReason.UNKNOWN),
-            details=data.get("details", ""),
-            timestamp=timestamp or datetime.now(),
-            additional_data=data.get("additional_data")
+            reason=RejectionReason(data["reason"]),
+            timestamp=data["timestamp"],
+            stage=data["stage"],
+            details=data["details"]
         ) 

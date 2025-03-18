@@ -388,7 +388,15 @@ class AlgorithmConfig(DataclassYAMLMixin):
     user_acceptance_params: Optional[Dict[str, Any]] = None
     stop_selector_params: Optional[Dict[str, Any]] = None
     stop_assigner_params: Optional[Dict[str, Any]] = None
-    rebalancing_params: Optional[Dict[str, Any]] = None
+    rebalancing_params: Dict[str, Any] = field(default_factory=lambda: {
+        "strategy": "naive",
+        "min_battery_level": 20.0,
+        "weights": {
+            "distance": 1.0,
+            "demand": 0.0
+        }
+    })
+
     def __post_init__(self):
         """Initialize nested configurations"""
         # Convert dictionary parameters if they're provided
@@ -413,13 +421,13 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
             "max_walking_time_from_destination": 45.0,
             "max_waiting_time": 30.0,
             "max_in_vehicle_time": 25.0,
-            "max_cost": 30.0,
+            "max_price": 30.0,
             "feature_weights": {
                 "walking_time_to_origin": -0.4,
                 "walking_time_from_destination": -0.3,
                 "waiting_time": -0.3,
                 "in_vehicle_time": -0.2,
-                "cost": -0.1
+                "price": -0.1
             }
         }
     })
@@ -440,7 +448,7 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
             "walking_time_from_destination": 15.0,
             "waiting_time": 30.0,
             "in_vehicle_time": 60.0,
-            "cost": 50.0
+            "price": 50.0
         }
     })
     
@@ -450,20 +458,12 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
             "enabled": True,
             "holidays": []
         },
-        "spatial": {
-            "enabled": True,
-            "urban_areas": {},
-            "region_info": {}
-        },
         "user_history": {
             "enabled": True
         },
         "weather": {
             "enabled": False,
             "service": None
-        },
-        "service_quality": {
-            "enabled": True
         },
         "custom_providers": []
     })
@@ -474,7 +474,7 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
         "walking_time_from_destination": -0.3,
         "waiting_time": -0.4,
         "in_vehicle_time": -0.2,
-        "cost": -0.1
+        "price": -0.1
     })
     
     # Custom parameters for extensibility
@@ -495,13 +495,13 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                     "max_walking_time_from_destination": 15.0,
                     "max_waiting_time": 30.0,
                     "max_in_vehicle_time": 60.0,
-                    "max_cost": 50.0,
+                    "max_price": 50.0,
                     "feature_weights": {
                         "walking_time_to_origin": -0.4,
                         "walking_time_from_destination": -0.3,
                         "waiting_time": -0.3,
                         "in_vehicle_time": -0.2,
-                        "cost": -0.1
+                        "price": -0.1
                     }
                 }
             }
@@ -520,13 +520,13 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                 "max_walking_time_from_destination": 15.0,
                 "max_waiting_time": 30.0,
                 "max_in_vehicle_time": 60.0,
-                "max_cost": 50.0,
+                "max_price": 50.0,
                 "feature_weights": {
                     "walking_time_to_origin": -0.4,
                     "walking_time_from_destination": -0.3,
                     "waiting_time": -0.3,
                     "in_vehicle_time": -0.2,
-                    "cost": -0.1
+                    "price": -0.1
                 }
             }
         elif model_type == "logit" and not self.model["parameters"]:
@@ -536,7 +536,7 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                     "walking_time_from_destination": -1.5,
                     "waiting_time": -2.5,
                     "in_vehicle_time": -1.5,
-                    "cost": -2.0
+                    "price": -2.0
                 },
                 "max_training_samples": 1000,
                 "logistic_params": {
@@ -567,7 +567,7 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                     "walking_time_from_destination": 15.0,
                     "waiting_time": 30.0,
                     "in_vehicle_time": 60.0,
-                    "cost": 50.0
+                    "price": 50.0
                 }
             }
         
@@ -578,20 +578,12 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                     "enabled": True,
                     "holidays": []
                 },
-                "spatial": {
-                    "enabled": True,
-                    "urban_areas": {},
-                    "region_info": {}
-                },
                 "user_history": {
                     "enabled": True
                 },
                 "weather": {
                     "enabled": False,
                     "service": None
-                },
-                "service_quality": {
-                    "enabled": True
                 },
                 "custom_providers": []
             }

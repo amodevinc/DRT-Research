@@ -48,7 +48,7 @@ class TestUserAcceptanceManager(unittest.TestCase):
                 "max_walking_time_from_destination": 3.0,
                 "max_waiting_time": 10.0,
                 "max_in_vehicle_time": 25.0,
-                "max_cost": 30.0,
+                "max_price": 30.0,
                 "max_acceptable_delay": 7.0,
                 "service_preference": "speed",
                 "weights": {
@@ -70,7 +70,7 @@ class TestUserAcceptanceManager(unittest.TestCase):
                 "max_walking_time_from_destination": 4.0,
                 "max_waiting_time": 15.0,
                 "max_in_vehicle_time": 30.0,
-                "max_cost": 25.0,
+                "max_price": 25.0,
                 "max_acceptable_delay": 5.0,
                 "service_preference": "reliability",
                 "weights": {
@@ -159,14 +159,14 @@ class TestUserAcceptanceManager(unittest.TestCase):
         now = datetime.datetime.now()
         proposed_pickup_time = now + datetime.timedelta(minutes=5)
         proposed_travel_time = datetime.timedelta(minutes=15)
-        cost = 25.0
+        price = 25.0
         
         # Execute
         probability = self.manager.calculate_acceptance_probability(
             self.mock_request,
             proposed_pickup_time,
             proposed_travel_time,
-            cost
+            price
         )
         
         # Verify
@@ -179,14 +179,14 @@ class TestUserAcceptanceManager(unittest.TestCase):
         now = datetime.datetime.now()
         proposed_pickup_time = now + datetime.timedelta(minutes=5)
         proposed_travel_time = datetime.timedelta(minutes=15)
-        cost = 25.0
+        price = 25.0
         
         # Execute
         accepted, probability = self.manager.decide_acceptance(
             self.mock_request,
             proposed_pickup_time,
             proposed_travel_time,
-            cost
+            price
         )
         
         # Verify

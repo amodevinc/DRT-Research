@@ -136,6 +136,21 @@ metrics:
       distribution: false
       summary: true
 
+  - name: "request.user_rejected"
+    description: "A potential assignment was rejected by the user."
+    metric_type: "event"
+    unit: "count"
+    required_context:
+      - request_id
+      - rejection_time
+      - rejection_reason
+    aggregations:
+      - count
+    visualizations:
+      time_series: false
+      distribution: false
+      summary: true
+      
   - name: "vehicle.utilization"
     description: "Percentage of time the vehicle is in service and processing requests vs total service time, logged per vehicle at each step."
     metric_type: "event"

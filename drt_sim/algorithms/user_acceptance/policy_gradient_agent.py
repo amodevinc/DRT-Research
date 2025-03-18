@@ -1,360 +1,712 @@
+"""
+Policy gradient-based user acceptance model.
+
+This module provides a policy gradient-based model for user acceptance decisions,
+learning from ongoing interactions with users using direct policy optimization.
+"""
+from typing import Dict, Any, Optional, List, Tuple
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-from IPython.display import HTML
+import logging
+import pickle
+import os
+import json
+import random
+from collections import deque
 
-class PolicyGradientAgent:
+from drt_sim.algorithms.base_interfaces.user_acceptance_base import UserAcceptanceModel
+from drt_sim.core.user.acceptance_context import AcceptanceContext
+from drt_sim.core.user.feature_extractor import FeatureExtractor
+from drt_sim.core.user.feature_provider import FeatureProviderRegistry
+logger = logging.getLogger(__name__)
+
+class PolicyGradientAgentModel(UserAcceptanceModel):
     """
-    Policy gradient agent that learns to predict user choices.
+    Policy gradient-based user acceptance model.
     
-    This agent uses a softmax-based choice model to select alternatives based
-    on learned weights. It updates its policy using the REINFORCE algorithm
-    with discounted returns.
-    
-    Attributes:
-        alpha (float): Learning rate for gradient ascent.
-        beta (float): Sensitivity parameter for the logit (softmax) function.
-        gamma (float): Discount factor for future rewards.
-        epsilon (float): Exploration rate for ε-greedy action selection.
-        weights (ndarray): Learned weights of shape (feature_dim,).
-        weight_history (list): List of weight snapshots during training.
-        reward_history (list): List of episode rewards during training.
-        accuracy_history (list): List of episode accuracy values during training.
+    This class implements a user acceptance model based on policy gradient,
+    which directly optimizes the policy for predicting user acceptance.
     """
     
-    def __init__(self, alpha, beta, feature_dim, epsilon, gamma=0.99):
+    def __init__(self, feature_extractor: Optional[FeatureExtractor] = None, 
+                 feature_provider_registry: Optional[FeatureProviderRegistry] = None, 
+                 **kwargs):
         """
-        Initialize the agent with hyperparameters.
+        Initialize the policy gradient model.
         
         Args:
-            alpha (float): Learning rate.
-            beta (float): Softmax temperature parameter.
-            feature_dim (int): Dimensionality of the feature vectors.
-            epsilon (float): Exploration probability for ε-greedy policy.
-            gamma (float, optional): Discount factor. Defaults to 0.99.
+            feature_extractor: Feature extractor to use
+            feature_provider_registry: Feature provider registry
+            **kwargs: Additional parameters
         """
-        self.alpha = alpha  # Learning rate
-        self.beta = beta    # Logit model sensitivity parameter
-        self.gamma = gamma  # Discount factor
-        self.epsilon = epsilon  # Exploration rate
-        self.weights = np.zeros((feature_dim,))  # Initialize weights to zeros
+        super().__init__(feature_extractor, **kwargs)
+        self.feature_provider_registry = feature_provider_registry
         
-        # For visualization purposes
-        self.weight_history = [self.weights.copy()]
-        self.reward_history = []
-        self.accuracy_history = []
-        self.feature_names = None  # Will be set if feature names are available
-
-    def set_feature_names(self, feature_names):
-        """
-        Set the names of features for better visualization.
+        # Policy gradient parameters
+        self.alpha = kwargs.get('alpha', 0.01)  # Learning rate
+        self.beta = kwargs.get('beta', 1.0)  # Softmax temperature/sensitivity
+        self.gamma = kwargs.get('gamma', 0.95)  # Discount factor
+        self.epsilon = kwargs.get('epsilon', 0.1)  # Exploration rate
+        self.min_epsilon = kwargs.get('min_epsilon', 0.01)  # Minimum exploration rate
+        self.epsilon_decay = kwargs.get('epsilon_decay', 0.995)  # Epsilon decay rate
         
-        Args:
-            feature_names (list): List of feature names.
-        """
-        self.feature_names = feature_names
-
-    def softmax(self, action_values):
-        """
-        Calculate action probabilities using the softmax function.
+        # Feature selection - these are the features used to define the state space
+        self._feature_names = [
+            "walking_time_to_origin",
+            "waiting_time",
+            "in_vehicle_time",
+            "walking_time_from_destination",
+            "price",
+            "time_of_day",
+            "day_of_week",
+            "detour_factor",
+            "vehicle_occupancy"
+        ]
         
-        This implementation includes numerical stability improvements by
-        subtracting the maximum value before exponentiation.
+        # Initialize default weights - in standard policy gradient, we often start with small random values
+        feature_dim = len(self._feature_names)
+        self.default_weights = np.random.normal(0.0, 0.01, feature_dim)  # Small random values
         
-        Args:
-            action_values (ndarray): Values for each action.
-            
-        Returns:
-            ndarray: Probability distribution over actions.
-        """
-        max_value = np.max(action_values)  # For numerical stability
-        exp_values = np.exp(self.beta * (action_values - max_value))  # Prevent overflow
-        return exp_values / np.sum(exp_values)
-
-    def select_action(self, situation, features):
-        """
-        Select an action based on the current policy.
+        # Default feature coefficients - used for reference but not directly in weight initialization
+        self.default_coefficients = {
+            "walking_time_to_origin": -1.5,
+            "waiting_time": -2.0,
+            "in_vehicle_time": -1.5,
+            "walking_time_from_destination": -1.5,
+            "price": -2.5,
+            "detour_factor": -1.0,
+            "vehicle_occupancy": -0.5
+        }
         
-        Uses ε-greedy strategy: with probability epsilon selects a random action,
-        otherwise selects the action with highest probability according to the policy.
+        # Experience buffer
+        self.episode_history = []
         
-        Args:
-            situation (int): Current situation index.
-            features (ndarray): Feature array of shape [num_situations, num_alternatives, feature_dim].
-            
-        Returns:
-            tuple: (action, action_probabilities) where:
-                - action (int): The selected alternative.
-                - action_probabilities (ndarray): Probability distribution over alternatives.
-        """
-        if np.random.rand() < self.epsilon:
-            # Random exploration
-            num_alternatives = len(features[situation])
-            return np.random.choice(np.arange(num_alternatives)), [1/num_alternatives] * num_alternatives
-        else:
-            # Exploitation based on learned policy
-            action_values = np.dot(features[situation], self.weights)
-            action_probabilities = self.softmax(action_values)
-            action = np.argmax(action_probabilities)
-            return action, action_probabilities
+        # Memory for experience replay
+        self.memory = deque(maxlen=kwargs.get('memory_size', 1000))
+        self.batch_size = kwargs.get('batch_size', 32)
+        
+        # Feature normalization parameters
+        self.feature_means = None
+        self.feature_stds = None
+        # Apply configuration if provided
+        if 'config' in kwargs:
+            self.configure(kwargs['config'])
     
-    def policy_evaluation(self, history):
+    def _normalize_features(self, features: Dict[str, float], update_stats=False) -> Dict[str, float]:
         """
-        Evaluate the policy by computing returns for each time step.
-        
-        Works backwards through the history to compute discounted returns.
+        Normalize features to improve learning.
         
         Args:
-            history (list): List of (action, state, reward, action_probabilities) tuples.
+            features: Dictionary of features
+            update_stats: Whether to update normalization statistics
             
         Returns:
-            ndarray: Array of returns (G) for each time step.
+            Dict[str, float]: Normalized features
         """
-        G = 0
-        returns = []
-        for _, _, reward, _ in reversed(history):
-            G = reward + self.gamma * G
-            returns.insert(0, G)
-        returns = np.array(returns)
-        return returns
-
-    def policy_improvement(self, history, returns, features):
-        """
-        Improve the policy by gradient ascent on the weights.
+        feature_vector = np.array([features.get(name, 0.0) for name in self._feature_names])
         
-        For each time step, computes the gradient of log-prob(action) * return
-        and updates the weights accordingly.
-        
-        Args:
-            history (list): List of (action, state, reward, action_probabilities) tuples.
-            returns (ndarray): Array of returns (G) for each time step.
-            features (ndarray): Feature array of shape [num_situations, num_alternatives, feature_dim].
-        """
-        for (action, state, _, action_probabilities), G in zip(history, returns):
-            gradient = np.zeros_like(self.weights)
-            for a in range(len(action_probabilities)):
-                if a == action:
-                    # Gradient for the chosen action
-                    gradient += (1 - action_probabilities[a]) * features[state][a]
-                else:
-                    # Gradient for unchosen actions
-                    gradient -= action_probabilities[a] * features[state][a]
-            # Update weights in the direction of the gradient
-            self.weights += self.alpha * G * gradient
-
-    def update_policy(self, history, features):
-        """
-        Update the policy based on the episode history.
-        
-        This is a convenience method that calls policy_evaluation to get returns
-        and then calls policy_improvement to update the weights.
-        
-        Args:
-            history (list): List of (action, state, reward, action_probabilities) tuples.
-            features (ndarray): Feature array of shape [num_situations, num_alternatives, feature_dim].
-        """
-        returns = self.policy_evaluation(history)
-        self.policy_improvement(history, returns, features)
-        
-        # Store weight snapshot for visualization
-        self.weight_history.append(self.weights.copy())
-        
-        # Calculate and store total reward
-        total_reward = sum(item[2] for item in history)
-        self.reward_history.append(total_reward)
-        
-        # Calculate episode accuracy
-        correct_predictions = sum(1 for item in history if item[2] == 1)
-        accuracy = correct_predictions / len(history)
-        self.accuracy_history.append(accuracy)
-
-    def print_weights(self):
-        """Print the learned weights."""
-        print("Learned weights:")
-        if self.feature_names:
-            for name, weight in zip(self.feature_names, self.weights):
-                print(f"  {name}: {weight:.6f}")
-        else:
-            print(self.weights)
-
-    def visualize_weights(self, save_path=None):
-        """
-        Visualize the current weights as a bar chart.
-        
-        Args:
-            save_path (str, optional): Path to save the figure. If None, the figure is displayed.
-        """
-        plt.figure(figsize=(12, 6))
-        
-        if self.feature_names:
-            feature_indices = np.arange(len(self.weights))
-            plt.bar(feature_indices, self.weights)
-            plt.xticks(feature_indices, self.feature_names, rotation=45, ha='right')
-        else:
-            feature_indices = np.arange(len(self.weights))
-            plt.bar(feature_indices, self.weights)
-            plt.xticks(feature_indices, [f'Feature {i}' for i in feature_indices])
-        
-        plt.axhline(y=0, color='r', linestyle='-', alpha=0.3)
-        plt.title('Feature Weights')
-        plt.ylabel('Weight Value')
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path)
-            plt.close()
-        else:
-            plt.show()
-
-    def visualize_learning_progress(self, save_path=None):
-        """
-        Visualize the learning progress during training.
-        
-        Creates a figure with two subplots: one for total reward per episode
-        and another for prediction accuracy per episode.
-        
-        Args:
-            save_path (str, optional): Path to save the figure. If None, the figure is displayed.
-        """
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-        
-        episodes = range(1, len(self.reward_history) + 1)
-        
-        # Plot total reward
-        ax1.plot(episodes, self.reward_history, marker='o', linestyle='-')
-        ax1.set_title('Total Reward per Episode')
-        ax1.set_xlabel('Episode')
-        ax1.set_ylabel('Total Reward')
-        ax1.grid(True, alpha=0.3)
-        
-        # Plot accuracy
-        ax2.plot(episodes, self.accuracy_history, marker='o', linestyle='-', color='green')
-        ax2.set_title('Prediction Accuracy per Episode')
-        ax2.set_xlabel('Episode')
-        ax2.set_ylabel('Accuracy')
-        ax2.grid(True, alpha=0.3)
-        ax2.set_ylim(0, 1)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path)
-            plt.close()
-        else:
-            plt.show()
-
-    def create_weight_evolution_animation(self, save_path=None):
-        """
-        Create an animation showing how weights evolve during training.
-        
-        Args:
-            save_path (str, optional): Path to save the animation as a gif. 
-                                     If None, the animation is displayed.
-        
-        Returns:
-            matplotlib.animation.FuncAnimation: Animation object.
-        """
-        fig, ax = plt.subplots(figsize=(12, 6))
-        
-        feature_dim = len(self.weights)
-        if self.feature_names:
-            feature_labels = self.feature_names
-        else:
-            feature_labels = [f'Feature {i}' for i in range(feature_dim)]
+        if self.feature_means is None or self.feature_stds is None or update_stats:
+            # Initialize or update normalization parameters
+            if self.feature_means is None:
+                self.feature_means = np.zeros(len(self._feature_names))
+                self.feature_stds = np.ones(len(self._feature_names))
             
-        # Set up the initial bar plot
-        x = np.arange(feature_dim)
-        bars = ax.bar(x, self.weight_history[0])
-        ax.set_xticks(x)
-        ax.set_xticklabels(feature_labels, rotation=45, ha='right')
-        ax.axhline(y=0, color='r', linestyle='-', alpha=0.3)
-        ax.set_title('Feature Weights Evolution')
-        ax.set_ylabel('Weight Value')
-        
-        y_min = min(np.min(w) for w in self.weight_history)
-        y_max = max(np.max(w) for w in self.weight_history)
-        margin = (y_max - y_min) * 0.1
-        ax.set_ylim(y_min - margin, y_max + margin)
-        
-        # Text for episode number
-        episode_text = ax.text(0.02, 0.95, 'Episode: 0', transform=ax.transAxes)
-        
-        def update(frame):
-            # Update the heights of the bars
-            for i, bar in enumerate(bars):
-                bar.set_height(self.weight_history[frame][i])
-            # Update the episode text
-            episode_text.set_text(f'Episode: {frame}')
-            
-            # Convert bars to a list before concatenating with episode_text
-            return list(bars) + [episode_text]
-        
-        anim = FuncAnimation(fig, update, frames=len(self.weight_history), 
-                              blit=True, interval=200, repeat=True)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            anim.save(save_path, writer='pillow', fps=5)
-            plt.close()
-            return None
-        else:
-            plt.close()
-            return HTML(anim.to_jshtml())
-
-    def visualize_choice_probabilities(self, features, user_history, save_path=None):
-        """
-        Visualize the choice probabilities for each situation.
-        
-        For each situation, shows the probability the model assigns to each alternative
-        and highlights the user's actual choice.
-        
-        Args:
-            features (ndarray): 3D array of features.
-            user_history (list): List of the user's actual choices.
-            save_path (str, optional): Path to save the figure. If None, the figure is displayed.
-        """
-        num_situations = min(len(user_history), 10)  # Limit to first 10 situations for clarity
-        num_alternatives = features[0].shape[0]
-        
-        fig, axes = plt.subplots(num_situations, 1, figsize=(12, num_situations * 2))
-        if num_situations == 1:
-            axes = [axes]
-        
-        for i in range(num_situations):
-            # Get probabilities for this situation
-            action_values = np.dot(features[i], self.weights)
-            probs = self.softmax(action_values)
-            
-            # Create bar colors (highlight actual choice)
-            colors = ['lightblue'] * num_alternatives
-            colors[user_history[i]] = 'orange'
-            
-            # Plot
-            ax = axes[i]
-            bars = ax.bar(range(num_alternatives), probs, color=colors)
-            ax.set_title(f'Situation {i}')
-            ax.set_ylim(0, 1)
-            ax.set_xticks(range(num_alternatives))
-            ax.set_xticklabels([f'Alt {j}' for j in range(num_alternatives)])
-            ax.set_ylabel('Probability')
-            
-            # Add text labels on bars
-            for j, bar in enumerate(bars):
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                        f'{probs[j]:.2f}', ha='center', va='bottom')
+            # Update running statistics (simple moving average)
+            if update_stats:
+                alpha = 0.01  # Update rate
+                self.feature_means = (1 - alpha) * self.feature_means + alpha * feature_vector
+                self.feature_stds = (1 - alpha) * self.feature_stds + alpha * np.abs(feature_vector - self.feature_means)
                 
-                # Mark actual choice
-                if j == user_history[i]:
-                    ax.text(bar.get_x() + bar.get_width()/2., height/2,
-                            'Actual\nChoice', ha='center', va='center', 
-                            color='black', fontweight='bold')
+                # Avoid division by zero
+                self.feature_stds = np.maximum(self.feature_stds, 0.01)
         
-        plt.tight_layout()
+        # Normalize
+        normalized_vector = (feature_vector - self.feature_means) / self.feature_stds
         
-        if save_path:
-            plt.savefig(save_path)
-            plt.close()
+        # Create normalized feature dictionary
+        normalized_features = {}
+        for i, name in enumerate(self._feature_names):
+            normalized_features[name] = normalized_vector[i]
+        
+        return normalized_features
+    
+    def _get_feature_vector(self, features: Dict[str, float]) -> np.ndarray:
+        """
+        Convert feature dictionary to feature vector.
+        
+        Args:
+            features: Dictionary of features
+            
+        Returns:
+            np.ndarray: Feature vector
+        """
+        return np.array([features.get(name, 0.0) for name in self._feature_names])
+    
+    def calculate_acceptance_probability(self, context: AcceptanceContext) -> float:
+        """
+        Calculate probability of user accepting a proposed service.
+        
+        Args:
+            context: Context containing request, features, and user profile
+            
+        Returns:
+            float: Probability of acceptance (0.0 to 1.0)
+        """
+        # Extract features
+        features_dict = self.feature_extractor.extract_features_dict(
+            context.features,
+            context.request,
+            context.user_profile
+        )
+        
+        # Enrich features using the provider registry if available
+        if self.feature_provider_registry is not None:
+            # Create a context dict for the providers
+            provider_context = {
+                "features": features_dict.copy(),
+                "user_profile": context.user_profile
+            }
+            
+            # Get additional features from providers
+            additional_features = self.feature_provider_registry.get_features(
+                context.request, 
+                provider_context
+            )
+            
+            # Update features with additional ones
+            features_dict.update(additional_features)
+        
+        # Normalize features
+        normalized_features = self._normalize_features(features_dict, update_stats=True)
+        
+        # Get weights by combining default weights with user profile weights
+        weights = self._get_weights_from_profile(context.user_profile)
+        
+        # Extract feature vector
+        feature_vector = self._get_feature_vector(normalized_features)
+        
+        # Calculate action value (weighted sum of features)
+        action_value = np.dot(feature_vector, weights)
+        
+        # Convert to probability using sigmoid function
+        probability = 1.0 / (1.0 + np.exp(-self.beta * action_value))
+        
+        # Clip to valid range
+        return np.clip(probability, 0.01, 0.99)
+    
+    def _get_weights_from_profile(self, user_profile) -> np.ndarray:
+        """
+        Get weights from user profile or use default weights.
+        
+        Args:
+            user_profile: User profile object
+            
+        Returns:
+            np.ndarray: Weights vector
+        """
+        # Initialize with default weights
+        weights = self.default_weights.copy()
+        
+        # Apply user profile specific weights if available
+        if user_profile and hasattr(user_profile, 'weights') and isinstance(user_profile.weights, dict):
+            for i, feature_name in enumerate(self._feature_names):
+                if feature_name in user_profile.weights:
+                    weights[i] = user_profile.weights[feature_name]
+        
+        return weights
+    
+    def _calculate_reward(self, accepted: bool, features: Dict[str, float], user_profile) -> float:
+        """
+        Calculate reward for reinforcement learning.
+        
+        Args:
+            accepted: Whether the user accepted the service
+            features: Feature dictionary
+            user_profile: User profile
+            
+        Returns:
+            float: Reward value
+        """
+        if accepted:
+            # Base reward for acceptance
+            reward = 1.0
+            
+            # Modified by service quality - using a simple formula based on feature values
+            # This is more standard for policy gradient rather than using personalized adjustments
+            quality_factor = 0.0
+            count = 0
+            
+            # Calculate quality based on features with fixed weights
+            weighted_features = {
+                "walking_time_to_origin": -1.0,
+                "waiting_time": -1.2,
+                "in_vehicle_time": -1.0,
+                "walking_time_from_destination": -1.0,
+                "price": -1.5
+            }
+            
+            # Apply quality factors
+            for feature, weight in weighted_features.items():
+                if feature in features:
+                    quality_factor += weight * features[feature]
+                    count += 1
+            
+            # Normalize quality factor
+            if count > 0:
+                quality_factor /= count
+                
+                # Rescale to 0.5-1.5 range
+                quality_factor = 1.0 + quality_factor
+                
+                # Clip to reasonable range
+                quality_factor = np.clip(quality_factor, 0.5, 1.5)
+                
+                # Apply to reward
+                reward *= quality_factor
+            
+            return reward
         else:
-            plt.show()
+            # Negative reward for rejection
+            return -0.5
+    
+    def decide_acceptance(self, context: AcceptanceContext) -> Tuple[bool, float]:
+        """
+        Decide whether the user will accept the proposed service.
+        
+        Args:
+            context: Context containing request, features, and user profile
+            
+        Returns:
+            Tuple[bool, float]: (acceptance decision, acceptance probability)
+        """
+        # Calculate acceptance probability
+        probability = self.calculate_acceptance_probability(context)
+        
+        # Exploration-exploitation tradeoff
+        if random.random() < self.epsilon:
+            # Explore: random decision
+            accepted = random.random() < 0.5
+        else:
+            # Exploit: decision based on probability
+            accepted = random.random() < probability
+        
+        return accepted, probability
+    
+    def update_model(self, context: AcceptanceContext, accepted: bool) -> None:
+        """
+        Update model based on user decisions.
+        
+        Args:
+            context: Context containing request, features, and user profile
+            accepted: Whether the user accepted the service
+        """
+        # Extract features
+        features_dict = self.feature_extractor.extract_features_dict(
+            context.features,
+            context.request,
+            context.user_profile
+        )
+        
+        # Enrich features if provider registry available
+        if self.feature_provider_registry is not None:
+            provider_context = {
+                "features": features_dict.copy(),
+                "user_profile": context.user_profile
+            }
+            
+            additional_features = self.feature_provider_registry.get_features(
+                context.request, 
+                provider_context
+            )
+            
+            features_dict.update(additional_features)
+        
+        # Normalize features
+        normalized_features = self._normalize_features(features_dict)
+        
+        # Get weights - use default weights as baseline for learning
+        weights = self.default_weights.copy()
+        
+        # Extract feature vector
+        feature_vector = self._get_feature_vector(normalized_features)
+        
+        # Calculate probability with current weights
+        action_value = np.dot(feature_vector, weights)
+        probability = 1.0 / (1.0 + np.exp(-self.beta * action_value))
+        
+        # Calculate reward
+        reward = self._calculate_reward(accepted, normalized_features, context.user_profile)
+        
+        # Store in memory for experience replay
+        self.memory.append((feature_vector, accepted, reward))
+        
+        # Policy gradient update
+        # Gradient calculation
+        if accepted:
+            # For accepted services, gradient is (1 - P(accept)) * features
+            gradient = (1 - probability) * feature_vector
+        else:
+            # For rejected services, gradient is -P(accept) * features
+            gradient = -probability * feature_vector
+        
+        # Update weights using policy gradient
+        weights += self.alpha * reward * gradient
+        
+        # Store updated weights in default weights for next prediction
+        self.default_weights = weights
+        
+        # Store in episode history
+        self.episode_history.append((feature_vector, accepted, reward, probability))
+        
+        # Perform experience replay
+        self._experience_replay()
+        
+        # Decay exploration rate
+        self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
+    
+    def _experience_replay(self) -> None:
+        """
+        Perform experience replay using the memory buffer.
+        """
+        # Skip if not enough samples
+        if len(self.memory) < self.batch_size:
+            return
+        
+        # Sample batch from memory
+        batch = random.sample(list(self.memory), self.batch_size)
+        
+        # Get default weights
+        weights = self.default_weights.copy()
+        
+        # Process each experience
+        for feature_vector, accepted, reward in batch:
+            # Calculate current probability
+            action_value = np.dot(feature_vector, weights)
+            probability = 1.0 / (1.0 + np.exp(-self.beta * action_value))
+            
+            # Calculate gradient
+            if accepted:
+                gradient = (1 - probability) * feature_vector
+            else:
+                gradient = -probability * feature_vector
+            
+            # Small update from replay
+            replay_alpha = self.alpha * 0.5  # Smaller learning rate for replay
+            weights += replay_alpha * reward * gradient
+        
+        # Store updated default weights
+        self.default_weights = weights
+    
+    def policy_evaluation(self) -> np.ndarray:
+        """
+        Evaluate policy by computing returns for each time step.
+        
+        Returns:
+            np.ndarray: Array of returns for each time step
+        """
+        history = self.episode_history
+        if not history:
+            return np.array([])
+        
+        # Calculate returns using backwards-looking sum of discounted rewards
+        returns = np.zeros(len(history))
+        G = 0
+        
+        for t in reversed(range(len(history))):
+            _, _, reward, _ = history[t]
+            G = reward + self.gamma * G
+            returns[t] = G
+        
+        return returns
+    
+    def policy_improvement(self, returns: np.ndarray) -> None:
+        """
+        Improve policy by updating weights based on returns.
+        
+        Args:
+            returns: Array of returns for each time step
+        """
+        history = self.episode_history
+        if not history or len(returns) == 0:
+            return
+        
+        # Get default weights
+        weights = self.default_weights.copy()
+        
+        # Process each step in the episode
+        for t, (feature_vector, accepted, _, probability) in enumerate(history):
+            # Calculate gradient
+            if accepted:
+                gradient = (1 - probability) * feature_vector
+            else:
+                gradient = -probability * feature_vector
+            
+            # Update weights using return (G) instead of immediate reward
+            weights += self.alpha * returns[t] * gradient
+        
+        # Store updated weights
+        self.default_weights = weights
+        
+        # Clear episode history
+        self.episode_history = []
+    
+    def update_policy(self) -> None:
+        """
+        Update policy based on collected experience.
+        """
+        # Evaluate policy to get returns
+        returns = self.policy_evaluation()
+        
+        # Improve policy using returns
+        self.policy_improvement(returns)
+    
+    def batch_update(self, training_data: List[Dict[str, Any]]) -> None:
+        """
+        Update model with batch training data.
+        
+        Args:
+            training_data: List of training examples with features and outcomes
+        """
+        # Process training examples
+        for example in training_data:
+            if "features" in example and "accepted" in example:
+                # Create context
+                context = AcceptanceContext(
+                    features=example["features"],
+                    request=example.get("request"),
+                    user_profile=example.get("user_profile")
+                )
+                
+                # Update model
+                self.update_model(context, example["accepted"])
+        
+        # Update policy after processing all examples
+        self.update_policy()
+    
+    def get_feature_importance(self) -> Dict[str, float]:
+        """
+        Get the importance of each feature in the model.
+        
+        Returns:
+            Dict[str, float]: Feature names mapped to their importance values
+        """
+        # Use absolute values of default weights as importance
+        abs_weights = np.abs(self.default_weights)
+        
+        # Map to feature names
+        importance = {}
+        for i, name in enumerate(self._feature_names):
+            if i < len(abs_weights):
+                importance[name] = float(abs_weights[i])
+        
+        # Normalize to sum to 1
+        total = sum(importance.values())
+        if total > 0:
+            for name in importance:
+                importance[name] /= total
+        
+        return importance
+    
+    def get_required_features(self) -> List[str]:
+        """
+        Get the list of required features for this model.
+        
+        Returns:
+            List[str]: List of feature names that are required by this model
+        """
+        return [
+            "walking_time_to_origin",
+            "waiting_time",
+            "in_vehicle_time",
+            "walking_time_from_destination"
+        ]
+    
+    def get_optional_features(self) -> List[str]:
+        """
+        Get the list of optional features for this model.
+        
+        Returns:
+            List[str]: List of feature names that are optional but can improve the model
+        """
+        return [name for name in self._feature_names if name not in self.get_required_features()]
+    
+    def save_model(self, filepath: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Save the model to a file.
+        
+        Args:
+            filepath: Path where the model should be saved
+            metadata: Optional dictionary with additional metadata to save with the model
+        
+        Raises:
+            IOError: If the model cannot be saved to the specified path
+        """
+        # Create custom metadata specific to PolicyGradientAgentModel
+        pg_metadata = {
+            'alpha': self.alpha,
+            'beta': self.beta,
+            'gamma': self.gamma,
+            'epsilon': self.epsilon,
+            'min_epsilon': self.min_epsilon,
+            'epsilon_decay': self.epsilon_decay,
+            'feature_names': self._feature_names,
+            'default_coefficients': self.default_coefficients,
+            'feature_means': self.feature_means.tolist() if self.feature_means is not None else None,
+            'feature_stds': self.feature_stds.tolist() if self.feature_stds is not None else None
+        }
+        
+        # Merge with user-provided metadata
+        if metadata:
+            pg_metadata.update(metadata)
+        
+        # Call the parent class implementation
+        super().save_model(filepath, pg_metadata)
+        
+        try:
+            # Save weights separately
+            weights_path = f"{filepath}.weights"
+            
+            # Convert weights to serializable format
+            serializable_data = {
+                "weights": self.default_weights.tolist()
+            }
+            
+            with open(weights_path, 'w') as f:
+                json.dump(serializable_data, f)
+                
+            logger.info(f"Saved policy gradient weights to {weights_path}")
+        except Exception as e:
+            logger.error(f"Error saving policy gradient weights: {e}")
+            raise IOError(f"Failed to save model weights: {str(e)}")
+    
+    @classmethod
+    def load_model(cls, filepath: str) -> 'PolicyGradientAgentModel':
+        """
+        Load a model from a file.
+        
+        Args:
+            filepath: Path to the saved model
+            
+        Returns:
+            PolicyGradientAgentModel: The loaded model
+            
+        Raises:
+            IOError: If the model cannot be loaded from the specified path
+        """
+        # First load the base model using the parent class method
+        model = super().load_model(filepath)
+        
+        # Load additional model-specific components
+        try:
+            # Load weights
+            weights_path = f"{filepath}.weights"
+            if os.path.exists(weights_path):
+                with open(weights_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Load weights
+                if "weights" in data:
+                    model.default_weights = np.array(data["weights"])
+                elif "default_weights" in data:  # Backward compatibility
+                    model.default_weights = np.array(data["default_weights"])
+                
+                logger.info(f"Loaded policy gradient weights from {weights_path}")
+            
+            # Load metadata to update model attributes
+            metadata_path = f"{filepath}.meta.json"
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                
+                # Update model attributes from metadata
+                if 'alpha' in metadata:
+                    model.alpha = metadata['alpha']
+                if 'beta' in metadata:
+                    model.beta = metadata['beta']
+                if 'gamma' in metadata:
+                    model.gamma = metadata['gamma']
+                if 'epsilon' in metadata:
+                    model.epsilon = metadata['epsilon']
+                if 'min_epsilon' in metadata:
+                    model.min_epsilon = metadata['min_epsilon']
+                if 'epsilon_decay' in metadata:
+                    model.epsilon_decay = metadata['epsilon_decay']
+                if 'feature_names' in metadata:
+                    model._feature_names = metadata['feature_names']
+                if 'default_coefficients' in metadata:
+                    model.default_coefficients = metadata['default_coefficients']
+                if 'feature_means' in metadata and metadata['feature_means'] is not None:
+                    model.feature_means = np.array(metadata['feature_means'])
+                if 'feature_stds' in metadata and metadata['feature_stds'] is not None:
+                    model.feature_stds = np.array(metadata['feature_stds'])
+            
+            return model
+        except Exception as e:
+            logger.error(f"Error loading policy gradient model components: {e}")
+            raise IOError(f"Failed to load model components: {str(e)}")
+    
+    def configure(self, config: Dict[str, Any]) -> None:
+        """
+        Configure the model with the given configuration.
+        
+        Args:
+            config: Dictionary containing configuration parameters
+        """
+        # Update learning parameters
+        if 'alpha' in config:
+            self.alpha = config['alpha']
+        if 'beta' in config:
+            self.beta = config['beta']
+        if 'gamma' in config:
+            self.gamma = config['gamma']
+        if 'epsilon' in config:
+            self.epsilon = config['epsilon']
+        if 'min_epsilon' in config:
+            self.min_epsilon = config['min_epsilon']
+        if 'epsilon_decay' in config:
+            self.epsilon_decay = config['epsilon_decay']
+        
+        # Update default coefficients
+        if 'default_coefficients' in config:
+            self.default_coefficients.update(config['default_coefficients'])
+        
+        # Update feature names
+        if 'feature_names' in config:
+            old_feature_names = self._feature_names
+            self._feature_names = config['feature_names']
+            
+            # Resize weights if feature dimension changed
+            if len(old_feature_names) != len(self._feature_names):
+                old_weights = self.default_weights
+                new_weights = np.zeros(len(self._feature_names))
+                
+                # Copy values for features that exist in both
+                for i, name in enumerate(self._feature_names):
+                    if name in old_feature_names:
+                        old_idx = old_feature_names.index(name)
+                        if old_idx < len(old_weights):
+                            new_weights[i] = old_weights[old_idx]
+                
+                self.default_weights = new_weights
+                
+                # Reset normalization parameters
+                self.feature_means = None
+                self.feature_stds = None
+                
+                # Clear memory and episode history
+                self.memory.clear()
+                self.episode_history = []
+        
+        # Update memory parameters
+        if 'memory_size' in config:
+            old_memory = list(self.memory)
+            self.memory = deque(maxlen=config['memory_size'])
+            for item in old_memory[-config['memory_size']:]:
+                self.memory.append(item)
+        
+        if 'batch_size' in config:
+            self.batch_size = config['batch_size']
+        
+        # Update config dictionary
+        self.config.update(config)
+        
+        logger.info(f"Configured policy gradient model with: {config}")
