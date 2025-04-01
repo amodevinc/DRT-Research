@@ -1,3 +1,4 @@
+# drt_research_platform/drt_sim/runners/simulation_runner.py
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
@@ -218,11 +219,7 @@ class SimulationRunner:
 
             # Get event history from the event manager and log it
             if self.orchestrator and self.orchestrator.event_manager:
-                event_history = self.orchestrator.event_manager.get_serializable_history()
-                event_history_path = self.output_dir / "artifacts" / f"{self.run_name}_events.json"
-                with open(event_history_path, 'w') as f:
-                    json.dump(event_history, f, indent=2, cls=SimulationEncoder)
-                mlflow.log_artifact(str(event_history_path), f"replications/{self.run_name}/events")
+                self.orchestrator.event_manager.save_event_history()
 
             mlflow.log_artifacts(str(self.output_dir / "logs"), f"replications/{self.run_name}/logs")
             if "final_state" in results:

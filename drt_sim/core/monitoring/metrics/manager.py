@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import traceback
 
 from drt_sim.core.monitoring.metrics.collector import MetricsCollector
-from drt_sim.analysis.visualizations.metric_plotter import MetricPlotter
+from drt_sim.core.monitoring.metrics.plotter import MetricPlotter
 
 logger = logging.getLogger(__name__)
 

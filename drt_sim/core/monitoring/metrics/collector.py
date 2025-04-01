@@ -41,6 +41,13 @@ class MetricsCollector:
             metric_name = metric_name.value
             
         try:
+            # Debug logging for metric collection
+            logger.info(f"=== Collecting Metric ===")
+            logger.info(f"Metric Name: {metric_name}")
+            logger.info(f"Value: {value}")
+            logger.info(f"Timestamp: {timestamp or datetime.now()}")
+            logger.info(f"Tags: {tags}")
+            
             # Create and validate metric point
             metric = MetricPoint(
                 name=metric_name,
@@ -48,6 +55,13 @@ class MetricsCollector:
                 timestamp=timestamp or datetime.now(),
                 tags=tags or {}
             )
+            
+            # Debug logging for metric point
+            logger.info(f"Created Metric Point:")
+            logger.info(f"  Name: {metric.name}")
+            logger.info(f"  Value: {metric.value}")
+            logger.info(f"  Timestamp: {metric.timestamp}")
+            logger.info(f"  Tags: {metric.tags}")
             
             # Validate required context
             if not metric.validate_context():

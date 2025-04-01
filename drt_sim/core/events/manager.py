@@ -7,6 +7,10 @@ from copy import deepcopy
 import threading
 from drt_sim.models.event import Event, EventType, EventPriority, EventStatus
 import logging
+import os
+
+from drt_sim.core.events.store import EventHistoryStore
+
 logger = logging.getLogger(__name__)
 HandlerType = Union[Callable[[Event], None], Callable[[Event], Coroutine[Any, Any, None]]]
 
@@ -15,17 +19,38 @@ class EventManager:
     Manages event registration, dispatch, and processing throughout the simulation.
     Updated to work with immutable Event objects by creating new instances for status updates.
     Thread-safe implementation for concurrent access.
+    Enhanced with advanced event history storage for debugging and visualization.
     """
     
-    def __init__(self, max_history_size: int = 10000, continue_on_handler_error: bool = False):
+    def __init__(
+        self, 
+        output_dir: str = "output",
+        max_memory_events: int = 10000, 
+        continue_on_handler_error: bool = False,
+        auto_save_frequency: int = 1000
+    ):
         self.handlers: Dict[EventType, List[Callable[[Event], None]]] = {}
         self.event_queue: PriorityQueue[Event] = PriorityQueue()
-        self.event_history: List[Event] = []
+        
+        # Enhanced history storage
+        os.makedirs(output_dir, exist_ok=True)
+        debug_file_path = os.path.join(output_dir, "debug_events.jsonl")
+        viz_file_path = os.path.join(output_dir, "visualization_events.json")
+        
+        self.event_history = EventHistoryStore(
+            max_memory_events=max_memory_events,
+            auto_save_events=True,
+            debug_file_path=debug_file_path,
+            viz_file_path=viz_file_path,
+            save_interval=auto_save_frequency
+        )
+        
         self.validation_rules: Dict[EventType, List[Callable[[Event], bool]]] = {}
         self.error_handlers: Dict[EventType, Callable[[Event, Exception], None]] = {}
         self.lock = threading.RLock()  # Reentrant lock for thread safety
-        self.max_history_size = max_history_size
+        self.max_history_size = max_memory_events
         self.continue_on_handler_error = continue_on_handler_error
+        self.output_dir = output_dir
 
     def get_queue_size(self) -> int:
         """Get the current size of the event queue."""
@@ -200,12 +225,8 @@ class EventManager:
         logger.error(f"Error processing event {event.id}: {str(error)}\n{traceback.format_exc()}")
 
     def _add_to_history(self, event: Event) -> None:
-        """Add event to history with size limit enforcement"""
-        with self.lock:
-            self.event_history.append(event)
-            # Trim history if it exceeds the maximum size
-            if len(self.event_history) > self.max_history_size:
-                self.event_history = self.event_history[-self.max_history_size:]
+        """Add event to enhanced history store"""
+        self.event_history.add_event(event)
 
     async def process_events(self, current_time: datetime) -> List[Event]:
         """Process all queued events up to current time."""
@@ -302,11 +323,11 @@ class EventManager:
         end_time: Optional[datetime] = None
     ) -> List[Event]:
         """Get filtered event history"""
-        with self.lock:
-            events = self.event_history.copy()
-        
         if event_type:
-            events = [e for e in events if e.event_type == event_type]
+            events = self.event_history.get_events_by_type(event_type)
+        else:
+            events = self.event_history.events_by_timestamp.copy()
+        
         if start_time:
             events = [e for e in events if e.timestamp >= start_time]
         if end_time:
@@ -314,37 +335,52 @@ class EventManager:
             
         return events
     
-    def get_serializable_history(self) -> List[Dict[str, Any]]:
-        """Convert event history to serializable format with explicit dict conversion"""
-        with self.lock:
-            events_to_serialize = self.event_history.copy()
-            
-        history = []
-        for event in events_to_serialize:
-            try:
-                event_dict = event.to_dict()
-                # Double-check all nested dictionaries are converted from MappingProxyType
-                event_dict['service_metrics'] = dict(event.service_metrics) if event.service_metrics else {}
-                event_dict['location'] = dict(event.location) if event.location else None
-                event_dict['data'] = dict(event.data) if event.data else {}
-                event_dict['metadata'] = dict(event.metadata) if event.metadata else {}
-                history.append(event_dict)
-            except Exception as e:
-                logger.error(f"Error serializing event {event.id}: {str(e)}\n"
-                           f"{traceback.format_exc()}")
-                # Add debug info
-                logger.error(f"Event data types: service_metrics: {type(event.service_metrics)}, "
-                           f"location: {type(event.location)}, "
-                           f"data: {type(event.data)}, "
-                           f"metadata: {type(event.metadata)}")
-        return history
+    def get_entity_events(
+        self,
+        entity_type: str,
+        entity_id: str
+    ) -> List[Event]:
+        """Get all events for a specific entity (vehicle, passenger, request, etc.)"""
+        return self.event_history.get_events_by_entity(entity_type, entity_id)
+    
+    def get_entity_timeline(
+        self,
+        entity_type: str,
+        entity_id: str
+    ) -> List[Dict]:
+        """Get visualization timeline for a specific entity"""
+        return self.event_history.get_entity_timeline(entity_type, entity_id)
+    
+    def save_event_history(self) -> None:
+        """Manually save event history to files"""
+        self.event_history.save_to_files()
         
+    def load_event_history(self) -> None:
+        """Load event history from files"""
+        self.event_history.load_from_files()
+    
+    def get_visualization_data(self) -> Dict:
+        """Get all entity timelines for visualization"""
+        timelines = self.event_history.get_all_entity_timelines()
+        
+        return {
+            "metadata": {
+                "event_count": self.event_history.event_count,
+                "generated_at": datetime.now().isoformat(),
+                "version": "1.0"
+            },
+            "timelines": timelines
+        }
+    
     def cleanup(self) -> None:
         """Clean up event manager resources"""
         with self.lock:
+            # Save history before cleaning up
+            self.save_event_history()
+            
+            # Clear queue and all handlers
             while not self.event_queue.empty():
                 self.event_queue.get()
-            self.event_history.clear()
             self.handlers.clear()
             self.validation_rules.clear()
             self.error_handlers.clear()

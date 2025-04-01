@@ -326,14 +326,11 @@ class PassengerHandler:
             if not stop_assignment:
                 raise ValueError(f"Stop assignment for request {event.request_id} not found")
             
-            walking_time = stop_assignment.walking_time_destination
-            arrival_time = self.context.current_time + timedelta(seconds=walking_time)
-            
-            self._create_passenger_arrived_destination_event(
+            # Create walking to destination event with path information
+            self._create_walking_to_destination_event(
                 event.passenger_id,
                 event.request_id,
-                arrival_time,
-                walking_time
+                stop_assignment
             )
             
             self.state_manager.commit_transaction()
@@ -447,6 +444,9 @@ class PassengerHandler:
 
     def _create_walking_to_pickup_event(self, request: Request, stop_assignment: StopAssignment) -> None:
         """Create event for passenger walking to pickup"""
+        # Get walking path information from stop assignment metadata
+        walking_path_info = stop_assignment.metadata.get('walking_paths', {}).get('origin_to_stop', {})
+        
         event = Event(
             event_type=EventType.PASSENGER_WALKING_TO_PICKUP,
             priority=EventPriority.HIGH,
@@ -457,7 +457,13 @@ class PassengerHandler:
                 'origin': request.origin,
                 'destination': stop_assignment.origin_stop,
                 'estimated_walking_time': stop_assignment.walking_time_origin,
-                'estimated_walking_distance': stop_assignment.walking_distance_origin
+                'estimated_walking_distance': stop_assignment.walking_distance_origin,
+                'walking_path': {
+                    'waypoints': walking_path_info.get('waypoints', []),
+                    'path': walking_path_info.get('path', []),
+                    'distance': walking_path_info.get('distance', stop_assignment.walking_distance_origin),
+                    'duration': walking_path_info.get('duration', stop_assignment.walking_time_origin)
+                }
             }
         )
         self.context.event_manager.publish_event(event)
@@ -549,6 +555,65 @@ class PassengerHandler:
             }
         )
         self.context.event_manager.publish_event(event)
+
+    def _create_walking_to_destination_event(
+        self,
+        passenger_id: str,
+        request_id: str,
+        stop_assignment: StopAssignment
+    ) -> None:
+        """Create event for passenger walking to final destination"""
+        # Get walking path information from stop assignment metadata
+        walking_path_info = stop_assignment.metadata.get('walking_paths', {}).get('stop_to_destination', {})
+        
+        event = Event(
+            event_type=EventType.PASSENGER_WALKING_TO_DESTINATION,
+            priority=EventPriority.HIGH,
+            timestamp=self.context.current_time,
+            passenger_id=passenger_id,
+            request_id=request_id,
+            data={
+                'origin': stop_assignment.destination_stop,
+                'destination': stop_assignment.destination_stop.location,  # This is the final destination
+                'estimated_walking_time': stop_assignment.walking_time_destination,
+                'estimated_walking_distance': stop_assignment.walking_distance_destination,
+                'walking_path': {
+                    'waypoints': walking_path_info.get('waypoints', []),
+                    'path': walking_path_info.get('path', []),
+                    'distance': walking_path_info.get('distance', stop_assignment.walking_distance_destination),
+                    'duration': walking_path_info.get('duration', stop_assignment.walking_time_destination)
+                }
+            }
+        )
+        self.context.event_manager.publish_event(event)
+
+    def handle_passenger_walking_to_destination(self, event: Event) -> None:
+        """Handle passenger starting walk to destination"""
+        try:
+            self.state_manager.begin_transaction()
+            request_id = event.request_id
+            request = self.state_manager.request_worker.get_request(request_id)
+            if not request:
+                raise ValueError(f"Request {request_id} not found")
+            
+            # Schedule arrival at destination based on walking time
+            walking_time = event.data.get('estimated_walking_time')
+            arrival_time = self.context.current_time + timedelta(seconds=walking_time)
+            
+            # Create arrival event
+            self._create_passenger_arrived_destination_event(
+                request.passenger_id,
+                request.id,
+                arrival_time,
+                walking_time
+            )
+            
+            self.state_manager.commit_transaction()
+            
+        except Exception as e:
+            self.state_manager.rollback_transaction()
+            logger.error(f"Error handling walking to destination: {str(e)}\n{traceback.format_exc()}")
+            self._handle_passenger_error(event, str(e))
 
     def _create_passenger_arrived_destination_event(
         self,

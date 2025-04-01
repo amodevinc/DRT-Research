@@ -86,3 +86,5 @@ studies/mlflow.db
 alain_docs/
 
 scripts/data
+
+scripts/yongsan-gu.py

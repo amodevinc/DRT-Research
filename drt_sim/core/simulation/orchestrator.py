@@ -1,3 +1,4 @@
+# drt_research_platform/drt_sim/core/simulation/orchestrator.py
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import logging
@@ -100,7 +101,7 @@ class SimulationOrchestrator:
             self.state_manager = StateManager(config=self.cfg, sim_cfg=self.sim_cfg)
             
             # Initialize event system
-            self.event_manager = EventManager()
+            self.event_manager = EventManager(output_dir=self.output_dir)
 
             # Create context first as other components depend on it
             self.context = SimulationContext(
@@ -325,20 +326,6 @@ class SimulationOrchestrator:
         
         self.state_manager.set_state(initial_state)
         logger.info("Initial simulation state configured")
-
-    def save_event_history(self, output_path: Path) -> None:
-        """Save the complete event history"""
-        if not self.event_manager:
-            logger.warning("No event manager available")
-            return
-            
-        try:
-            events = self.event_manager.get_serializable_history()
-            with open(output_path, 'w') as f:
-                json.dump(events, f, cls=SimulationEncoder, indent=2)
-            logger.info(f"Saved event history to {output_path}")
-        except Exception as e:
-            logger.error(f"Failed to save event history: {str(e)}\n{traceback.format_exc()}")
             
     async def step(self) -> SimulationStep:
         """Execute one simulation step."""

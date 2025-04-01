@@ -278,6 +278,23 @@ class MatchingHandler:
             
             # If user rejected, handle rejection
             if not user_accepted:
+                # Get user profile data
+                user_profile = self.user_profile_manager.get_profile(request.user_id)
+                user_profile_data = {}
+                if user_profile:
+                    user_profile_data = {
+                        "max_walking_time_to_origin": user_profile.max_walking_time_to_origin,
+                        "max_walking_time_from_destination": user_profile.max_walking_time_from_destination,
+                        "max_waiting_time": user_profile.max_waiting_time,
+                        "max_in_vehicle_time": user_profile.max_in_vehicle_time,
+                        "max_price": user_profile.max_price,
+                        "max_acceptable_delay": user_profile.max_acceptable_delay,
+                        "weights": user_profile.weights,
+                        "historical_trips": user_profile.historical_trips,
+                        "historical_acceptance_rate": user_profile.historical_acceptance_rate,
+                        "average_rating": user_profile.get_average_rating()
+                    }
+
                 rejection_metadata = RejectionMetadata(
                     reason=RejectionReason.USER_REJECTED,
                     details={
@@ -285,7 +302,8 @@ class MatchingHandler:
                         "acceptance_probability": acceptance_probability,
                         "proposed_pickup_time": proposed_pickup_time.isoformat() if proposed_pickup_time else None,
                         "proposed_travel_time": proposed_travel_time.total_seconds() if proposed_travel_time else None,
-                        "service_attributes": service_attributes
+                        "service_attributes": service_attributes,
+                        "user_profile": user_profile_data
                     },
                     timestamp=self.context.current_time.isoformat(),
                     stage="user_acceptance"
@@ -298,14 +316,22 @@ class MatchingHandler:
                     service_attributes=service_attributes
                 )
 
+                for key, value in service_attributes.items():
+                    logger.info(f"  {key}: {value}")
+                logger.info("Rejection Metadata Details:")
+                for key, value in rejection_metadata.details.items():
+                    logger.info(f"  {key}: {value}")
+                logger.info("=== End User Rejection Metrics Debug ===")
+
                 self.context.metrics_collector.log(
                     MetricName.REQUEST_USER_REJECTED,
                     1,
                     self.context.current_time,
                     {
                         'request_id': request.id,
-                        'rejection_time': self.context.current_time.isoformat(),
-                        'rejection_reason': rejection_metadata.reason.value
+                        'timestamp': rejection_metadata.timestamp,
+                        'rejection_reason': rejection_metadata.reason.value,
+                        'rejection_metadata': rejection_metadata.to_dict()
                     }
                 )
                 

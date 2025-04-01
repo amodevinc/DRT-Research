@@ -1731,20 +1731,6 @@ class StandaloneMetricsAnalyzer:
             
             self.dashboard_generator.add_figure(fig, "service", "Request Acceptance")
             
-            # Method 3: Stacked area chart showing accepted vs rejected requests
-            fig = px.area(
-                pivot_counts,
-                x='timestamp',
-                y=['request.assigned', 'request.rejected'],
-                title='Accepted vs Rejected Requests Over Time',
-                labels={
-                    'timestamp': 'Time',
-                    'value': 'Count',
-                    'variable': 'Request Status'
-                }
-            )
-            self.dashboard_generator.add_figure(fig, "service", "Request Acceptance")
-            
         except Exception as e:
             logger.error(f"Error analyzing request acceptance ratio: {str(e)}\n{traceback.format_exc()}")
     
@@ -1859,6 +1845,302 @@ class StandaloneMetricsAnalyzer:
             except Exception as e:
                 logger.error(f"Error creating system load visualizations: {str(e)}")
     
+    def analyze_user_rejections(self):
+        """Analyze requests that were rejected by users."""
+        logger.info("Analyzing user rejections")
+        
+        # Debug: Log available metric names
+        available_metrics = self.metrics_df['metric_name'].unique()
+        logger.info(f"Available metric names: {available_metrics}")
+        
+        # Filter for user rejection metrics
+        user_rejections = self.metrics_df[
+            self.metrics_df['metric_name'] == 'request.user_rejected'
+        ]
+
+        if user_rejections.empty:
+            logger.warning("No user rejection data available")
+            return
+            
+        try:
+            # Extract rejection metadata
+            rejection_data = []
+            for _, row in user_rejections.iterrows():
+                try:
+                    metadata = row.get('rejection_metadata', {})
+                    if isinstance(metadata, str):
+                        metadata = json.loads(metadata)
+                    
+                    # Extract details from metadata
+                    details = metadata.get('details', {})
+                    service_attributes = details.get('service_attributes', {})
+                    user_profile = details.get('user_profile', {})
+                    
+                    # Extract all relevant fields
+                    rejection_data.append({
+                        'request_id': row.get('request_id'),
+                        'timestamp': row.get('timestamp'),
+                        'rejection_reason': metadata.get('reason'),
+                        'acceptance_probability': details.get('acceptance_probability'),
+                        'proposed_pickup_time': details.get('proposed_pickup_time'),
+                        'proposed_travel_time': details.get('proposed_travel_time'),
+                        # Service attributes
+                        'waiting_time_mins': service_attributes.get('waiting_time'),
+                        'travel_time_mins': service_attributes.get('travel_time'),
+                        'in_vehicle_time_mins': service_attributes.get('in_vehicle_time'),
+                        'walking_time_to_pickup_mins': service_attributes.get('walking_time_to_pickup'),
+                        'walking_time_from_destination_mins': service_attributes.get('walking_time_from_destination'),
+                        'vehicle_id': service_attributes.get('vehicle_id'),
+                        'vehicle_type': service_attributes.get('vehicle_type'),
+                        # User profile constraints
+                        'max_waiting_time': user_profile.get('max_waiting_time'),
+                        'max_in_vehicle_time': user_profile.get('max_in_vehicle_time'),
+                        'max_walking_time_to_origin': user_profile.get('max_walking_time_to_origin'),
+                        'max_walking_time_from_destination': user_profile.get('max_walking_time_from_destination'),
+                        'historical_acceptance_rate': user_profile.get('historical_acceptance_rate')
+                    })
+                except Exception as e:
+                    logger.warning(f"Error processing rejection data: {str(e)}")
+                    continue
+            
+            if not rejection_data:
+                logger.warning("No valid rejection data could be extracted")
+                return
+                
+            # Convert to DataFrame
+            rejections_df = pd.DataFrame(rejection_data)
+            
+            # 1. Rejection Reasons Analysis
+            if 'rejection_reason' in rejections_df.columns:
+                reason_counts = rejections_df['rejection_reason'].value_counts()
+                
+                # Create pie chart of rejection reasons
+                fig = px.pie(
+                    values=reason_counts.values,
+                    names=reason_counts.index,
+                    title='Distribution of User Rejection Reasons'
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Create bar chart with percentages
+                reason_df = pd.DataFrame({
+                    'reason': reason_counts.index,
+                    'count': reason_counts.values,
+                    'percentage': (reason_counts.values / len(rejections_df) * 100).round(1)
+                })
+                
+                fig = px.bar(
+                    reason_df,
+                    x='reason',
+                    y='count',
+                    text='percentage',
+                    title='User Rejection Reasons',
+                    labels={
+                        'reason': 'Rejection Reason',
+                        'count': 'Count',
+                        'percentage': 'Percentage'
+                    }
+                )
+                fig.update_traces(texttemplate='%{text}%', textposition='outside')
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+            # 2. Timing Analysis
+            if 'timestamp' in rejections_df.columns:
+                try:
+                    # Ensure timestamp is datetime
+                    rejections_df['timestamp'] = pd.to_datetime(rejections_df['timestamp'], errors='coerce')
+                    rejections_df = rejections_df.dropna(subset=['timestamp'])
+                    
+                    if not rejections_df.empty:
+                        # Rejections by hour of day
+                        rejections_df['hour'] = rejections_df['timestamp'].dt.hour
+                        hourly_rejections = rejections_df.groupby('hour').size()
+                        
+                        # Create DataFrame for the bar chart
+                        hourly_df = pd.DataFrame({
+                            'hour': hourly_rejections.index,
+                            'count': hourly_rejections.values,
+                            'percentage': (hourly_rejections.values / len(rejections_df) * 100).round(1)
+                        })
+                        
+                        fig = px.bar(
+                            hourly_df,
+                            x='hour',
+                            y='count',
+                            text='percentage',
+                            title='User Rejections by Hour of Day',
+                            labels={
+                                'hour': 'Hour of Day',
+                                'count': 'Number of Rejections',
+                                'percentage': 'Percentage'
+                            }
+                        )
+                        fig.update_traces(texttemplate='%{text}%', textposition='outside')
+                        fig.update_xaxes(tickvals=list(range(24)))
+                        self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                        
+                        # Rejections over time
+                        rejections_by_time = rejections_df.groupby('timestamp').size().reset_index()
+                        rejections_by_time.columns = ['timestamp', 'count']
+                        
+                        fig = px.line(
+                            rejections_by_time,
+                            x='timestamp',
+                            y='count',
+                            title='User Rejections Over Time',
+                            labels={
+                                'timestamp': 'Time',
+                                'count': 'Number of Rejections'
+                            }
+                        )
+                        self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                    else:
+                        logger.warning("No valid datetime values found in timestamp column")
+                except Exception as e:
+                    logger.error(f"Error processing rejection time data: {str(e)}")
+            
+            # 3. Service Attributes Analysis
+            time_metrics = [
+                'waiting_time_mins', 'travel_time_mins', 'in_vehicle_time_mins',
+                'walking_time_to_pickup_mins', 'walking_time_from_destination_mins'
+            ]
+            
+            available_time_metrics = [metric for metric in time_metrics if metric in rejections_df.columns]
+            
+            if available_time_metrics:
+                # Create box plots for time metrics
+                fig = px.box(
+                    rejections_df,
+                    y=available_time_metrics,
+                    title='Distribution of Service Times for Rejected Requests',
+                    labels={
+                        'value': 'Time (minutes)',
+                        'variable': 'Metric'
+                    }
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Create violin plots for more detailed distribution
+                fig = px.violin(
+                    rejections_df,
+                    y=available_time_metrics,
+                    title='Detailed Distribution of Service Times',
+                    labels={
+                        'value': 'Time (minutes)',
+                        'variable': 'Metric'
+                    }
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+            # 4. Acceptance Probability Analysis
+            if 'acceptance_probability' in rejections_df.columns:
+                # Distribution of acceptance probabilities
+                fig = px.histogram(
+                    rejections_df,
+                    x='acceptance_probability',
+                    title='Distribution of Acceptance Probabilities for Rejected Requests',
+                    labels={
+                        'acceptance_probability': 'Acceptance Probability',
+                        'count': 'Count'
+                    },
+                    nbins=20
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Acceptance probability vs waiting time
+                if 'waiting_time_mins' in rejections_df.columns:
+                    fig = px.scatter(
+                        rejections_df,
+                        x='waiting_time_mins',
+                        y='acceptance_probability',
+                        title='Acceptance Probability vs Waiting Time',
+                        labels={
+                            'waiting_time_mins': 'Waiting Time (minutes)',
+                            'acceptance_probability': 'Acceptance Probability'
+                        }
+                    )
+                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+            # 5. Vehicle Type Analysis
+            if 'vehicle_type' in rejections_df.columns:
+                # Rejections by vehicle type
+                vehicle_type_counts = rejections_df['vehicle_type'].value_counts()
+                
+                fig = px.pie(
+                    values=vehicle_type_counts.values,
+                    names=vehicle_type_counts.index,
+                    title='User Rejections by Vehicle Type'
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Vehicle type vs acceptance probability
+                if 'acceptance_probability' in rejections_df.columns:
+                    fig = px.box(
+                        rejections_df,
+                        x='vehicle_type',
+                        y='acceptance_probability',
+                        title='Acceptance Probability by Vehicle Type',
+                        labels={
+                            'vehicle_type': 'Vehicle Type',
+                            'acceptance_probability': 'Acceptance Probability'
+                        }
+                    )
+                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+            # 6. Constraint Violation Analysis
+            constraint_metrics = [
+                ('waiting_time_mins', 'max_waiting_time'),
+                ('in_vehicle_time_mins', 'max_in_vehicle_time'),
+                ('walking_time_to_pickup_mins', 'max_walking_time_to_origin'),
+                ('walking_time_from_destination_mins', 'max_walking_time_from_destination')
+            ]
+            
+            for actual, max_allowed in constraint_metrics:
+                if all(col in rejections_df.columns for col in [actual, max_allowed]):
+                    # Calculate violation percentage
+                    rejections_df[f'{actual}_violation'] = (
+                        rejections_df[actual] > rejections_df[max_allowed]
+                    ).astype(int)
+                    
+                    violation_rate = rejections_df[f'{actual}_violation'].mean() * 100
+                    
+                    # Create violation analysis plot
+                    fig = px.scatter(
+                        rejections_df,
+                        x=actual,
+                        y='acceptance_probability',
+                        title=f'Acceptance Probability vs {actual.replace("_mins", "").replace("_", " ").title()}',
+                        labels={
+                            actual: f'{actual.replace("_mins", "").replace("_", " ").title()} (minutes)',
+                            'acceptance_probability': 'Acceptance Probability'
+                        }
+                    )
+                    
+                    # Add vertical line for max allowed value
+                    if rejections_df[max_allowed].notna().any():
+                        max_value = rejections_df[max_allowed].dropna().iloc[0]
+                        fig.add_vline(x=max_value, line_dash="dash", line_color="red",
+                                    annotation_text=f"Max Allowed: {max_value:.1f} mins")
+                    
+                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+            # 7. Historical Acceptance Rate Analysis
+            if 'historical_acceptance_rate' in rejections_df.columns:
+                fig = px.scatter(
+                    rejections_df,
+                    x='historical_acceptance_rate',
+                    y='acceptance_probability',
+                    title='Current vs Historical Acceptance Probability',
+                    labels={
+                        'historical_acceptance_rate': 'Historical Acceptance Rate',
+                        'acceptance_probability': 'Current Acceptance Probability'
+                    }
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+        except Exception as e:
+            logger.error(f"Error analyzing user rejections: {str(e)}\n{traceback.format_exc()}")
+
     def run_all_analysis(self):
         """Run all analysis functions."""
         logger.info("Starting comprehensive metrics analysis")
@@ -1877,6 +2159,7 @@ class StandaloneMetricsAnalyzer:
         self.analyze_system_performance()
         self.analyze_request_density()
         self.analyze_request_spatial_patterns()
+        self.analyze_user_rejections()  # Add user rejection analysis
         
         # Generate all dashboards
         dashboard_files = self.dashboard_generator.generate_all_dashboards()
@@ -2030,14 +2313,25 @@ def load_data(parquet_path):
         df['value'] = pd.to_numeric(df['value'], errors='coerce')
         
         # Handle JSON columns if they exist
-        for col in ['details', 'metadata']:
+        for col in ['details', 'metadata', 'tags']:
             if col in df.columns and df[col].dtype == 'object':
                 try:
                     import json
                     # Try to parse JSON strings
                     df[col] = df[col].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else x)
-                except:
-                    logger.warning(f"Could not parse JSON in {col} column")
+                    
+                    # If the column contains dictionaries, expand them into separate columns
+                    if df[col].apply(lambda x: isinstance(x, dict)).any():
+                        expanded = pd.json_normalize(df[col].tolist())
+                        # Rename columns to avoid conflicts
+                        expanded.columns = [f"{col}_{c}" for c in expanded.columns]
+                        df = pd.concat([df.drop(columns=[col]), expanded], axis=1)
+                except Exception as e:
+                    logger.warning(f"Could not parse JSON in {col} column: {str(e)}")
+        
+        # Log available columns and metric names for debugging
+        logger.info(f"Available columns: {df.columns.tolist()}")
+        logger.info(f"Available metric names: {df['metric_name'].unique().tolist()}")
         
         return df
     except Exception as e:

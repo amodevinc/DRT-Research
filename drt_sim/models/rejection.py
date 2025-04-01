@@ -75,14 +75,6 @@ class RejectionMetadata:
             datetime.fromisoformat(self.timestamp)
         except ValueError:
             raise ValueError("timestamp must be in ISO format")
-            
-        # Add standard fields to details if not present
-        if "evaluated_vehicles" not in self.details:
-            self.details["evaluated_vehicles"] = 0
-        if "rejection_counts" not in self.details:
-            self.details["rejection_counts"] = {}
-        if "constraint_violations" not in self.details:
-            self.details["constraint_violations"] = {}
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to dictionary format"""

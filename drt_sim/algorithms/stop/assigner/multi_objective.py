@@ -122,6 +122,19 @@ class MultiObjectiveStopAssigner(StopAssigner):
         walking_time_origin = origin_dist / self.network_manager.config.walking_speed
         walking_time_destination = dest_dist / self.network_manager.config.walking_speed
         
+        # Calculate waypoint information for walking paths
+        origin_to_stop_path_info = await self.network_manager.get_path_info(
+            request.origin,
+            best_origin.location,
+            network_type='walk'
+        )
+        
+        stop_to_dest_path_info = await self.network_manager.get_path_info(
+            best_dest.location,
+            request.destination,
+            network_type='walk'
+        )
+        
         return StopAssignment(
             request_id=request.id,
             origin_stop=best_origin,
@@ -143,6 +156,20 @@ class MultiObjectiveStopAssigner(StopAssigner):
                 'destination_score_breakdown': {
                     'vehicle_access_time': dest_score.vehicle_access_time_score,
                     'passenger_access_time': dest_score.passenger_access_time_score,
+                },
+                'walking_paths': {
+                    'origin_to_stop': {
+                        'waypoints': origin_to_stop_path_info['waypoints'],
+                        'path': origin_to_stop_path_info['path'],
+                        'distance': origin_to_stop_path_info['distance'],
+                        'duration': origin_to_stop_path_info['duration']
+                    },
+                    'stop_to_destination': {
+                        'waypoints': stop_to_dest_path_info['waypoints'],
+                        'path': stop_to_dest_path_info['path'],
+                        'distance': stop_to_dest_path_info['distance'],
+                        'duration': stop_to_dest_path_info['duration']
+                    }
                 }
             }
         )

@@ -127,8 +127,9 @@ metrics:
     unit: "count"
     required_context:
       - request_id
-      - rejection_time
+      - timestamp
       - rejection_reason
+      - rejection_metadata
     aggregations:
       - count
     visualizations:
@@ -142,8 +143,9 @@ metrics:
     unit: "count"
     required_context:
       - request_id
-      - rejection_time
+      - timestamp
       - rejection_reason
+      - rejection_metadata
     aggregations:
       - count
     visualizations:

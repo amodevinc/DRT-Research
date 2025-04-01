@@ -267,14 +267,62 @@ class StopHandler:
                     self._create_rejected_event(request, "no_viable_destination_stops")
                     return
                 
-                # Add virtual stops to state
-                # Verify stops don't already exist
+                # Validate virtual stop locations
+                if not self._is_valid_virtual_stop_location(origin_stop.location):
+                    self._create_rejected_event(request, "invalid_origin_stop_location")
+                    return
+                    
+                if not self._is_valid_virtual_stop_location(dest_stop.location):
+                    self._create_rejected_event(request, "invalid_destination_stop_location")
+                    return
+                
+                # Add virtual stops to state with proper metadata
+                origin_stop.metadata.update({
+                    'request_id': request.id,
+                    'creation_time': self.context.current_time,
+                    'type': 'origin',
+                    'status': 'pending_assignment'
+                })
+                
+                dest_stop.metadata.update({
+                    'request_id': request.id,
+                    'creation_time': self.context.current_time,
+                    'type': 'destination',
+                    'status': 'pending_assignment'
+                })
+                
+                # Verify stops don't already exist and create them
                 if not self.state_manager.stop_worker.get_stop(origin_stop.id):
                     self.state_manager.stop_worker.create_new_stop(origin_stop)
+                    # Emit stop activated event for origin stop
+                    self._create_stop_activated_event(
+                        origin_stop.id,
+                        {
+                            'activation_time': self.context.current_time,
+                            'activation_reason': 'virtual_stop_creation',
+                            'request_id': request.id,
+                            'stop_type': 'virtual',
+                            'walking_distance': origin_distance,
+                            'location': origin_stop.location
+                        }
+                    )
+                    
                 if not self.state_manager.stop_worker.get_stop(dest_stop.id):
                     self.state_manager.stop_worker.create_new_stop(dest_stop)
+                    # Emit stop activated event for destination stop
+                    self._create_stop_activated_event(
+                        dest_stop.id,
+                        {
+                            'activation_time': self.context.current_time,
+                            'activation_reason': 'virtual_stop_creation',
+                            'request_id': request.id,
+                            'stop_type': 'virtual',
+                            'walking_distance': dest_distance,
+                            'location': dest_stop.location
+                        }
+                    )
 
-
+                # Calculate walking times
                 walking_speed = self.config.network.walking_speed
                 walking_time_to_origin_stop = origin_distance / walking_speed
                 walking_time_from_destination_stop = dest_distance / walking_speed
@@ -297,7 +345,11 @@ class StopHandler:
                         'virtual_stops_created': True,
                         'assignment_type': 'virtual',
                         'origin_stop_id': origin_stop.id,
-                        'destination_stop_id': dest_stop.id
+                        'destination_stop_id': dest_stop.id,
+                        'virtual_stop_metadata': {
+                            'origin': origin_stop.metadata,
+                            'destination': dest_stop.metadata
+                        }
                     }
                 )
                 
@@ -529,27 +581,63 @@ class StopHandler:
 
     def _is_valid_virtual_stop_location(self, location: Location) -> bool:
         """Validate location for virtual stop creation"""
+        # Check if location is within service area
         if not self._location_in_service_area(location):
+            logger.warning(f"Location {location} is outside service area")
             return False
         
         # Check minimum distance from existing stops
         active_stops = self.state_manager.stop_worker.get_active_stops()
         for stop in active_stops:
             distance = self._calculate_distance(location, stop.location)
-            if distance < self.config.stop.min_stop_spacing:
+            if distance < self.stop_selector.config.min_stop_spacing:
+                logger.warning(f"Location {location} is too close to existing stop {stop.id}")
                 return False
         
+        # Check if location is on a valid road network
+        # if not self.network_manager.is_valid_location(location):
+        #     logger.warning(f"Location {location} is not on valid road network")
+        #     return False
+            
+        # # Check if location is accessible (not in restricted areas)
+        # if not self.network_manager.is_accessible_location(location):
+        #     logger.warning(f"Location {location} is not accessible")
+        #     return False
+            
+        # # Check if location has sufficient space for vehicle operations
+        # if not self.network_manager.has_sufficient_space(location):
+        #     logger.warning(f"Location {location} has insufficient space for vehicle operations")
+        #     return False
+            
         return True
 
     def _location_in_service_area(self, location: Location) -> bool:
         """Check if location is within service area"""
-        # TODO: Implement actual service area check using config boundaries
-        return True  # Placeholder implementation
+        # Get service area boundaries from network manager
+        service_area = self.network_manager.service_area
+        if not service_area:
+            logger.warning("No service area defined, accepting all locations")
+            return True
+            
+        # Check if location is within service area boundaries
+        return service_area.contains_point(location.lat, location.lon)
 
     def _calculate_distance(self, loc1: Location, loc2: Location) -> float:
-        """Calculate distance between two locations"""
-        # TODO: Implement actual distance calculation (e.g., Haversine)
-        return 0.0  # Placeholder implementation
+        """Calculate distance between two locations using Haversine formula"""
+        from math import radians, sin, cos, sqrt, atan2
+        
+        R = 6371000  # Earth's radius in meters
+        
+        lat1, lon1 = radians(loc1.lat), radians(loc1.lon)
+        lat2, lon2 = radians(loc2.lat), radians(loc2.lon)
+        
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * atan2(sqrt(a), sqrt(1-a))
+        
+        return R * c  # Distance in meters
 
     def _handle_stop_error(self, event: Event, error_msg: str) -> None:
         """Handle errors in stop event processing"""

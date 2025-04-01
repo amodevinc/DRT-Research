@@ -24,7 +24,7 @@ simulation:
   end_time: "2024-10-24 19:00:00"
   warm_up_duration: 1800
   random_seed: 42
-  time_step: 60
+  time_step: 1
   time_scale_factor: 1.0
   save_state: true
   save_interval: 3600
@@ -44,7 +44,7 @@ base_config:
   
   demand:
     generator_type: "csv"
-    num_requests: 120
+    num_requests: 50
     csv_config:
       files:
         - file_path: "data/demands/base_real_time.csv"
@@ -195,23 +195,4 @@ parameter_sets:
             solver: "lbfgs"
             max_iter: 1000
             class_weight: "balanced"
-      enable_user_specific_models: true
-  
-  policy_gradient_agent_model:
-    name: "Policy Gradient Agent Acceptance Model"
-    description: "Using the policy gradient-based acceptance model"
-    algorithm:
-      user_acceptance_model: "policy_gradient_agent"
-    user_acceptance:
-      model:
-        type: "policy_gradient_agent"
-        parameters:
-          alpha: 0.1
-          gamma: 0.9
-          epsilon: 0.2
-          min_epsilon: 0.05
-          epsilon_decay: 0.9999
-          num_bins: 10
-          memory_size: 1000
-          batch_size: 64
       enable_user_specific_models: true

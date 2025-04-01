@@ -107,7 +107,7 @@ class RequestHandler:
                 raise ValueError(f"Request {event.request_id} not found")
             
             rejection_metadata = {
-                'rejection_time': self.context.current_time,
+                'timestamp': self.context.current_time.isoformat(),
                 'rejection_reason': event.data.get('reason', 'Unknown reason'),
                 'rejection_stage': request.status.value
             }
@@ -129,7 +129,8 @@ class RequestHandler:
                     {
                         'request_id': request.id,
                         'rejection_reason': rejection_metadata['rejection_reason'],
-                        'rejection_time': self.context.current_time.isoformat()
+                        'timestamp': self.context.current_time.isoformat(),
+                        'rejection_metadata': rejection_metadata
                     }
                 )
             
