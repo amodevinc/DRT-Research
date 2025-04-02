@@ -76,11 +76,15 @@ class Request(ModelBase):
     _version: ClassVar[str] = "1.0"
     assignment_id: Optional[str] = None
     estimated_price: Optional[float] = None
+    actual_price: Optional[float] = None
+    price_breakdown: Optional[Dict[str, float]] = None
+    currency: Optional[str] = "KRW"
+    formatted_price: Optional[str] = None
 
     def __str__(self) -> str:
         """Provides a concise string representation of the request"""
         assigned = f"|asgn={self.assignment_id[:8]}" if self.assignment_id else ""
-        price = f"|price={self.estimated_price:.2f}" if self.estimated_price else ""
+        price = f"|{self.formatted_price}" if self.formatted_price else (f"|price={self.estimated_price:.2f}" if self.estimated_price else "")
         return f"Req[{self.id[:8]}|{self.type.value}|{self.status.value}|pass={self.passenger_id[:8]}{assigned}{price}]"
     
     def to_json(self) -> str:
@@ -100,6 +104,10 @@ class Request(ModelBase):
             'status': self.status.value,
             'constraints': self.constraints.to_dict() if self.constraints else None,
             'estimated_price': self.estimated_price,
+            'actual_price': self.actual_price,
+            'price_breakdown': self.price_breakdown,
+            'currency': self.currency,
+            'formatted_price': self.formatted_price,
             'assignment_id': self.assignment_id,
             '_version': self._version
         }
@@ -117,6 +125,10 @@ class Request(ModelBase):
             constraints=RequestConstraints.from_dict(data['constraints']) if data.get('constraints') else None,
             status=RequestStatus(data['status']),
             estimated_price=data.get('estimated_price'),
+            actual_price=data.get('actual_price'),
+            price_breakdown=data.get('price_breakdown'),
+            currency=data.get('currency', 'KRW'),
+            formatted_price=data.get('formatted_price'),
             assignment_id=data.get('assignment_id')
         )
 

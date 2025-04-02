@@ -272,24 +272,45 @@ class PolicyGradientAgentModel(UserAcceptanceModel):
         """
         Decide whether the user will accept the proposed service.
         
+        For the policy gradient model, this uses temperature-based sampling
+        to balance exploration and exploitation while maintaining the policy
+        gradient learning process.
+        
         Args:
             context: Context containing request, features, and user profile
             
         Returns:
             Tuple[bool, float]: (acceptance decision, acceptance probability)
         """
-        # Calculate acceptance probability
+        # Calculate base acceptance probability
         probability = self.calculate_acceptance_probability(context)
         
-        # Exploration-exploitation tradeoff
-        if random.random() < self.epsilon:
-            # Explore: random decision
-            accepted = random.random() < 0.5
-        else:
-            # Exploit: decision based on probability
-            accepted = random.random() < probability
+        # Apply temperature-based sampling
+        # Higher temperature (beta) means more exploration
+        # Lower temperature means more exploitation
+        temperature = 1.0 / self.beta
         
-        return accepted, probability
+        # Calculate logits
+        logit_accept = np.log(probability)
+        logit_reject = np.log(1 - probability)
+        
+        # Apply temperature
+        logit_accept = logit_accept / temperature
+        logit_reject = logit_reject / temperature
+        
+        # Convert back to probabilities
+        exp_accept = np.exp(logit_accept)
+        exp_reject = np.exp(logit_reject)
+        
+        # Normalize to get final probabilities
+        total = exp_accept + exp_reject
+        prob_accept = exp_accept / total
+        prob_reject = exp_reject / total
+        
+        # Sample from the temperature-adjusted distribution
+        accepted = random.random() < prob_accept
+        
+        return accepted, prob_accept
     
     def update_model(self, context: AcceptanceContext, accepted: bool) -> None:
         """

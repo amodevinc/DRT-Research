@@ -52,19 +52,22 @@ class UserProfile:
     max_walking_time_from_destination: float = 3.0  # minutes
     max_waiting_time: float = 10.0  # minutes
     max_in_vehicle_time: float = 25.0   # minutes
-    max_price: float = 30.0          # currency units
+    max_price: float = 1.0          # currency units
     max_acceptable_delay: float = 7.0 # minutes
     
     # Feature weights for acceptance decisions
     base_weights: Dict[str, float] = field(default_factory=lambda: {
         "walking_time_to_origin": 0.4,
-        "wait_time": 0.3,
+        "waiting_time": 0.3,
         "in_vehicle_time": 0.2,
         "walking_time_from_destination": 0.1,
         "time_of_day": 0.0,
         "day_of_week": 0.0,
-        "distance_to_pickup": 0.0
+        "distance_to_pickup": 0.0,
+        "price": 0.0
     })
+
+    is_synthetic: bool = False
     
     weights: Dict[str, float] = field(default_factory=dict)
     

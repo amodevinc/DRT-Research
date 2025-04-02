@@ -239,6 +239,10 @@ class UserAcceptanceManager:
                 user_profile = self.user_profile_manager.get_profile(user_id)
                 if user_profile:
                     logger.debug(f"Retrieved profile for user {user_id}")
+                    logger.debug(f"User profile details:")
+                    logger.debug(f"- Max price: {getattr(user_profile, 'max_price', 'Not set')}")
+                    logger.debug(f"- Price sensitivity: {getattr(user_profile, 'price_sensitivity', 'Not set')}")
+                    logger.debug(f"- Weights: {getattr(user_profile, 'weights', 'Not set')}")
                 else:
                     logger.debug(f"No profile found for user {user_id}")
             
@@ -251,9 +255,12 @@ class UserAcceptanceManager:
             )
             
             # Log key service attributes
-            logger.debug(f"Key service attributes - waiting time: {service_attributes.get('waiting_time', 'N/A')}, "
-                         f"in-vehicle time: {service_attributes.get('in_vehicle_time', 'N/A')}, "
-                         f"cost: {service_attributes.get('cost', 'N/A')}")
+            logger.debug(f"Key service attributes:")
+            logger.debug(f"- Waiting time: {service_attributes.get('waiting_time', 'N/A')} minutes")
+            logger.debug(f"- In-vehicle time: {service_attributes.get('in_vehicle_time', 'N/A')} minutes")
+            logger.debug(f"- Price: {service_attributes.get('price', 'N/A')}")
+            logger.debug(f"- Walking time to pickup: {service_attributes.get('walking_time_to_pickup', 'N/A')} minutes")
+            logger.debug(f"- Walking time from destination: {service_attributes.get('walking_time_from_destination', 'N/A')} minutes")
             
             # Calculate acceptance probability
             logger.debug("Calling model to calculate acceptance probability")
@@ -295,6 +302,12 @@ class UserAcceptanceManager:
                 user_id = request.user_id
                 logger.debug(f"Getting user profile for user {user_id}")
                 user_profile = self.user_profile_manager.get_profile(user_id)
+                if user_profile:
+                    logger.debug(f"User profile details for decision:")
+                    logger.debug(f"- Max price: {getattr(user_profile, 'max_price', 'Not set')}")
+                    logger.debug(f"- Price sensitivity: {getattr(user_profile, 'price_sensitivity', 'Not set')}")
+                    logger.debug(f"- Weights: {getattr(user_profile, 'weights', 'Not set')}")
+                    logger.debug(f"- Historical acceptance rate: {getattr(user_profile, 'historical_acceptance_rate', 'Not set')}")
             
             # Create the acceptance context
             logger.debug(f"Creating AcceptanceContext with {len(service_attributes)} service attributes")
@@ -303,6 +316,14 @@ class UserAcceptanceManager:
                 service_attributes=service_attributes,
                 user_profile=user_profile
             )
+            
+            # Log service attributes for decision
+            logger.debug(f"Service attributes for decision:")
+            logger.debug(f"- Waiting time: {service_attributes.get('waiting_time', 'N/A')} minutes")
+            logger.debug(f"- In-vehicle time: {service_attributes.get('in_vehicle_time', 'N/A')} minutes")
+            logger.debug(f"- Price: {service_attributes.get('price', 'N/A')}")
+            logger.debug(f"- Walking time to pickup: {service_attributes.get('walking_time_to_pickup', 'N/A')} minutes")
+            logger.debug(f"- Walking time from destination: {service_attributes.get('walking_time_from_destination', 'N/A')} minutes")
             
             # Make acceptance decision
             logger.debug("Calling model to decide acceptance")

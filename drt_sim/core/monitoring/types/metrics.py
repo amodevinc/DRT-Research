@@ -47,6 +47,11 @@ class MetricName(Enum):
     USER_ACCEPTANCE_RATE = 'user.acceptance_rate'
     USER_REJECTION_REASON = 'user.rejection_reason'
     USER_FEATURE_IMPORTANCE = 'user.feature_importance'
+    
+    # Pricing metrics
+    PRICE_CALCULATED = 'pricing.calculated'
+    PRICING_DEMAND_LEVEL = 'pricing.demand_level'
+    PRICING_TIME_MULTIPLIER = 'pricing.time_multiplier'
 
 class MetricDefinition:
     def __init__(self, name: str, description: str, metric_type: str, unit: str,

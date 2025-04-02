@@ -515,3 +515,18 @@ metrics:
       time_series: false
       distribution: false
       summary: true
+  
+  - name: "pricing.calculated"
+    description: "Price calculated for a request."
+    metric_type: "event"
+    unit: "currency"
+    required_context:
+      - request_id
+      - price
+      - price_breakdown
+      - currency
+      - timestamp
+    aggregations:
+      - mean
+      - min
+      - max

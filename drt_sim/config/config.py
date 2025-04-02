@@ -408,14 +408,24 @@ class AlgorithmConfig(DataclassYAMLMixin):
             
         logger.info(f"Final stop_selector_params: {self.stop_selector_params}")
         logger.info(f"Final stop_assigner_params: {self.stop_assigner_params}")
-
+class Currency(Enum):
+    """Available currencies for pricing"""
+    USD = "USD"  # US Dollar
+    KRW = "KRW"  # Korean Won
+    EUR = "EUR"  # Euro
+    GBP = "GBP"  # British Pound
+    JPY = "JPY"  # Japanese Yen
+    CNY = "CNY"  # Chinese Yuan
+    
+    def __str__(self) -> str:
+        return self.value
 @dataclass
 class UserAcceptanceConfig(DataclassYAMLMixin):
     """Configuration for user acceptance models"""
     
     # Model configuration
     model: Dict[str, Any] = field(default_factory=lambda: {
-        "type": "default",
+        "type": "logit",
         "parameters": {
             "max_walking_time_to_origin": 15.0,
             "max_walking_time_from_destination": 45.0,
@@ -448,7 +458,14 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
             "walking_time_from_destination": 15.0,
             "waiting_time": 30.0,
             "in_vehicle_time": 60.0,
-            "price": 50.0
+            "price": {
+                "USD": 1.0,
+                "KRW": 1350.0,
+                "EUR": 0.85,
+                "GBP": 0.75,
+                "JPY": 13.5,
+                "CNY": 6.5
+            }
         }
     })
     
@@ -483,7 +500,7 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value by key"""
         return getattr(self, key, default)
-    
+
     def __post_init__(self):
         """Initialize nested configurations"""
         # Ensure model is a dictionary
@@ -545,17 +562,6 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                     "class_weight": "balanced"
                 }
             }
-        elif model_type == "rl" and not self.model["parameters"]:
-            self.model["parameters"] = {
-                "alpha": 0.1,
-                "gamma": 0.9,
-                "epsilon": 0.2,
-                "min_epsilon": 0.05,
-                "epsilon_decay": 0.9999,
-                "num_bins": 10,
-                "memory_size": 1000,
-                "batch_size": 64
-            }
         
         # Ensure feature extractor config exists
         if not isinstance(self.feature_extractor_config, dict):
@@ -567,7 +573,14 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
                     "walking_time_from_destination": 15.0,
                     "waiting_time": 30.0,
                     "in_vehicle_time": 60.0,
-                    "price": 50.0
+                    "price": {
+                        "USD": 1.0,
+                        "KRW": 1350.0,
+                        "EUR": 0.85,
+                        "GBP": 0.75,
+                        "JPY": 13.5,
+                        "CNY": 6.5
+                    }
                 }
             }
         
@@ -601,7 +614,7 @@ class UserAcceptanceConfig(DataclassYAMLMixin):
         Set the model type and update parameters with appropriate defaults.
         
         Args:
-            model_type: The model type (e.g., "default", "logit", "rl")
+            model_type: The model type (e.g., "policy_gradient_agent", "logit")
         """
         old_type = self.model.get("type", "default")
         self.model["type"] = model_type
@@ -757,6 +770,114 @@ class StopConfig(DataclassYAMLMixin):
     max_passenger_queue: int = 10
     min_service_interval: int = 60
     max_dwell_time: int = 120
+
+
+@dataclass
+class PricingConfig(DataclassYAMLMixin):
+    """Configuration for pricing models"""
+    
+    # Model configuration
+    model_type: str = "simple"  # "simple" or "dynamic"
+    model_params: Dict[str, Any] = field(default_factory=lambda: {
+        # Simple model parameters
+        "flat_fare": 5000.0,  # Base flat fare in KRW
+        "enable_distance_pricing": False,
+        "per_km_rate": 500.0,  # Rate per kilometer in KRW
+        "min_price": 3000.0,
+        "max_price": 50000.0,
+        
+        # Dynamic model parameters (only used if model_type is "dynamic")
+        "peak_flat_fare": 7000.0,
+        "off_peak_flat_fare": 5000.0,
+        "peak_hours": [
+            [7, 9],  # Morning peak
+            [17, 19]  # Evening peak
+        ]
+    })
+    
+    # Currency settings
+    currency: Currency = Currency.KRW
+    currency_symbol: str = "₩"
+    exchange_rates: Dict[str, float] = field(default_factory=lambda: {
+        "USD": 1.0,
+        "KRW": 1350.0,  # 1 USD = 1350 KRW (example rate)
+        "EUR": 0.85,
+        "GBP": 0.75,
+        "JPY": 110.0,
+        "CNY": 6.5
+    })
+    
+    # General settings
+    default_price: float = 5000.0  # Default price in KRW
+    price_update_interval: int = 300  # seconds
+    
+    # Custom parameters for extensibility
+    custom_params: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """Convert string currency to Currency enum if needed"""
+        if isinstance(self.currency, str):
+            self.currency = Currency(self.currency)
+            
+        # Set default currency symbol based on currency
+        if not self.currency_symbol:
+            symbols = {
+                Currency.USD: "$",
+                Currency.KRW: "₩",
+                Currency.EUR: "€",
+                Currency.GBP: "£",
+                Currency.JPY: "¥",
+                Currency.CNY: "¥"
+            }
+            self.currency_symbol = symbols.get(self.currency, "₩")
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a configuration value by key"""
+        return getattr(self, key, default)
+        
+    def convert_price(self, price: float, from_currency: Currency, to_currency: Currency) -> float:
+        """
+        Convert a price from one currency to another.
+        
+        Args:
+            price: The price to convert
+            from_currency: Source currency
+            to_currency: Target currency
+            
+        Returns:
+            float: The converted price
+        """
+        if from_currency == to_currency:
+            return price
+            
+        # Convert to USD as base currency first
+        usd_value = price / self.exchange_rates[from_currency.value]
+        
+        # Convert from USD to target currency
+        return usd_value * self.exchange_rates[to_currency.value]
+        
+    def format_price(self, price: float, currency: Optional[Currency] = None) -> str:
+        """
+        Format a price with currency symbol.
+        
+        Args:
+            price: The price to format
+            currency: Optional currency to use (defaults to the configured currency)
+            
+        Returns:
+            str: Formatted price with currency symbol
+        """
+        curr = currency or self.currency
+        symbol = self.currency_symbol
+        
+        # Format appropriately based on currency
+        if curr == Currency.KRW or curr == Currency.JPY:
+            # No decimal places for KRW and JPY
+            return f"{symbol}{int(price)}"
+        else:
+            # Two decimal places for others
+            return f"{symbol}{price:.2f}"
+
 @dataclass
 class ParameterSet(DataclassYAMLMixin):
     """A set of parameters to run a simulation with"""
@@ -771,6 +892,7 @@ class ParameterSet(DataclassYAMLMixin):
     matching: MatchingConfig = field(default_factory=MatchingConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     user_acceptance: UserAcceptanceConfig = field(default_factory=UserAcceptanceConfig)
+    pricing: PricingConfig = field(default_factory=PricingConfig)
     replications: int = 1
     tags: List[str] = field(default_factory=list)
 
@@ -794,6 +916,8 @@ class ParameterSet(DataclassYAMLMixin):
             self.network = NetworkConfig(**self.network)
         if isinstance(self.user_acceptance, dict):
             self.user_acceptance = UserAcceptanceConfig(**self.user_acceptance)
+        if isinstance(self.pricing, dict):
+            self.pricing = PricingConfig(**self.pricing)
 
 @dataclass
 class StudyConfig(DataclassYAMLMixin):
@@ -887,6 +1011,7 @@ class StudyConfig(DataclassYAMLMixin):
             "algorithm": merged_config.get("algorithm", {}),
             "matching": merged_config.get("matching", {}),
             "network": merged_config.get("network", {}),
+            "pricing": merged_config.get("pricing", {}),
             "user_acceptance": merged_config.get("user_acceptance", {}),
             "replications": merged_config.get("replications", 1),
             "tags": merged_config.get("tags", []),

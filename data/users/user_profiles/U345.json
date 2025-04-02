@@ -1,40 +1,32 @@
 {
   "id": "U345",
+  "is_synthetic": false,
   "max_walking_time_to_origin": 5.0,
   "max_walking_time_from_destination": 5.0,
   "max_waiting_time": 10.0,
-  "max_in_vehicle_time": 30.0,
-  "max_price": 30.0,
+  "max_in_vehicle_time": 20.0,
+  "max_price": 1.0,
   "max_acceptable_delay": 7.0,
   "base_weights": {
     "walking_time_to_origin": -0.218963092,
-    "wait_time": -0.133504148,
+    "waiting_time": -0.133504148,
     "in_vehicle_time": -0.66497574,
-    "walking_time_from_destination": -0.256368413,
-    "time_of_day": 0.0,
-    "day_of_week": 0.0,
-    "distance_to_pickup": 0.0
+    "walking_time_from_destination": -0.256368413
   },
   "weights": {
     "walking_time_to_origin": -0.218963092,
-    "wait_time": -0.133504148,
+    "waiting_time": -0.133504148,
     "in_vehicle_time": -0.66497574,
-    "walking_time_from_destination": -0.256368413,
-    "time_of_day": 0.0,
-    "day_of_week": 0.0,
-    "distance_to_pickup": 0.0
+    "walking_time_from_destination": -0.256368413
   },
   "weight_history": [
     {
-      "timestamp": "2025-03-18T11:06:08.536510",
+      "timestamp": "2025-04-02T16:35:18.188729",
       "weights": {
         "walking_time_to_origin": -0.218963092,
-        "wait_time": -0.133504148,
+        "waiting_time": -0.133504148,
         "in_vehicle_time": -0.66497574,
-        "walking_time_from_destination": -0.256368413,
-        "time_of_day": 0.0,
-        "day_of_week": 0.0,
-        "distance_to_pickup": 0.0
+        "walking_time_from_destination": -0.256368413
       },
       "study_id": "default_study",
       "simulation_id": "base",
@@ -44,6 +36,6 @@
   "historical_trips": 0,
   "historical_acceptance_rate": 0.0,
   "historical_ratings": [],
-  "created_at": "2025-03-18T11:06:08.536511",
-  "last_updated": "2025-03-18T11:06:08.536512"
+  "created_at": "2025-04-02T16:35:18.188732",
+  "last_updated": "2025-04-02T16:35:18.188733"
 }

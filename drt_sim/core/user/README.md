@@ -312,9 +312,8 @@ This will:
 ```python
 # Create different model types
 models = {
-    "default": ModelFactory.create_model("default"),
+    "policy_gradient_agent": ModelFactory.create_model("policy_gradient_agent"),
     "logit": ModelFactory.create_model("logit"),
-    "rl": ModelFactory.create_model("rl")
 }
 
 # Run evaluation

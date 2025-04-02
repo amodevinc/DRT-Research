@@ -113,6 +113,20 @@ class TimeBasedFeatureProvider(FeatureProvider):
             else:
                 features["time_period"] = "night"
         
+        # Extract walking times if available in context
+        if "walking_time_to_pickup" in context:
+            features["walking_time_to_origin"] = context["walking_time_to_pickup"]
+        if "walking_time_from_dropoff" in context:
+            features["walking_time_from_destination"] = context["walking_time_from_dropoff"]
+        
+        # Extract in-vehicle time if available in context
+        if "in_vehicle_time" in context:
+            features["in_vehicle_time"] = context["in_vehicle_time"]
+        elif "travel_time" in context:
+            features["in_vehicle_time"] = context["travel_time"]
+        elif "proposed_travel_time" in context:
+            features["in_vehicle_time"] = context["proposed_travel_time"]
+        
         return features
     
     def get_feature_names(self) -> List[str]:
@@ -127,6 +141,9 @@ class TimeBasedFeatureProvider(FeatureProvider):
             "day_of_week",
             "is_weekend",
             "time_period",
+            "walking_time_to_origin",
+            "walking_time_from_destination",
+            "in_vehicle_time"
         ]
 
 

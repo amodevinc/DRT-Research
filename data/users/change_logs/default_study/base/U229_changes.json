@@ -1,18 +1,15 @@
 [
   {
-    "timestamp": "2025-03-18T11:06:08.507980",
+    "timestamp": "2025-04-02T16:35:18.159691",
     "type": "creation",
     "study_id": "default_study",
     "simulation_id": "base",
     "description": "Profile created",
     "weights": {
       "walking_time_to_origin": -0.176184656,
-      "wait_time": -0.185199893,
+      "waiting_time": -0.185199893,
       "in_vehicle_time": 0.272589191,
-      "walking_time_from_destination": -0.448695149,
-      "time_of_day": 0.0,
-      "day_of_week": 0.0,
-      "distance_to_pickup": 0.0
+      "walking_time_from_destination": -0.448695149
     }
   }
 ]

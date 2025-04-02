@@ -1,7 +1,9 @@
 {
-  "total_profiles": 500,
+  "total_profiles": 2000,
+  "real_profiles": 500,
+  "synthetic_profiles": 1500,
   "avg_max_walking_time_to_origin": 5.0,
   "avg_max_walking_time_from_destination": 5.0,
   "avg_max_waiting_time": 10.0,
-  "avg_max_in_vehicle_time": 30.0
+  "avg_max_in_vehicle_time": 20.0
 }

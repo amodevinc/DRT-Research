@@ -268,13 +268,13 @@ class StopHandler:
                     return
                 
                 # Validate virtual stop locations
-                if not self._is_valid_virtual_stop_location(origin_stop.location):
-                    self._create_rejected_event(request, "invalid_origin_stop_location")
-                    return
+                # if not self._is_valid_virtual_stop_location(origin_stop.location):
+                #     self._create_rejected_event(request, "invalid_origin_stop_location")
+                #     return
                     
-                if not self._is_valid_virtual_stop_location(dest_stop.location):
-                    self._create_rejected_event(request, "invalid_destination_stop_location")
-                    return
+                # if not self._is_valid_virtual_stop_location(dest_stop.location):
+                #     self._create_rejected_event(request, "invalid_destination_stop_location")
+                #     return
                 
                 # Add virtual stops to state with proper metadata
                 origin_stop.metadata.update({

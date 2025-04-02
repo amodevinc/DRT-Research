@@ -219,12 +219,22 @@ class MetricsStorage:
             
             # Iterate through all chunks and collect metrics
             for chunk in self.iter_chunks():
-                all_metrics.extend([{
-                    'metric_name': m.name,
-                    'value': m.value,
-                    'timestamp': m.timestamp.isoformat() if isinstance(m.timestamp, datetime) else m.timestamp,
-                    **m.tags
-                } for m in chunk])
+                for m in chunk:
+                    # Create base metric dict
+                    metric_dict = {
+                        'metric_name': m.name,
+                        'value': m.value,
+                        'timestamp': m.timestamp.isoformat() if isinstance(m.timestamp, datetime) else m.timestamp,
+                    }
+                    
+                    # Handle tags, ensuring no empty structs
+                    for key, value in m.tags.items():
+                        if isinstance(value, dict) and not value:
+                            # Add a dummy field to empty dicts to make them valid for Parquet
+                            value = {'_dummy': 0}
+                        metric_dict[key] = value
+                    
+                    all_metrics.append(metric_dict)
             
             if not all_metrics:
                 logger.warning("No metrics found to archive")
@@ -240,7 +250,6 @@ class MetricsStorage:
             
             # Save as parquet
             df.to_parquet(archive_path, index=False)
-        
             
             logger.info(f"Saved consolidated metrics to {archive_path}")
             return archive_path

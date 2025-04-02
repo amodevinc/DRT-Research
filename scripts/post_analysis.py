@@ -757,6 +757,67 @@ class StandaloneMetricsAnalyzer:
             
         # Handle derived metrics separately
         self.analyze_derived_passenger_metrics(passenger_metrics)
+        
+        # Add price analysis for passenger experience
+        self.analyze_price_impact_on_experience(passenger_metrics)
+    
+    def analyze_price_impact_on_experience(self, passenger_metrics):
+        """Analyze how price relates to passenger experience metrics."""
+        logger.info("Analyzing price impact on passenger experience")
+        
+        # Get price data from user acceptance metrics
+        price_data = self.metrics_df[
+            (self.metrics_df['metric_name'] == 'user.acceptance_probability') &
+            (self.metrics_df['price'].notna())
+        ]
+        
+        if price_data.empty:
+            logger.warning("No price data available for passenger experience analysis")
+            return
+            
+        # Create price vs service quality visualizations
+        # 1. Price vs Total Journey Time
+        if 'in_vehicle_time' in passenger_metrics.columns:
+            fig = px.scatter(
+                price_data,
+                x='price',
+                y='in_vehicle_time',
+                title='Price vs Total Journey Time',
+                labels={
+                    'price': 'Price',
+                    'in_vehicle_time': 'In Vehicle Time (minutes)'
+                }
+            )
+            self.dashboard_generator.add_figure(fig, "passenger", "Price Impact")
+            
+        # 2. Price vs Waiting Time
+        if 'waiting_time' in passenger_metrics.columns:
+            fig = px.scatter(
+                price_data,
+                x='price',
+                y='waiting_time',
+                title='Price vs Waiting Time',
+                labels={
+                    'price': 'Price',
+                    'waiting_time': 'Waiting Time (minutes)'
+                }
+            )
+            self.dashboard_generator.add_figure(fig, "passenger", "Price Impact")
+            
+        # 3. Price vs Walking Time
+        if 'walking_time_to_pickup' in passenger_metrics.columns:
+            fig = px.scatter(
+                price_data,
+                x='price',
+                y='walking_time_to_pickup',
+                title='Price vs Walking Time to Pickup',
+                labels={
+                    'price': 'Price',
+                    'walking_time_to_pickup': 'Walking Time to Pickup (minutes)'
+                }
+            )
+            self.dashboard_generator.add_figure(fig, "passenger", "Price Impact")
+
     
     def analyze_derived_passenger_metrics(self, passenger_metrics):
         """Create specialized visualizations for derived passenger metrics."""
@@ -775,12 +836,45 @@ class StandaloneMetricsAnalyzer:
                     journey_time = journey_time.dropna(subset=['value'])
                     
                     if not journey_time.empty:
-                        # Journey time distribution
+                        # Create large journey time histogram
                         fig = px.histogram(journey_time,
                                          x='value',
                                          title='Distribution of Total Journey Times',
                                          labels={'value': 'Journey Time (seconds)'},
                                          nbins=30)
+                        
+                        # Update layout for large size and better readability
+                        fig.update_layout(
+                            title=dict(
+                                text='Distribution of Total Journey Times',
+                                font=dict(size=24),
+                                y=0.95
+                            ),
+                            width=2000,  # Large width
+                            height=1000,  # Large height
+                            yaxis=dict(
+                                title=dict(
+                                    text='Count',
+                                    font=dict(size=16)
+                                ),
+                                tickfont=dict(size=12)
+                            ),
+                            xaxis=dict(
+                                title=dict(
+                                    text='Journey Time (seconds)',
+                                    font=dict(size=16)
+                                ),
+                                tickfont=dict(size=12)
+                            ),
+                            margin=dict(l=80, r=80, t=100, b=80)
+                        )
+                        
+                        # Save the large histogram as PNG
+                        output_path = self.output_dir / "journey_times_distribution.png"
+                        fig.write_image(str(output_path))
+                        logger.info(f"Saved large journey time histogram to {output_path}")
+                        
+                        # Add the regular-sized figure to the dashboard
                         self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
                     else:
                         logger.warning("No valid numeric journey time values found")
@@ -846,21 +940,231 @@ class StandaloneMetricsAnalyzer:
                         logger.warning("No numeric columns found in journey components")
                         return
                     
-                    # Create stacked bar chart
+                    # Create violin plot for component distributions
                     try:
-                        fig = px.bar(components,
-                                   x='passenger_id',
-                                   y=numeric_cols,
-                                   title='Journey Time Components Breakdown',
-                                   barmode='stack',
-                                   labels={
-                                       'value': 'Time (seconds)',
-                                       'passenger_id': 'Passenger ID',
-                                       'variable': 'Component'
-                                   })
+                        # Prepare data for violin plot
+                        violin_data = components[numeric_cols].melt()
+                        violin_data.columns = ['Component', 'Time (seconds)']
+                        
+                        # Create violin plot
+                        fig = px.violin(
+                            violin_data,
+                            x='Component',
+                            y='Time (seconds)',
+                            title='Distribution of Journey Time Components',
+                            box=True,  # Add box plot inside violin
+                            points='outliers'  # Show outliers
+                        )
+                        
+                        # Calculate summary statistics for annotations
+                        stats = violin_data.groupby('Component')['Time (seconds)'].agg([
+                            'mean', 'median', 'std', 'min', 'max'
+                        ]).round(1)
+                        
+                        # Add descriptive annotations
+                        annotations = []
+                        y_positions = [1100, 1000, 900, 800]  # Positions for text
+                        
+                        for i, component in enumerate(stats.index):
+                            component_name = component.replace('passenger.', '')
+                            stats_text = (
+                                f"{component_name}:<br>"
+                                f"Mean: {stats.loc[component, 'mean']:.0f}s<br>"
+                                f"Median: {stats.loc[component, 'median']:.0f}s<br>"
+                                f"Std Dev: {stats.loc[component, 'std']:.0f}s"
+                            )
+                            
+                            annotations.append(dict(
+                                x=i,
+                                y=y_positions[i],
+                                text=stats_text,
+                                showarrow=False,
+                                align='left',
+                                font=dict(size=14)
+                            ))
+                        
+                        # Add overall description
+                        description = (
+                            "The violin plot shows the distribution of journey time components. "
+                            "The width of each violin indicates frequency at that time value. "
+                            "Box plots inside show quartiles and median. "
+                            "Points represent outliers."
+                        )
+                        
+                        annotations.append(dict(
+                            x=1.5,  # Center of plot
+                            y=1200,  # Top of plot
+                            text=description,
+                            showarrow=False,
+                            align='center',
+                            font=dict(size=16)
+                        ))
+                        
+                        # Update layout for large size and better readability
+                        fig.update_layout(
+                            title=dict(
+                                text='Distribution of Journey Time Components',
+                                font=dict(size=24),
+                                y=0.95
+                            ),
+                            width=2000,
+                            height=1000,
+                            yaxis=dict(
+                                title=dict(
+                                    text='Time (seconds)',
+                                    font=dict(size=16)
+                                ),
+                                tickfont=dict(size=12),
+                                range=[-200, 1300]  # Extend range to fit annotations
+                            ),
+                            xaxis=dict(
+                                title=dict(
+                                    text='Component',
+                                    font=dict(size=16)
+                                ),
+                                tickfont=dict(size=12),
+                                tickangle=45
+                            ),
+                            margin=dict(l=80, r=80, t=100, b=80),
+                            annotations=annotations
+                        )
+                        
+                        # Save the violin plot as PNG
+                        output_path = self.output_dir / "journey_components_distribution.png"
+                        fig.write_image(str(output_path))
+                        logger.info(f"Saved journey components distribution plot to {output_path}")
+                        
+                        # Add to dashboard
                         self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
                     except Exception as e:
-                        logger.error(f"Error creating journey components breakdown: {str(e)}")
+                        logger.error(f"Error creating journey components violin plot: {str(e)}")
+                    
+                    # Create horizontal stacked bar chart with error bars
+                    try:
+                        # Calculate statistics for each component
+                        stats = components[numeric_cols].agg(['mean', 'std']).round(2)
+                        
+                        # Create figure
+                        fig = go.Figure()
+                        
+                        # Add bars for each component
+                        for component in numeric_cols:
+                            fig.add_trace(go.Bar(
+                                name=component,
+                                x=[stats.loc['mean', component]],
+                                error_x=dict(
+                                    type='data',
+                                    array=[stats.loc['std', component]],
+                                    visible=True
+                                ),
+                                orientation='h'
+                            ))
+                        
+                        # Update layout
+                        fig.update_layout(
+                            title=dict(
+                                text='Average Journey Time Components with Standard Deviation',
+                                font=dict(size=24),
+                                y=0.95
+                            ),
+                            width=2000,
+                            height=1000,
+                            barmode='stack',
+                            xaxis=dict(
+                                title=dict(
+                                    text='Time (seconds)',
+                                    font=dict(size=16)
+                                ),
+                                tickfont=dict(size=12)
+                            ),
+                            yaxis=dict(
+                                title=dict(
+                                    text='Component',
+                                    font=dict(size=16)
+                                ),
+                                tickfont=dict(size=12)
+                            ),
+                            legend=dict(
+                                title=dict(
+                                    text='Component',
+                                    font=dict(size=16)
+                                ),
+                                font=dict(size=12),
+                                yanchor="top",
+                                y=0.99,
+                                xanchor="left",
+                                x=0.01
+                            ),
+                            margin=dict(l=80, r=80, t=100, b=80)
+                        )
+                        
+                        # Save the stacked bar chart as PNG
+                        output_path = self.output_dir / "journey_components_average.png"
+                        fig.write_image(str(output_path))
+                        logger.info(f"Saved journey components average plot to {output_path}")
+                        
+                        # Add to dashboard
+                        self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
+                    except Exception as e:
+                        logger.error(f"Error creating journey components average plot: {str(e)}")
+                    
+                    # Create radar chart for relative importance
+                    try:
+                        # Calculate relative importance (percentage of total time)
+                        total_time = components[numeric_cols].sum(axis=1)
+                        relative_importance = components[numeric_cols].div(total_time, axis=0) * 100
+                        
+                        # Calculate mean relative importance
+                        mean_importance = relative_importance.mean()
+                        
+                        # Create radar chart
+                        fig = go.Figure()
+                        
+                        fig.add_trace(go.Scatterpolar(
+                            r=mean_importance.values,
+                            theta=mean_importance.index,
+                            fill='toself',
+                            name='Average Relative Importance'
+                        ))
+                        
+                        fig.update_layout(
+                            title=dict(
+                                text='Relative Importance of Journey Time Components',
+                                font=dict(size=24),
+                                y=0.95
+                            ),
+                            width=2000,
+                            height=1000,
+                            polar=dict(
+                                radialaxis=dict(
+                                    visible=True,
+                                    range=[0, 100],
+                                    tickfont=dict(size=12)
+                                ),
+                                angularaxis=dict(
+                                    tickfont=dict(size=12)
+                                )
+                            ),
+                            showlegend=True,
+                            legend=dict(
+                                font=dict(size=12),
+                                yanchor="top",
+                                y=0.99,
+                                xanchor="left",
+                                x=0.01
+                            ),
+                            margin=dict(l=80, r=80, t=100, b=80)
+                        )
+                        
+                        # Save the radar chart as PNG
+                        output_path = self.output_dir / "journey_components_importance.png"
+                        fig.write_image(str(output_path))
+                        logger.info(f"Saved journey components importance plot to {output_path}")
+                        
+                        # Add to dashboard
+                        self.dashboard_generator.add_figure(fig, "passenger", "Journey Analysis")
+                    except Exception as e:
+                        logger.error(f"Error creating journey components radar chart: {str(e)}")
                     
                     # Create average composition pie chart
                     try:
@@ -885,6 +1189,86 @@ class StandaloneMetricsAnalyzer:
                 
         except Exception as e:
             logger.error(f"Error in passenger metrics analysis: {str(e)}")
+    
+    def create_large_journey_time_plot(self, journey_time):
+        """Create a large, detailed plot of all journey times."""
+        try:
+            # Sort by timestamp if available
+            if 'timestamp' in journey_time.columns:
+                journey_time = journey_time.sort_values('timestamp')
+            
+            # Create figure with large size
+            fig = go.Figure()
+            
+            # Add scatter plot of all journey times
+            fig.add_trace(go.Scatter(
+                y=journey_time['value'],
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    color='blue',
+                    opacity=0.7
+                ),
+                name='Journey Times',
+                text=journey_time['passenger_id'] if 'passenger_id' in journey_time.columns else None,
+                hovertemplate='<b>Journey Time:</b> %{y:.0f} seconds<br>' +
+                            '<b>Passenger ID:</b> %{text}<br>' +
+                            '<extra></extra>'
+            ))
+            
+            # Add mean line
+            mean_time = journey_time['value'].mean()
+            fig.add_hline(y=mean_time, line_dash="dash", line_color="red",
+                         annotation_text=f"Mean: {mean_time:.0f}s",
+                         annotation_position="right")
+            
+            # Add median line
+            median_time = journey_time['value'].median()
+            fig.add_hline(y=median_time, line_dash="dash", line_color="green",
+                         annotation_text=f"Median: {median_time:.0f}s",
+                         annotation_position="right")
+            
+            # Update layout for large size and better readability
+            fig.update_layout(
+                title=dict(
+                    text='All Journey Times',
+                    font=dict(size=24),
+                    y=0.95
+                ),
+                width=2000,  # Large width
+                height=1000,  # Large height
+                showlegend=True,
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=0.01
+                ),
+                yaxis=dict(
+                    title=dict(
+                        text='Journey Time (seconds)',
+                        font=dict(size=16)
+                    ),
+                    tickfont=dict(size=12)
+                ),
+                xaxis=dict(
+                    title=dict(
+                        text='Request Index',
+                        font=dict(size=16)
+                    ),
+                    tickfont=dict(size=12)
+                ),
+                margin=dict(l=80, r=80, t=100, b=80),
+                hovermode='closest'
+            )
+            
+            # Save the plot as PNG
+            output_path = self.output_dir / "journey_times.png"
+            fig.write_image(str(output_path))
+            logger.info(f"Saved large journey time plot to {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error creating large journey time plot: {str(e)}")
     
     def analyze_service_efficiency(self):
         """Analyze service efficiency metrics."""
@@ -1868,6 +2252,7 @@ class StandaloneMetricsAnalyzer:
             for _, row in user_rejections.iterrows():
                 try:
                     metadata = row.get('rejection_metadata', {})
+                    print(f"Metadata: {metadata}")
                     if isinstance(metadata, str):
                         metadata = json.loads(metadata)
                     
@@ -1875,6 +2260,9 @@ class StandaloneMetricsAnalyzer:
                     details = metadata.get('details', {})
                     service_attributes = details.get('service_attributes', {})
                     user_profile = details.get('user_profile', {})
+
+                    if not user_profile:
+                        user_profile = {}
                     
                     # Extract all relevant fields
                     rejection_data.append({
@@ -1892,15 +2280,17 @@ class StandaloneMetricsAnalyzer:
                         'walking_time_from_destination_mins': service_attributes.get('walking_time_from_destination'),
                         'vehicle_id': service_attributes.get('vehicle_id'),
                         'vehicle_type': service_attributes.get('vehicle_type'),
+                        'price': service_attributes.get('price'),  # Add price
                         # User profile constraints
                         'max_waiting_time': user_profile.get('max_waiting_time'),
                         'max_in_vehicle_time': user_profile.get('max_in_vehicle_time'),
                         'max_walking_time_to_origin': user_profile.get('max_walking_time_to_origin'),
                         'max_walking_time_from_destination': user_profile.get('max_walking_time_from_destination'),
+                        'max_price': user_profile.get('max_price'),  # Add max price
                         'historical_acceptance_rate': user_profile.get('historical_acceptance_rate')
                     })
                 except Exception as e:
-                    logger.warning(f"Error processing rejection data: {str(e)}")
+                    logger.warning(f"Error processing rejection data: {traceback.format_exc()}")
                     continue
             
             if not rejection_data:
@@ -1909,40 +2299,6 @@ class StandaloneMetricsAnalyzer:
                 
             # Convert to DataFrame
             rejections_df = pd.DataFrame(rejection_data)
-            
-            # 1. Rejection Reasons Analysis
-            if 'rejection_reason' in rejections_df.columns:
-                reason_counts = rejections_df['rejection_reason'].value_counts()
-                
-                # Create pie chart of rejection reasons
-                fig = px.pie(
-                    values=reason_counts.values,
-                    names=reason_counts.index,
-                    title='Distribution of User Rejection Reasons'
-                )
-                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
-                
-                # Create bar chart with percentages
-                reason_df = pd.DataFrame({
-                    'reason': reason_counts.index,
-                    'count': reason_counts.values,
-                    'percentage': (reason_counts.values / len(rejections_df) * 100).round(1)
-                })
-                
-                fig = px.bar(
-                    reason_df,
-                    x='reason',
-                    y='count',
-                    text='percentage',
-                    title='User Rejection Reasons',
-                    labels={
-                        'reason': 'Rejection Reason',
-                        'count': 'Count',
-                        'percentage': 'Percentage'
-                    }
-                )
-                fig.update_traces(texttemplate='%{text}%', textposition='outside')
-                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
             
             # 2. Timing Analysis
             if 'timestamp' in rejections_df.columns:
@@ -2086,43 +2442,7 @@ class StandaloneMetricsAnalyzer:
                         }
                     )
                     self.dashboard_generator.add_figure(fig, "service", "User Rejections")
-            
-            # 6. Constraint Violation Analysis
-            constraint_metrics = [
-                ('waiting_time_mins', 'max_waiting_time'),
-                ('in_vehicle_time_mins', 'max_in_vehicle_time'),
-                ('walking_time_to_pickup_mins', 'max_walking_time_to_origin'),
-                ('walking_time_from_destination_mins', 'max_walking_time_from_destination')
-            ]
-            
-            for actual, max_allowed in constraint_metrics:
-                if all(col in rejections_df.columns for col in [actual, max_allowed]):
-                    # Calculate violation percentage
-                    rejections_df[f'{actual}_violation'] = (
-                        rejections_df[actual] > rejections_df[max_allowed]
-                    ).astype(int)
-                    
-                    violation_rate = rejections_df[f'{actual}_violation'].mean() * 100
-                    
-                    # Create violation analysis plot
-                    fig = px.scatter(
-                        rejections_df,
-                        x=actual,
-                        y='acceptance_probability',
-                        title=f'Acceptance Probability vs {actual.replace("_mins", "").replace("_", " ").title()}',
-                        labels={
-                            actual: f'{actual.replace("_mins", "").replace("_", " ").title()} (minutes)',
-                            'acceptance_probability': 'Acceptance Probability'
-                        }
-                    )
-                    
-                    # Add vertical line for max allowed value
-                    if rejections_df[max_allowed].notna().any():
-                        max_value = rejections_df[max_allowed].dropna().iloc[0]
-                        fig.add_vline(x=max_value, line_dash="dash", line_color="red",
-                                    annotation_text=f"Max Allowed: {max_value:.1f} mins")
-                    
-                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+
             
             # 7. Historical Acceptance Rate Analysis
             if 'historical_acceptance_rate' in rejections_df.columns:
@@ -2137,6 +2457,63 @@ class StandaloneMetricsAnalyzer:
                     }
                 )
                 self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+            
+            # 7. Price Analysis
+            if 'price' in rejections_df.columns:
+                # Price distribution
+                fig = px.histogram(
+                    rejections_df,
+                    x='price',
+                    title='Distribution of Prices for Rejected Requests',
+                    labels={
+                        'price': 'Price',
+                        'count': 'Count'
+                    },
+                    nbins=20
+                )
+                self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Price vs acceptance probability
+                if 'acceptance_probability' in rejections_df.columns:
+                    fig = px.scatter(
+                        rejections_df,
+                        x='price',
+                        y='acceptance_probability',
+                        title='Acceptance Probability vs Price',
+                        labels={
+                            'price': 'Price',
+                            'acceptance_probability': 'Acceptance Probability'
+                        }
+                    )
+                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Price vs waiting time
+                if 'waiting_time_mins' in rejections_df.columns:
+                    fig = px.scatter(
+                        rejections_df,
+                        x='price',
+                        y='waiting_time_mins',
+                        title='Price vs Waiting Time',
+                        labels={
+                            'price': 'Price',
+                            'waiting_time_mins': 'Waiting Time (minutes)'
+                        }
+                    )
+                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
+                
+                # Price by vehicle type
+                if 'vehicle_type' in rejections_df.columns:
+                    fig = px.box(
+                        rejections_df,
+                        x='vehicle_type',
+                        y='price',
+                        title='Price Distribution by Vehicle Type',
+                        labels={
+                            'vehicle_type': 'Vehicle Type',
+                            'price': 'Price'
+                        }
+                    )
+                    self.dashboard_generator.add_figure(fig, "service", "User Rejections")
             
         except Exception as e:
             logger.error(f"Error analyzing user rejections: {str(e)}\n{traceback.format_exc()}")

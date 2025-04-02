@@ -16,6 +16,7 @@ from drt_sim.core.events.manager import EventManager
 from drt_sim.core.demand.manager import DemandManager
 from drt_sim.core.user.user_profile_manager import UserProfileManager
 from drt_sim.core.user.user_acceptance_manager import UserAcceptanceManager
+from drt_sim.core.pricing.pricing_manager import PricingManager
 from drt_sim.config.config import ParameterSet, SimulationConfig
 from drt_sim.handlers.request_handler import RequestHandler
 from drt_sim.handlers.vehicle_handler import VehicleHandler
@@ -24,9 +25,8 @@ from drt_sim.handlers.route_handler import RouteHandler
 from drt_sim.handlers.stop_handler import StopHandler
 from drt_sim.handlers.matching_handler import MatchingHandler
 from drt_sim.core.services.route_service import RouteService
-from drt_sim.models.event import EventType
+from drt_sim.models.event import EventType, EventPriority
 from drt_sim.network.manager import NetworkManager
-from drt_sim.models.base import SimulationEncoder
 from drt_sim.integration.traffic_sim_integration import SUMOIntegration
 from drt_sim.algorithms.base_interfaces.rebalancing_base import RebalancingAlgorithm
 from drt_sim.algorithms.rebalancing.naive import NaiveRebalancingAlgorithm
@@ -76,6 +76,7 @@ class SimulationOrchestrator:
         self.network_manager: Optional[NetworkManager] = None
         self.user_profile_manager: Optional[UserProfileManager] = None
         self.user_acceptance_manager: Optional[UserAcceptanceManager] = None
+        self.pricing_manager: Optional[PricingManager] = None
         self.route_service: Optional[RouteService] = None
         self.visualization_manager: Optional[VisualizationManager] = None
         self.sumo_integration: Optional[SUMOIntegration] = None
@@ -85,6 +86,24 @@ class SimulationOrchestrator:
         self.initialized: bool = False
         self.step_count: int = 0
         
+    def _schedule_price_updates(self) -> None:
+        """Schedule periodic price updates."""
+        if not self.pricing_manager:
+            return
+            
+        update_interval = self.cfg.pricing.price_update_interval
+        
+        # Schedule recurring price updates
+        # self.context.event_manager.schedule_recurring_event(
+        #     event_type=EventType.PRICE_UPDATE_TICK,
+        #     start_time=self.context.current_time + timedelta(seconds=update_interval),
+        #     interval_seconds=update_interval,
+        #     end_time=self.context.end_time,
+        #     priority=EventPriority.LOW
+        # )
+        
+        logger.info(f"Scheduled periodic price updates every {update_interval} seconds")
+    
     async def initialize(self) -> None:
         """Initialize all simulation components and prepare for execution."""
         if self.initialized:
@@ -132,6 +151,11 @@ class SimulationOrchestrator:
                 config=self.cfg.user_acceptance,
                 user_profile_manager=self.user_profile_manager
             )
+            
+            # Initialize pricing manager
+            self.pricing_manager = PricingManager(
+                config=self.cfg.pricing
+            )
         
 
             # Initialize SUMO integration if enabled
@@ -163,6 +187,9 @@ class SimulationOrchestrator:
 
             # Schedule all demand before starting simulation
             self._schedule_all_demand()
+            
+            # Schedule periodic price updates
+            self._schedule_price_updates()
 
             # Start SUMO if enabled
             if self.sumo_integration and self.sim_cfg.sumo.enabled:
@@ -235,7 +262,8 @@ class SimulationOrchestrator:
             self.network_manager,
             self.user_profile_manager,
             self.route_service,
-            self.user_acceptance_manager
+            self.user_acceptance_manager,
+            self.pricing_manager
         )
 
     def _register_handlers(self) -> None:
@@ -272,6 +300,7 @@ class SimulationOrchestrator:
             EventType.PASSENGER_ARRIVED_PICKUP: self.passenger_handler.handle_passenger_arrived_pickup,
             EventType.PASSENGER_BOARDING_COMPLETED: self.passenger_handler.handle_boarding_completed,
             EventType.PASSENGER_ALIGHTING_COMPLETED: self.passenger_handler.handle_alighting_completed,
+            EventType.PASSENGER_WALKING_TO_DESTINATION: self.passenger_handler.handle_passenger_walking_to_destination,
             EventType.PASSENGER_ARRIVED_DESTINATION: self.passenger_handler.handle_passenger_arrived_destination,
             EventType.PASSENGER_NO_SHOW: self.passenger_handler.handle_passenger_no_show,
             EventType.SERVICE_LEVEL_VIOLATION: self.passenger_handler.handle_service_level_violation,
@@ -312,6 +341,14 @@ class SimulationOrchestrator:
             )
             
             logger.debug(f"Registered handler for {event_type}")
+            
+        # Register price update event handler
+        self.event_manager.register_handler(
+            event_type=EventType.PRICE_UPDATE_TICK,
+            handler=self.matching_handler.handle_price_update_tick
+        )
+        
+        logger.debug(f"Registered handler for {EventType.PRICE_UPDATE_TICK}")
         
     def _setup_initial_state(self) -> None:
         """Set up the initial simulation state."""

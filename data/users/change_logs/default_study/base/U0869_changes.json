@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2025-04-02T16:35:18.339091",
+    "type": "creation",
+    "study_id": "default_study",
+    "simulation_id": "base",
+    "description": "Profile created",
+    "weights": {
+      "walking_time_to_origin": -0.7804647802902337,
+      "waiting_time": -1.1636449645322797,
+      "in_vehicle_time": -0.4599518613493671,
+      "walking_time_from_destination": -0.7197132577757626
+    }
+  }
+]

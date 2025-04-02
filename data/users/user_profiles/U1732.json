@@ -1,0 +1,41 @@
+{
+  "id": "U1732",
+  "is_synthetic": true,
+  "max_walking_time_to_origin": 5.0,
+  "max_walking_time_from_destination": 5.0,
+  "max_waiting_time": 10.0,
+  "max_in_vehicle_time": 20.0,
+  "max_price": 1.0,
+  "max_acceptable_delay": 7.0,
+  "base_weights": {
+    "walking_time_to_origin": -1.0739605959158156,
+    "waiting_time": -0.7472478581937236,
+    "in_vehicle_time": -0.36444270642896515,
+    "walking_time_from_destination": -0.9298355779528035
+  },
+  "weights": {
+    "walking_time_to_origin": -1.0739605959158156,
+    "waiting_time": -0.7472478581937236,
+    "in_vehicle_time": -0.36444270642896515,
+    "walking_time_from_destination": -0.9298355779528035
+  },
+  "weight_history": [
+    {
+      "timestamp": "2025-04-02T16:35:18.552488",
+      "weights": {
+        "walking_time_to_origin": -1.0739605959158156,
+        "waiting_time": -0.7472478581937236,
+        "in_vehicle_time": -0.36444270642896515,
+        "walking_time_from_destination": -0.9298355779528035
+      },
+      "study_id": "default_study",
+      "simulation_id": "base",
+      "reason": "Initial profile creation"
+    }
+  ],
+  "historical_trips": 0,
+  "historical_acceptance_rate": 0.0,
+  "historical_ratings": [],
+  "created_at": "2025-04-02T16:35:18.552491",
+  "last_updated": "2025-04-02T16:35:18.552492"
+}

@@ -149,11 +149,11 @@ base_config:
     # Feature extractor configuration
     feature_extractor_config:
       normalization_overrides:
-        walking_time_to_origin: 15.0
-        walking_time_from_destination: 15.0
-        waiting_time: 20.0
-        in_vehicle_time: 45.0
-        cost: 30.0
+        walking_time_to_origin: 5.0
+        walking_time_from_destination: 5.0
+        waiting_time: 15.0
+        in_vehicle_time: 20.0
+        cost: 1350.0
     
     # Feature provider configuration
     feature_provider_config:

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 
 from drt_sim.models.event import Event, EventType, EventPriority
@@ -19,6 +19,7 @@ from drt_sim.core.user.user_profile_manager import UserProfileManager
 from drt_sim.core.services.route_service import RouteService
 from drt_sim.models.rejection import RejectionReason, RejectionMetadata
 from drt_sim.core.user.user_acceptance_manager import UserAcceptanceManager
+from drt_sim.core.pricing.pricing_manager import PricingManager
 from drt_sim.core.monitoring.types.metrics import MetricName
 import logging
 import traceback
@@ -35,7 +36,8 @@ class MatchingHandler:
         network_manager: NetworkManager,
         user_profile_manager: UserProfileManager,
         route_service: RouteService,
-        user_acceptance_manager: UserAcceptanceManager
+        user_acceptance_manager: UserAcceptanceManager,
+        pricing_manager: PricingManager
     ):
         self.config = config
         self.context = context
@@ -44,6 +46,7 @@ class MatchingHandler:
         self.user_profile_manager = user_profile_manager
         self.route_service = route_service
         self.user_acceptance_manager = user_acceptance_manager
+        self.pricing_manager = pricing_manager
         # Initialize matching strategy
         self.matching_strategy = self._initialize_matching_strategy()
         
@@ -98,6 +101,36 @@ class MatchingHandler:
         
         logger.info(f"Scheduled periodic optimization every {optimization_interval} seconds")
     
+    
+    async def handle_price_update_tick(self, event: Event) -> None:
+        """Handle periodic price update events."""
+        try:
+            logger.debug("Processing price update tick")
+            
+            # Get current demand level and other pricing factors
+            active_requests_count = len(self.state_manager.request_worker.get_active_requests())
+            available_vehicles_count = len(self.state_manager.vehicle_worker.get_available_vehicles())
+            
+            # Calculate demand level (0.0 to 1.0)
+            demand_level = 0.0
+            if available_vehicles_count > 0:
+                demand_level = min(active_requests_count / available_vehicles_count, 1.0)
+            
+            # Log current demand level
+            logger.info(f"Current demand level: {demand_level:.2f} ({active_requests_count} requests, {available_vehicles_count} vehicles)")
+            
+            # Could trigger dynamic price updates here if needed
+            
+            # Re-schedule the price update tick
+            # price_update_interval = self.config.pricing.price_update_interval
+            # self.context.event_manager.schedule_event(
+            #     event_type=EventType.PRICE_UPDATE_TICK,
+            #     timestamp=self.context.current_time + timedelta(seconds=price_update_interval)
+            # )
+            
+        except Exception as e:
+            logger.error(f"Error in price update tick: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
     
     async def handle_match_request_to_vehicle(self, event: Event) -> None:
         """Handle immediate dispatch request event."""
@@ -206,7 +239,6 @@ class MatchingHandler:
             # Calculate proposed pickup time and travel time
             proposed_pickup_time = None
             proposed_travel_time = None
-            cost = 0.0
             service_attributes = {}
             
             # Extract pickup and dropoff times from the route
@@ -230,21 +262,99 @@ class MatchingHandler:
             service_attributes["request_time"] = request.request_time
             service_attributes["waiting_time"] = (proposed_pickup_time - request.request_time).total_seconds() / 60 if proposed_pickup_time else 0
             service_attributes["travel_time"] = proposed_travel_time.total_seconds() / 60 if proposed_travel_time else 0
-            service_attributes["cost"] = cost
-            service_attributes["walking_time_to_pickup"] = stop_assignment.walking_time_origin
-            service_attributes["walking_time_from_destination"] = stop_assignment.walking_time_destination
+            service_attributes["walking_time_to_pickup"] = stop_assignment.walking_time_origin / 60
+            service_attributes["walking_time_from_destination"] = stop_assignment.walking_time_destination / 60
             service_attributes["in_vehicle_time"] = assignment.in_vehicle_time_mins
             service_attributes["waiting_time"] = assignment.waiting_time_mins
+            
+            # Add route distance to service attributes
+            service_attributes["distance"] = assignment.route.total_distance
+            
+            # Get the user's preferred currency if available
+            preferred_currency = None
+            if request.user_id:
+                user_profile = self.user_profile_manager.get_profile(request.user_id)
+                if user_profile and hasattr(user_profile, 'preferred_currency'):
+                    try:
+                        from drt_sim.config.config import Currency
+                        preferred_currency = Currency(user_profile.preferred_currency)
+                    except (ValueError, AttributeError):
+                        preferred_currency = None
+            
+            # Calculate price using the pricing manager
+            logger.info(f"Calculating price for request {request.id}:")
+            logger.info(f"- Base service attributes before price calculation: {service_attributes}")
+            
+            estimated_price = self.pricing_manager.calculate_price(
+                request=request,
+                vehicle=vehicle,
+                route=assignment.route,
+                service_attributes=service_attributes,
+                currency=preferred_currency
+            )
+            
+            logger.info(f"Price calculation results:")
+            logger.info(f"- Estimated price: {estimated_price}")
+            logger.info(f"- Preferred currency: {preferred_currency}")
+            
+            # Get a breakdown of the price
+            price_breakdown = self.pricing_manager.get_price_breakdown(
+                request=request,
+                vehicle=vehicle,
+                route=assignment.route,
+                service_attributes=service_attributes,
+                currency=preferred_currency
+            )
+            
+            logger.info(f"Price breakdown: {price_breakdown}")
+            
+            # Update request with price information
+            request.estimated_price = estimated_price
+            request.price_breakdown = price_breakdown
+            
+            # Update service attributes with price information
+            service_attributes["price"] = estimated_price
+            service_attributes["price_breakdown"] = price_breakdown
             
             # Check if user will accept this assignment
             user_accepted, acceptance_probability = False, 0.0
             if proposed_pickup_time and proposed_travel_time:
+                logger.info(f"Evaluating user acceptance for request {request.id}")
+                logger.info(f"Service attributes for acceptance decision: {service_attributes}")
+                
+                # Log user profile data if available
+                if request.user_id:
+                    user_profile = self.user_profile_manager.get_profile(request.user_id)
+                    if user_profile:
+                        logger.info(f"User profile constraints for user {request.user_id}:")
+                        logger.info(f"- Max price: {user_profile.max_price}")
+                        logger.info(f"- Price sensitivity: {getattr(user_profile, 'price_sensitivity', 'Not set')}")
+                        logger.info(f"- Price normalization factor: {getattr(user_profile, 'price_normalization_factor', 'Not set')}")
+                        logger.info(f"- Price threshold: {getattr(user_profile, 'price_threshold', 'Not set')}")
+                        
+                        # Log price-related constraints and preferences
+                        if hasattr(user_profile, 'price_preferences'):
+                            logger.info(f"Price preferences: {user_profile.price_preferences}")
+                        
+                        # Log historical price acceptance data if available
+                        if hasattr(user_profile, 'historical_price_acceptance'):
+                            logger.info(f"Historical price acceptance data: {user_profile.historical_price_acceptance}")
+                        
+                        # Log price-related weights if available
+                        if hasattr(user_profile, 'weights') and 'price' in user_profile.weights:
+                            logger.info(f"Price weight in user preferences: {user_profile.weights['price']}")
+
                 user_accepted, acceptance_probability = self.user_acceptance_manager.decide_acceptance(
                     request=request,
                     service_attributes=service_attributes
                 )
 
-                logger.info(f" User accepted: {user_accepted}, acceptance probability: {acceptance_probability}")
+                logger.info(f"User acceptance decision for request {request.id}:")
+                logger.info(f"- Accepted: {user_accepted}")
+                logger.info(f"- Acceptance probability: {acceptance_probability}")
+                logger.info(f"- Price: {service_attributes.get('price', 0)}")
+                logger.info(f"- Price normalized: {service_attributes.get('normalized_price', 'Not normalized')}")
+                logger.info(f"- Price relative to max: {service_attributes.get('price', 0) / user_profile.max_price if user_profile and user_profile.max_price > 0 else 'N/A'}")
                 
                 # Log user acceptance metrics
                 self.context.metrics_collector.log(
@@ -255,9 +365,32 @@ class MatchingHandler:
                         'request_id': request.id,
                         'user_id': getattr(request, "user_id", "unknown"),
                         'vehicle_id': vehicle.id,
+                        'in_vehicle_time': service_attributes["in_vehicle_time"],
+                        'walking_time_to_pickup': service_attributes["walking_time_to_pickup"] / 60,
+                        'walking_time_from_destination': service_attributes["walking_time_from_destination"] / 60,
                         'waiting_time': service_attributes["waiting_time"],
                         'travel_time': service_attributes["travel_time"],
+                        'price': service_attributes["price"],
                         'accepted': int(user_accepted)
+                    }
+                )
+                
+                # Log price metrics
+                self.context.metrics_collector.log(
+                    MetricName.PRICE_CALCULATED,
+                    service_attributes["price"],
+                    self.context.current_time,
+                    {
+                        'request_id': request.id,
+                        'user_id': getattr(request, "user_id", "unknown"),
+                        'vehicle_id': vehicle.id,
+                        'pricing_model': self.pricing_manager.config.model_type,
+                        'currency': self.pricing_manager.config.currency.name,
+                        'timestamp': self.context.current_time.isoformat(),
+                        'distance_km': service_attributes.get("distance", 0) / 1000.0,
+                        'duration_minutes': service_attributes.get("in_vehicle_time", 0),
+                        'price': service_attributes["price"],
+                        'price_breakdown': service_attributes["price_breakdown"]
                     }
                 )
                 
@@ -278,22 +411,39 @@ class MatchingHandler:
             
             # If user rejected, handle rejection
             if not user_accepted:
+                logger.warning(f"User rejected request {request.id}. Analyzing rejection reasons:")
+                
                 # Get user profile data
                 user_profile = self.user_profile_manager.get_profile(request.user_id)
-                user_profile_data = {}
+                # Create user profile data for rejection metadata
+                user_profile_data = user_profile.to_dict() if user_profile else None
+                    
+                # Log constraint violations
+                walking_time_to_pickup = service_attributes.get('walking_time_to_pickup', 0)
+                walking_time_from_destination = service_attributes.get('walking_time_from_destination', 0)
+                waiting_time = service_attributes.get('waiting_time', 0)
+                in_vehicle_time = service_attributes.get('in_vehicle_time', 0)
+                price = service_attributes.get('price', 0)
+                
+                logger.warning(f"Checking constraint violations for request {request.id}:")
                 if user_profile:
-                    user_profile_data = {
-                        "max_walking_time_to_origin": user_profile.max_walking_time_to_origin,
-                        "max_walking_time_from_destination": user_profile.max_walking_time_from_destination,
-                        "max_waiting_time": user_profile.max_waiting_time,
-                        "max_in_vehicle_time": user_profile.max_in_vehicle_time,
-                        "max_price": user_profile.max_price,
-                        "max_acceptable_delay": user_profile.max_acceptable_delay,
-                        "weights": user_profile.weights,
-                        "historical_trips": user_profile.historical_trips,
-                        "historical_acceptance_rate": user_profile.historical_acceptance_rate,
-                        "average_rating": user_profile.get_average_rating()
-                    }
+                    logger.warning(f"- Walking time to pickup: {walking_time_to_pickup}s vs max {user_profile.max_walking_time_to_origin}s")
+                    logger.warning(f"- Walking time from destination: {walking_time_from_destination}s vs max {user_profile.max_walking_time_from_destination}s")
+                    logger.warning(f"- Waiting time: {waiting_time}min vs max {user_profile.max_waiting_time}min")
+                    logger.warning(f"- In-vehicle time: {in_vehicle_time}min vs max {user_profile.max_in_vehicle_time}min")
+                    logger.warning(f"- Price: {price} vs max {user_profile.max_price}")
+                    
+                    # Log which constraints were violated
+                    if walking_time_to_pickup > user_profile.max_walking_time_to_origin:
+                        logger.warning(f"Walking time to pickup constraint violated")
+                    if walking_time_from_destination > user_profile.max_walking_time_from_destination:
+                        logger.warning(f"Walking time from destination constraint violated")
+                    if waiting_time > user_profile.max_waiting_time:
+                        logger.warning(f"Waiting time constraint violated")
+                    if in_vehicle_time > user_profile.max_in_vehicle_time:
+                        logger.warning(f"In-vehicle time constraint violated")
+                    if price > user_profile.max_price:
+                        logger.warning(f"Price constraint violated")
 
                 rejection_metadata = RejectionMetadata(
                     reason=RejectionReason.USER_REJECTED,
@@ -310,18 +460,11 @@ class MatchingHandler:
                 )
                 
                 # Update the user acceptance model
-                self.user_acceptance_manager.update_model(
-                    request=request,
-                    accepted=False,
-                    service_attributes=service_attributes
-                )
-
-                for key, value in service_attributes.items():
-                    logger.info(f"  {key}: {value}")
-                logger.info("Rejection Metadata Details:")
-                for key, value in rejection_metadata.details.items():
-                    logger.info(f"  {key}: {value}")
-                logger.info("=== End User Rejection Metrics Debug ===")
+                # self.user_acceptance_manager.update_model(
+                #     request=request,
+                #     accepted=False,
+                #     service_attributes=service_attributes
+                # )
 
                 self.context.metrics_collector.log(
                     MetricName.REQUEST_USER_REJECTED,
@@ -347,11 +490,11 @@ class MatchingHandler:
             )
             
             # Update the user acceptance model
-            self.user_acceptance_manager.update_model(
-                request=request,
-                accepted=True,
-                service_attributes=service_attributes
-            )
+            # self.user_acceptance_manager.update_model(
+            #     request=request,
+            #     accepted=True,
+            #     service_attributes=service_attributes
+            # )
             
             # 2. Update vehicle state immediately
             # Add and update route with proper status

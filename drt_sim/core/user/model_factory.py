@@ -166,12 +166,6 @@ class ModelFactory:
             pass
         
         try:
-            from drt_sim.algorithms.user_acceptance.rl import RLAcceptanceModel
-            cls.register_model_type("rl", RLAcceptanceModel)
-        except ImportError:
-            pass
-
-        try:
             from drt_sim.algorithms.user_acceptance.policy_gradient_agent import PolicyGradientAgentModel
             cls.register_model_type("policy_gradient_agent", PolicyGradientAgentModel)
         except ImportError:

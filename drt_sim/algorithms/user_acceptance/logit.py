@@ -21,6 +21,7 @@ from drt_sim.algorithms.base_interfaces.user_acceptance_base import UserAcceptan
 from drt_sim.core.user.acceptance_context import AcceptanceContext
 from drt_sim.core.user.feature_extractor import FeatureExtractor
 from drt_sim.core.user.feature_provider import FeatureProviderRegistry
+from drt_sim.config.config import Currency
 logger = logging.getLogger(__name__)
 
 class LogitModel(UserAcceptanceModel):
@@ -67,20 +68,13 @@ class LogitModel(UserAcceptanceModel):
         self.training_data = []
         self.max_training_samples = kwargs.get('max_training_samples', 10000)
         
-        # Default coefficients for primary features (negative values indicate costs)
+        # Default coefficients only used as fallback if user profile weights are missing
         self.default_coefficients = {
-            "walking_time_to_origin": -1.5,
-            "waiting_time": -2.0,
-            "in_vehicle_time": -1.5,
-            "walking_time_from_destination": -1.5,
-            "price": -2.5,
-            "total_trip_time": -1.0,
-            "time_of_day": 0.0,
-            "day_of_week": 0.0,
-            "distance_to_pickup": -0.5,
-            "weather_condition": -0.3,
-            "vehicle_capacity": 0.1,
-            "historical_acceptance_rate": 1.5
+            "walking_time_to_origin": -0.025,      # Walking to pickup is a cost (per minute)
+            "waiting_time": -0.033,                # Waiting is a significant cost (per minute)
+            "in_vehicle_time": -0.025,             # In-vehicle time is a cost (per minute)
+            "walking_time_from_destination": -0.025, # Walking from dropoff is a cost (per minute)
+            "price": -0.3                         # Price is a minor factor since 1,350 won is standard
         }
         
         # Set required features
@@ -88,20 +82,12 @@ class LogitModel(UserAcceptanceModel):
             "walking_time_to_origin",
             "waiting_time",
             "in_vehicle_time",
-            "walking_time_from_destination"
+            "walking_time_from_destination",
+            "price"
         ]
         
-        # Set optional features
-        self._optional_features = [
-            "price",
-            "total_trip_time",
-            "time_of_day",
-            "day_of_week",
-            "distance_to_pickup",
-            "weather_condition",
-            "vehicle_capacity",
-            "historical_acceptance_rate"
-        ]
+        # Set optional features (empty since we only want the five specified features)
+        self._optional_features = []
         
         # Apply configuration if provided
         if 'config' in kwargs:
@@ -167,27 +153,51 @@ class LogitModel(UserAcceptanceModel):
         # Create a single-row DataFrame
         df = pd.DataFrame([features_dict])
         
-        # Ensure all expected columns are present
+        logger.info("Initial features in DataFrame:")
+        for col in df.columns:
+            logger.info(f"- {col}: {df[col].iloc[0]}")
+        
+        # Map travel_time to in_vehicle_time if needed
+        if 'travel_time' in df.columns and 'in_vehicle_time' not in df.columns:
+            logger.info(f"Mapping travel_time ({df['travel_time'].iloc[0]}) to in_vehicle_time")
+            df['in_vehicle_time'] = df['travel_time']
+            df = df.drop('travel_time', axis=1)
+        
+        # Map walking_time_to_pickup to walking_time_to_origin if needed
+        if 'walking_time_to_pickup' in df.columns and 'walking_time_to_origin' not in df.columns:
+            logger.info(f"Mapping walking_time_to_pickup ({df['walking_time_to_pickup'].iloc[0]}) to walking_time_to_origin")
+            df['walking_time_to_origin'] = df['walking_time_to_pickup']
+            df = df.drop('walking_time_to_pickup', axis=1)
+        
+        # Map walking_time_from_dropoff to walking_time_from_destination if needed
+        if 'walking_time_from_dropoff' in df.columns and 'walking_time_from_destination' not in df.columns:
+            logger.info(f"Mapping walking_time_from_dropoff ({df['walking_time_from_dropoff'].iloc[0]}) to walking_time_from_destination")
+            df['walking_time_from_destination'] = df['walking_time_from_dropoff']
+            df = df.drop('walking_time_from_dropoff', axis=1)
+        
+        # Ensure all required features are present
         missing_features = []
-        for feature in self.feature_names:
+        for feature in self._required_features:
             if feature not in df.columns:
+                logger.warning(f"Required feature {feature} is missing, filling with 0.0")
                 df[feature] = 0.0
                 missing_features.append(feature)
         
         if missing_features:
-            logger.warning(f"Missing features filled with 0.0: {missing_features}")
-            
-        # Validate categorical and numeric features
-        for feature in self.categorical_features:
-            if feature not in df.columns:
-                logger.warning(f"Categorical feature '{feature}' not found in input features")
-                
-        for feature in self.numeric_features:
-            if feature not in df.columns:
-                logger.warning(f"Numeric feature '{feature}' not found in input features")
+            logger.warning(f"Missing required features filled with 0.0: {missing_features}")
+        
+        # Drop any columns that aren't in our required features
+        columns_to_drop = [col for col in df.columns if col not in self._required_features]
+        if columns_to_drop:
+            logger.info(f"Dropping non-required features: {columns_to_drop}")
+            df = df.drop(columns=columns_to_drop)
+        
+        logger.info("Final features in DataFrame:")
+        for col in df.columns:
+            logger.info(f"- {col}: {df[col].iloc[0]}")
         
         return df
-    
+
     def calculate_acceptance_probability(self, context: AcceptanceContext) -> float:
         """
         Calculate probability of user accepting a proposed service.
@@ -199,11 +209,14 @@ class LogitModel(UserAcceptanceModel):
             float: Probability of acceptance (0.0 to 1.0)
         """
         # Extract features as a dictionary
+        logger.info(f"Extracting features for request {getattr(context.request, 'id', 'unknown')}")
         features_dict = self.feature_extractor.extract_features_dict(
             context.features,
             context.request,
             context.user_profile
         )
+        logger.debug(f"Extracted features: {features_dict}")
+
         # Enrich features using the provider registry if available
         if self.feature_provider_registry is not None:
             # Create a context dict for the providers
@@ -213,31 +226,40 @@ class LogitModel(UserAcceptanceModel):
             }
             
             # Get additional features from providers
+            logger.debug("Getting additional features from providers")
             additional_features = self.feature_provider_registry.get_features(
                 context.request, 
                 provider_context
             )
+            logger.debug(f"Additional features from providers: {additional_features}")
             
             # Update features with additional ones
             features_dict.update(additional_features)
         
         # Detect feature types
         self._detect_feature_types(features_dict)
+        logger.debug(f"Detected feature types:")
+        logger.debug(f"- Categorical features: {self.categorical_features}")
+        logger.debug(f"- Numeric features: {self.numeric_features}")
         
         # If model is not trained, use default logit function
         if not self.is_trained or not self.model:
+            logger.info("Using default logit function (model not trained)")
             return self._calculate_default_probability(features_dict, context.user_profile)
             
         # Convert to DataFrame for processing
         features_df = self._prepare_features_df(features_dict)
+        logger.debug(f"Prepared features DataFrame: {features_df}")
         
         # Calculate probability using the pipeline
         try:
             probability = self.model.predict_proba(features_df)[0, 1]
+            logger.info(f"Calculated probability using trained model: {probability:.4f}")
             return float(probability)
         except Exception as e:
             logger.error(f"Error calculating probability with model: {e}")
             logger.exception(e)
+            logger.info("Falling back to default logit function")
             return self._calculate_default_probability(features_dict, context.user_profile)
     
     def _calculate_default_probability(self, features: Dict[str, float], user_profile=None) -> float:
@@ -246,30 +268,70 @@ class LogitModel(UserAcceptanceModel):
         
         Args:
             features: Dictionary of normalized features
-            user_profile: User profile (optional)
+            user_profile: User profile containing weights for features
             
         Returns:
             float: Probability of acceptance (0.0 to 1.0)
         """
-        # Apply user profile specific weights
+        # Start with default coefficients as fallback
         coefficients = self.default_coefficients.copy()
         
+        # Map travel_time to in_vehicle_time if needed
+        if 'travel_time' in features and 'in_vehicle_time' not in features:
+            logger.info(f"Mapping travel_time ({features['travel_time']}) to in_vehicle_time")
+            features['in_vehicle_time'] = features['travel_time']
+            del features['travel_time']
+        
+        # Map walking_time_to_pickup to walking_time_to_origin if needed
+        if 'walking_time_to_pickup' in features and 'walking_time_to_origin' not in features:
+            logger.info(f"Mapping walking_time_to_pickup ({features['walking_time_to_pickup']}) to walking_time_to_origin")
+            features['walking_time_to_origin'] = features['walking_time_to_pickup']
+            del features['walking_time_to_pickup']
+        
+        # Map walking_time_from_dropoff to walking_time_from_destination if needed
+        if 'walking_time_from_dropoff' in features and 'walking_time_from_destination' not in features:
+            logger.info(f"Mapping walking_time_from_dropoff ({features['walking_time_from_dropoff']}) to walking_time_from_destination")
+            features['walking_time_from_destination'] = features['walking_time_from_dropoff']
+            del features['walking_time_from_dropoff']
+        
+        # Log all available features
+        logger.info("Available features for probability calculation:")
+        for feature_name, value in features.items():
+            logger.info(f"- {feature_name}: {value}")
+        
+        # Override with user profile weights if available
         if user_profile and hasattr(user_profile, 'weights') and isinstance(user_profile.weights, dict):
+            logger.info(f"Using weights from user profile: {user_profile.weights}")
             for feature, weight in user_profile.weights.items():
                 if feature in coefficients:
                     coefficients[feature] = weight
+                    logger.debug(f"Using user profile weight for {feature}: {weight}")
+                else:
+                    logger.warning(f"User profile weight for {feature} not used - not in required features")
+        
+        logger.debug(f"Final coefficients being used: {coefficients}")
         
         # Calculate utility using coefficients
         utility = 0.0
+        
+        # Log all features being considered for utility calculation
+        logger.info("Features being considered for utility calculation:")
         for feature_name, value in features.items():
             if feature_name in coefficients and isinstance(value, (int, float)):
-                utility += coefficients[feature_name] * value
+                # Apply coefficient directly (all features are in their natural units)
+                feature_utility = coefficients[feature_name] * value
+                utility += feature_utility
+                logger.info(f"- {feature_name}: value={value}, coefficient={coefficients[feature_name]}, utility={feature_utility}")
+            else:
+                logger.info(f"- {feature_name}: NOT USED (not in coefficients or not numeric)")
         
         # Add intercept (baseline utility)
         utility += 1.0
+        logger.debug(f"Total utility (including intercept): {utility}")
         
         # Convert utility to probability using logistic function
         probability = 1.0 / (1.0 + np.exp(-utility))
+        logger.info(f"Final probability: {probability:.4f}")
         
         return min(max(probability, 0.01), 0.99)  # Clip to avoid extreme values
     
@@ -575,3 +637,25 @@ class LogitModel(UserAcceptanceModel):
         self.config.update(config)
         
         logger.info(f"Configured logit model with: {config}")
+
+    def decide_acceptance(self, context: AcceptanceContext) -> Tuple[bool, float]:
+        """
+        Decide whether the user will accept the proposed service.
+        
+        For the logit model, this is a pure probability-based decision
+        based on the learned coefficients and features.
+        
+        Args:
+            context: Context containing request, features, and user profile
+            
+        Returns:
+            Tuple[bool, float]: (acceptance decision, acceptance probability)
+        """
+        # Calculate acceptance probability
+        probability = self.calculate_acceptance_probability(context)
+        
+        # Make deterministic decision based on probability threshold
+        accepted = probability >= 0.5
+        logger.info(f"Acceptance decision: {'ACCEPTED' if accepted else 'REJECTED'} (probability: {probability:.4f})")
+        
+        return accepted, probability

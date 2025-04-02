@@ -11,6 +11,7 @@ import logging
 
 from drt_sim.models.request import Request
 from drt_sim.models.user import UserProfile
+from drt_sim.config.config import Currency
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +32,31 @@ class FeatureExtractor:
             "importance": "high",
             "group": "time"
         },
-        "travel_time": {
+        "in_vehicle_time": {
             "description": "Duration of the trip",
             "unit": "minutes",
             "normalization": 60.0,
             "importance": "high",
             "group": "time"
         },
+        "walking_time_to_origin": {
+            "description": "Time to walk to pickup location",
+            "unit": "minutes",
+            "normalization": 10.0,
+            "importance": "high",
+            "group": "time"
+        },
+        "walking_time_from_destination": {
+            "description": "Time to walk from dropoff location",
+            "unit": "minutes",
+            "normalization": 10.0,
+            "importance": "high",
+            "group": "time"
+        },
         "price": {
             "description": "Monetary price of the service",
             "unit": "currency",
-            "normalization": 50.0,
+            "normalization": 1.0,
             "importance": "high",
             "group": "price"
         },
@@ -175,9 +190,14 @@ class FeatureExtractor:
                     waiting_time = (features["proposed_pickup_time"] - features["request_time"]).total_seconds() / 60
                     result[feature_name] = min(waiting_time / normalization, 1.0)
             
-            # Extract travel time
-            elif feature_name == "travel_time":
-                if "travel_time" in features:
+            # Extract in-vehicle time
+            elif feature_name == "in_vehicle_time":
+                if "in_vehicle_time" in features:
+                    in_vehicle_time = features["in_vehicle_time"]
+                    if isinstance(in_vehicle_time, timedelta):
+                        in_vehicle_time = in_vehicle_time.total_seconds() / 60
+                    result[feature_name] = min(in_vehicle_time / normalization, 1.0)
+                elif "travel_time" in features:
                     travel_time = features["travel_time"]
                     if isinstance(travel_time, timedelta):
                         travel_time = travel_time.total_seconds() / 60
@@ -188,10 +208,47 @@ class FeatureExtractor:
                         travel_time = travel_time.total_seconds() / 60
                     result[feature_name] = min(travel_time / normalization, 1.0)
             
+            # Extract walking time to origin
+            elif feature_name == "walking_time_to_origin":
+                if "walking_time_to_origin" in features:
+                    walking_time = features["walking_time_to_origin"]
+                    if isinstance(walking_time, timedelta):
+                        walking_time = walking_time.total_seconds() / 60
+                    result[feature_name] = min(walking_time / normalization, 1.0)
+                elif "walking_time_to_pickup" in features:
+                    walking_time = features["walking_time_to_pickup"]
+                    if isinstance(walking_time, timedelta):
+                        walking_time = walking_time.total_seconds() / 60
+                    result[feature_name] = min(walking_time / normalization, 1.0)
+            
+            # Extract walking time from destination
+            elif feature_name == "walking_time_from_destination":
+                if "walking_time_from_destination" in features:
+                    walking_time = features["walking_time_from_destination"]
+                    if isinstance(walking_time, timedelta):
+                        walking_time = walking_time.total_seconds() / 60
+                    result[feature_name] = min(walking_time / normalization, 1.0)
+                elif "walking_time_from_dropoff" in features:
+                    walking_time = features["walking_time_from_dropoff"]
+                    if isinstance(walking_time, timedelta):
+                        walking_time = walking_time.total_seconds() / 60
+                    result[feature_name] = min(walking_time / normalization, 1.0)
+            
             # Extract price
             elif feature_name == "price":
                 if "price" in features:
-                    result[feature_name] = min(features["price"] / normalization, 1.0)
+                    # Handle currency-specific price normalization
+                    if isinstance(normalization, dict) and request and hasattr(request, 'currency'):
+                        try:
+                            currency = Currency(request.currency)
+                            norm_value = normalization.get(currency.value, normalization.get("USD", 1.0))
+                        except Exception as e:
+                            logger.error(f"Error getting currency-specific normalization: {e}")
+                            norm_value = normalization.get("USD", 1.0)
+                    else:
+                        norm_value = normalization
+                    
+                    result[feature_name] = min(features["price"] / norm_value, 1.0)
             
             # Extract time of day
             elif feature_name == "time_of_day":

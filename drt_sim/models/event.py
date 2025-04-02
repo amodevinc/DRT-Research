@@ -68,6 +68,11 @@ class EventType(Enum):
     # Matching Process
     MATCH_REQUEST_TO_VEHICLE = "match.request.to.vehicle"
     MATCH_REQUEST_TO_VEHICLE_FAILED = "match.request.to.vehicle.failed"
+    
+    # Pricing Events
+    PRICE_UPDATE_TICK = "price.update.tick"
+    PRICE_CALCULATED = "price.calculated"
+    PRICE_ADJUSTMENT = "price.adjustment"
 
     # Passenger Journey Events
     START_PASSENGER_JOURNEY = "passenger.journey.started"

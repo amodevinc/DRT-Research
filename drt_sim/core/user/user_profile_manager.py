@@ -109,7 +109,6 @@ class UserProfileManager:
                     except Exception as e:
                         logger.error(f"Error loading profile from {filename}: {e}")
             
-            logger.info(f"Loaded {len(self.profiles)} user profiles")
         except Exception as e:
             logger.error(f"Error loading user profiles: {e}")
     

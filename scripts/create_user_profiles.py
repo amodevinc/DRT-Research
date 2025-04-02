@@ -1,10 +1,10 @@
 """
 Script to create user profiles based on acceptance weights data.
 
-This script reads the acceptance weights from a CSV file and creates
-user profiles for each user, with reasonable default values and 
-proper weight mappings. It also sets up logging for tracking changes
-to profiles over time, especially weight modifications across simulation studies.
+This script reads the acceptance weights from a CSV file or generates synthetic weights
+to create user profiles with reasonable default values and proper weight mappings.
+It also sets up logging for tracking changes to profiles over time, especially weight
+modifications across simulation studies.
 """
 import os
 import pandas as pd
@@ -15,6 +15,7 @@ import argparse
 from pathlib import Path
 import traceback
 from datetime import datetime
+import numpy as np
 
 # Set up logging
 logging.basicConfig(
@@ -23,23 +24,66 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles'):
+def generate_synthetic_weights(num_users=2000):
     """
-    Create user profiles based on the acceptance weights file.
+    Generate synthetic weights for user profiles based on realistic distributions.
     
     Args:
-        weights_file: Path to the acceptance weights CSV file
+        num_users: Number of user profiles to generate
+        
+    Returns:
+        DataFrame containing synthetic weights
+    """
+    # Set random seed for reproducibility
+    np.random.seed(42)
+    
+    # Generate synthetic weights with realistic distributions
+    # Using normal distributions with different means and standard deviations
+    # for each parameter to create heterogeneity in preferences
+    
+    # Walking time to origin (access) - typically negative, more sensitive
+    access_weights = np.random.normal(-0.8, 0.2, num_users)
+    
+    # Waiting time - typically negative, very sensitive
+    wait_weights = np.random.normal(-1.0, 0.15, num_users)
+    
+    # In-vehicle time - typically negative, less sensitive
+    ivt_weights = np.random.normal(-0.5, 0.1, num_users)
+    
+    # Walking time from destination (egress) - typically negative, moderate sensitivity
+    egress_weights = np.random.normal(-0.6, 0.15, num_users)
+    
+    # Create DataFrame
+    weights_df = pd.DataFrame({
+        'id': [f'U{i+1:04d}' for i in range(num_users)],
+        'access': access_weights,
+        'wait': wait_weights,
+        'ivt': ivt_weights,
+        'egress': egress_weights
+    })
+    
+    # Ensure all weights are negative (as per utility theory)
+    for col in ['access', 'wait', 'ivt', 'egress']:
+        weights_df[col] = weights_df[col].apply(lambda x: -abs(x))
+    
+    # Add some correlation between weights to make them more realistic
+    # For example, correlation between access and egress
+    correlation = 0.7
+    weights_df['egress'] = correlation * weights_df['access'] + \
+                          (1 - correlation) * weights_df['egress']
+    
+    logger.info(f"Generated synthetic weights for {num_users} users")
+    return weights_df
+
+def create_user_profiles(weights_df, output_dir, profile_folder='user_profiles'):
+    """
+    Create user profiles based on the weights DataFrame.
+    
+    Args:
+        weights_df: DataFrame containing user weights
         output_dir: Base directory to save profiles
         profile_folder: Subfolder to store user profiles
     """
-    # Read the weights data
-    try:
-        weights_df = pd.read_csv(weights_file)
-        logger.info(f"Loaded weights for {len(weights_df)} users from {weights_file}")
-    except Exception as e:
-        logger.error(f"Error loading weights file: {e}")
-        return
-
     # Create output directory
     profiles_dir = os.path.join(output_dir, profile_folder)
     os.makedirs(profiles_dir, exist_ok=True)
@@ -61,6 +105,8 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
     # Summary statistics
     profile_stats = {
         'total_profiles': len(weights_df),
+        'real_profiles': len(weights_df[~weights_df['is_synthetic']]),
+        'synthetic_profiles': len(weights_df[weights_df['is_synthetic']]),
         'avg_max_walking_time_to_origin': 0,
         'avg_max_walking_time_from_destination': 0,
         'avg_max_waiting_time': 0,
@@ -80,20 +126,17 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
         # Create base weights dictionary - use exact coefficients without normalization
         base_weights = {
             "walking_time_to_origin": walking_time_to_origin_weight,
-            "wait_time": wait_time_weight,
+            "waiting_time": wait_time_weight,
             "in_vehicle_time": in_vehicle_time_weight,
             "walking_time_from_destination": walking_time_from_destination_weight,
-            "time_of_day": 0.0,
-            "day_of_week": 0.0,
-            "distance_to_pickup": 0.0
         }
         
         # Set reasonable default values for time preferences (not based on weights)
         max_walking_time_to_origin = 5.0  # minutes
         max_walking_time_from_destination = 5.0  # minutes
         max_waiting_time = 10.0  # minutes
-        max_in_vehicle_time = 30.0  # minutes
-        max_price = 30.0  # currency units
+        max_in_vehicle_time = 20.0  # minutes
+        max_price = 1.0  # currency units
         max_acceptable_delay = 7.0  # minutes
         
         # Update stats
@@ -114,6 +157,7 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
         # Create user profile - no historical trips
         profile = {
             "id": user_id,
+            "is_synthetic": row['is_synthetic'],
             "max_walking_time_to_origin": max_walking_time_to_origin,
             "max_walking_time_from_destination": max_walking_time_from_destination,
             "max_waiting_time": max_waiting_time,
@@ -166,6 +210,7 @@ def create_user_profiles(weights_file, output_dir, profile_folder='user_profiles
         json.dump(profile_stats, f, indent=2)
     
     logger.info(f"Created {profile_stats['total_profiles']} user profiles in {profiles_dir}")
+    logger.info(f"Real profiles: {profile_stats['real_profiles']}, Synthetic profiles: {profile_stats['synthetic_profiles']}")
     logger.info(f"Created change logs in {change_logs_dir}")
     logger.info(f"Summary statistics saved to {stats_path}")
     
@@ -187,7 +232,7 @@ def create_weight_mapping_file(output_dir):
     mapping = {
         "csv_column": "feature_name",
         "access": "walking_time_to_origin",
-        "wait": "wait_time",
+        "wait": "waiting_time",
         "ivt": "in_vehicle_time",
         "egress": "walking_time_from_destination"
     }
@@ -263,6 +308,8 @@ def main():
                         help='Base directory to save user profiles and analysis')
     parser.add_argument('--analyze', action='store_true',
                         help='Perform analysis on weights data (requires matplotlib and seaborn)')
+    parser.add_argument('--num-users', type=int, default=2000,
+                        help='Total number of user profiles to generate')
     
     args = parser.parse_args()
     
@@ -270,16 +317,46 @@ def main():
     weights_file = Path(args.weights)
     output_dir = Path(args.output)
     
-    # Ensure the weights file exists
-    if not weights_file.exists():
-        logger.error(f"Weights file not found: {weights_file}")
-        return
-    
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
+    # Load real weights if available
+    real_weights_df = None
+    if weights_file.exists():
+        try:
+            real_weights_df = pd.read_csv(weights_file)
+            real_weights_df['is_synthetic'] = False
+            logger.info(f"Loaded {len(real_weights_df)} real weights from {weights_file}")
+        except Exception as e:
+            logger.error(f"Error loading weights file: {e}")
+            real_weights_df = None
+    
+    # Generate synthetic weights for remaining users
+    num_real_users = len(real_weights_df) if real_weights_df is not None else 0
+    num_synthetic_users = max(0, args.num_users - num_real_users)
+    
+    if num_synthetic_users > 0:
+        synthetic_weights_df = generate_synthetic_weights(num_synthetic_users)
+        synthetic_weights_df['is_synthetic'] = True
+        # Adjust IDs to continue from where real users left off
+        synthetic_weights_df['id'] = [f'U{i+1+num_real_users:04d}' for i in range(num_synthetic_users)]
+        logger.info(f"Generated {num_synthetic_users} synthetic weights")
+        
+        # Combine real and synthetic weights
+        if real_weights_df is not None:
+            weights_df = pd.concat([real_weights_df, synthetic_weights_df], ignore_index=True)
+        else:
+            weights_df = synthetic_weights_df
+    else:
+        weights_df = real_weights_df
+    
+    # Save combined weights for reference
+    weights_file = output_dir / 'combined_weights.csv'
+    weights_df.to_csv(weights_file, index=False)
+    logger.info(f"Saved combined weights to {weights_file}")
+    
     # Create profiles
-    result = create_user_profiles(weights_file, output_dir)
+    result = create_user_profiles(weights_df, output_dir)
     
     # Create weight mapping
     create_weight_mapping_file(output_dir)
@@ -294,10 +371,7 @@ def main():
             plots_dir = os.path.join(output_dir, 'plots')
             os.makedirs(plots_dir, exist_ok=True)
             
-            # Read the weights data
-            weights_df = pd.read_csv(weights_file)
-            
-            # Calculate correlations - exclude the 'id' column
+            # Calculate correlations - exclude the 'id' and 'is_synthetic' columns
             numeric_columns = ['access', 'wait', 'ivt', 'egress']
             corr = weights_df[numeric_columns].corr()
             
@@ -308,11 +382,11 @@ def main():
             plt.tight_layout()
             plt.savefig(os.path.join(plots_dir, 'weight_correlations.png'))
             
-            # Plot distributions of each weight
-            plt.figure(figsize=(12, 10))
+            # Plot distributions of each weight, separated by real vs synthetic
+            plt.figure(figsize=(15, 10))
             for i, column in enumerate(numeric_columns):
                 plt.subplot(2, 2, i+1)
-                sns.histplot(weights_df[column], kde=True)
+                sns.histplot(data=weights_df, x=column, hue='is_synthetic', multiple="layer", alpha=0.5)
                 plt.title(f'Distribution of {column}')
                 plt.axvline(x=0, color='r', linestyle='--')
             plt.tight_layout()
