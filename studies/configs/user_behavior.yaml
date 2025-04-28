@@ -28,8 +28,15 @@ simulation:
   time_scale_factor: 1.0
   save_state: true
   save_interval: 3600
-  sumo:
-    enabled: false
+  sumo_visualization:
+    enabled: true  # Set to true to generate visualization files
+    fcd_output_frequency: 10  # Output vehicle positions every N simulation steps
+    stops_poi_color: "yellow"  # Color for stop markers
+    passenger_poi_color: "blue"  # Color for passenger markers
+    vehicle_color: "red"  # Color for vehicle markers
+    show_passengers: true  # Show passengers as POIs
+    show_stops: true  # Show stops as POIs
+    show_vehicle_paths: true
 
 base_config:
   name: "Base Configuration"

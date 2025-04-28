@@ -375,11 +375,6 @@ class SimulationOrchestrator:
             # Execute simulation step
             simulation_step = await self.engine.step()
             
-            # Synchronize with SUMO if enabled
-            if self.sumo_integration and self.sim_cfg.sumo.enabled:
-                await self._synchronize_with_sumo()
-                await self.sumo_integration.step(self.sim_cfg.time_step)
-            
             # Log step execution time
             step_duration = (datetime.now() - step_start_time).total_seconds()
             # if self.metrics_collector:
@@ -397,36 +392,6 @@ class SimulationOrchestrator:
         except Exception as e:
             logger.error(f"Error during simulation step: {str(e)}")
             raise
-
-    async def _synchronize_with_sumo(self) -> None:
-        """Synchronize DRT simulation state with SUMO."""
-        if not self.sumo_integration or not self.state_manager:
-            return
-            
-        try:
-            # Get current vehicle states
-            state = self.state_manager.get_state()
-            if not hasattr(state, 'vehicles') or not state.vehicles:
-                return
-                
-            # Update each vehicle in SUMO
-            for vehicle_id, vehicle in state.vehicles.items():
-                if vehicle.route and vehicle.route.current_segment:
-                    # Update vehicle position in SUMO
-                    if vehicle.position:
-                        await self.sumo_integration.update_vehicle_position(
-                            vehicle_id=vehicle_id,
-                            position=vehicle.position
-                        )
-                    
-                    # If vehicle has a new route, update it in SUMO
-                    if vehicle.route and vehicle.route.waypoints:
-                        await self.sumo_integration.update_vehicle_route(
-                            vehicle_id=vehicle_id,
-                            route=vehicle.route.waypoints
-                        )
-        except Exception as e:
-            logger.error(f"Error synchronizing with SUMO: {str(e)}")
 
     def _schedule_all_demand(self) -> None:
         """Schedule all demand events for the entire simulation period."""
